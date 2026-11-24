@@ -3,7 +3,7 @@ use core::str::FromStr;
 use dashu_base::Approximation::Inexact;
 use dashu_float::ops::Abs;
 use dashu_float::round::mode::{Away, Down, HalfAway, HalfEven, Up, Zero};
-use dashu_float::round::Rounding::NoOp;
+use dashu_float::round::Rounding::{AddOne, NoOp, SubOne};
 use dashu_float::{round, Context, DBig, FBig, Repr, Word};
 use dashu_int::IBig;
 
@@ -336,6 +336,185 @@ fn test_acos_asin_next_to_one_wide_argument() {
             }
         }
     }
+}
+
+/// `cos(x) < 1` and `|sin(x)| < |x|` for every nonzero `x`: the result of a small argument is
+/// never `Exact`, even when the working precision cannot tell it from `1` or `x`.
+#[test]
+fn test_sin_cos_small_argument_is_inexact() {
+    type F = FBig<HalfEven, 2>;
+    for (sig, exp) in [(5, -29), (1, -40), (1, -10), (1, -1)] {
+        let x = Repr::<2>::new(IBig::from(sig), exp);
+        for p in 1..=4 {
+            let ctx = Context::<HalfEven>::new(p);
+            let (s, c) = ctx.sin_cos(&x, None);
+            for r in [ctx.sin(&x, None), ctx.cos(&x, None), s, c] {
+                assert!(matches!(r, Ok(Inexact(..))), "{sig}·2^{exp} at {p} bits: {r:?}");
+            }
+        }
+    }
+    for (sig, exp) in [(1, -40), (5, -29)] {
+        let x = Repr::<2>::new(IBig::from(sig), exp);
+        for p in 1..=3 {
+            let ctx = Context::<HalfEven>::new(p);
+            assert_eq!(ctx.cos(&x, None), Ok(Inexact(F::ONE, AddOne)));
+            assert_eq!(ctx.sin_cos(&x, None).1, Ok(Inexact(F::ONE, AddOne)));
+        }
+        // where x is representable, sin(x) rounds back up to it
+        for p in 3..=4 {
+            let want = F::from_parts(sig.into(), exp);
+            assert_eq!(Context::<HalfEven>::new(p).sin(&x, None), Ok(Inexact(want, AddOne)));
+        }
+    }
+    // 5·2^-29 = 101b·2^-29 at 1 bit: sin(x) is just below x, which truncates to 100b
+    let x = Repr::<2>::new(IBig::from(5), -29);
+    assert_eq!(
+        Context::<HalfEven>::new(1).sin(&x, None),
+        Ok(Inexact(F::from_parts(1.into(), -27), NoOp))
+    );
+}
+
+/// A tiny argument under a directed mode: `sin(x)` is the float just inside `x` and `cos(x)`
+/// the float just below `1`, decided without raising the working precision to `2·|log2 x|`
+/// bits (which took seconds at `2^-1000000` and cannot finish at all further down).
+#[test]
+fn test_sin_cos_tiny_argument_directed() {
+    let p = 53usize;
+    let ones = (IBig::ONE << p) - IBig::ONE;
+    for e in [
+        -1000isize,
+        -1_000_000,
+        isize::MIN / 4,
+        -(isize::MAX / 2) - 10,
+    ] {
+        let x = Repr::<2>::new(IBig::ONE, e);
+        // the float just inside ±x: all ones, one binade down
+        fn just_inside<R: round::Round>(ones: &IBig, neg: bool, exp: isize) -> FBig<R, 2> {
+            FBig::from_parts(if neg { -ones.clone() } else { ones.clone() }, exp)
+        }
+        let inside = e - p as isize;
+        let down = Context::<Down>::new(p);
+        let up = Context::<Up>::new(p);
+        assert_eq!(
+            down.sin(&x, None),
+            Ok(Inexact(just_inside(&ones, false, inside), NoOp)),
+            "e = {e}"
+        );
+        assert_eq!(up.sin(&x, None), Ok(Inexact(FBig::from_parts(1.into(), e), AddOne)));
+        assert_eq!(up.sin(&-x.clone(), None), Ok(Inexact(just_inside(&ones, true, inside), NoOp)));
+        assert_eq!(
+            down.sin(&-x.clone(), None),
+            Ok(Inexact(FBig::from_parts((-1).into(), e), SubOne))
+        );
+        assert_eq!(up.cos(&x, None), Ok(Inexact(FBig::ONE, AddOne)));
+        assert_eq!(
+            down.cos(&x, None),
+            Ok(Inexact(FBig::from_parts(ones.clone(), -(p as isize)), NoOp))
+        );
+        let (s, c) = down.sin_cos(&x, None);
+        assert_eq!((s, c), (down.sin(&x, None), down.cos(&x, None)));
+        // tan and asin move away from zero, atan towards it
+        assert_eq!(down.tan(&x, None), Ok(Inexact(FBig::from_parts(1.into(), e), NoOp)));
+        assert_eq!(down.asin(&x, None), Ok(Inexact(FBig::from_parts(1.into(), e), NoOp)));
+        assert_eq!(down.atan(&x, None), Ok(Inexact(just_inside(&ones, false, inside), NoOp)));
+        // atan2 with a power of the base for x is the same atan
+        let four = Repr::<2>::new(IBig::ONE, 2);
+        let quarter = Repr::<2>::new(IBig::ONE, e - 2);
+        assert_eq!(down.atan2(&x, &four, None), down.atan(&quarter, None));
+    }
+}
+
+/// A finite argument whose exponent is in the lower half of the `isize` range: `x²` is not
+/// representable there, and the series kernels used to report its underflow as the result
+/// (`cos`, `sin`, `tan`, `atan`, `asin` and `acos` all returned 0).
+#[test]
+fn test_trig_argument_with_exponent_near_half_isize_min() {
+    let one = DBig::ONE.with_precision(10).value();
+    let half_pi = DBig::ZERO.with_precision(10).value().acos();
+    assert_eq!(half_pi.to_string(), "1.570796327");
+    for e in [isize::MIN / 4, -(isize::MAX / 2) - 10, isize::MIN + 100] {
+        for m in [1i64, -1, 123456789] {
+            let x = DBig::from_parts(IBig::from(m), e)
+                .with_precision(10)
+                .value();
+            assert_eq!(x.cos(), one, "cos({m}e{e})");
+            assert_eq!(x.sin(), x, "sin({m}e{e})");
+            assert_eq!(x.sin_cos(), (x.clone(), one.clone()));
+            assert_eq!(x.tan(), x, "tan({m}e{e})");
+            assert_eq!(x.atan(), x, "atan({m}e{e})");
+            assert_eq!(x.asin(), x, "asin({m}e{e})");
+            assert_eq!(x.acos(), half_pi, "acos({m}e{e})");
+            assert_eq!(x.atan2(&one), x, "atan2({m}e{e}, 1)");
+            // the ×u family: cos is 1, acos a quarter turn, and sin / tan / asin / atan scale
+            // the argument by 2π/u or u/(2π) — the same digits as for an ordinary exponent
+            assert_eq!(x.cos_unit(360), one, "cos_unit({m}e{e})");
+            assert_eq!(x.acos_unit(360), DBig::from(90), "acos_unit({m}e{e})");
+            let y = DBig::from_parts(IBig::from(m), -50)
+                .with_precision(10)
+                .value();
+            let shift = e + 50;
+            let scaled = |r: DBig| {
+                let (sig, exp) = r.into_repr().into_parts();
+                DBig::from_parts(sig, exp + shift)
+            };
+            assert_eq!(x.sin_unit(360), scaled(y.sin_unit(360)), "sin_unit({m}e{e})");
+            assert_eq!(x.tan_unit(360), scaled(y.tan_unit(360)), "tan_unit({m}e{e})");
+            assert_eq!(x.asin_unit(360), scaled(y.asin_unit(360)), "asin_unit({m}e{e})");
+            assert_eq!(x.atan_unit(360), scaled(y.atan_unit(360)), "atan_unit({m}e{e})");
+        }
+    }
+}
+
+/// The inverse ×u functions next to an axis: the angle is an exactly representable quarter
+/// turn displaced by an amount far below the precision, on a known side. `acos_unit(2^-52, 3)`
+/// at 1 bit is `0.75 − tiny` — below the midpoint of 0.5 and 1 — and used to come back as 1;
+/// at 2 bits it is 0.75, but not exactly.
+#[test]
+fn test_inverse_unit_next_to_quarter_turn() {
+    type F = FBig<HalfEven, 2>;
+    for k in [10isize, 30, 52, 100, 1_000_000] {
+        let x = Repr::<2>::new(IBig::ONE, -k);
+        let (half, three_q) = (F::from_parts(1.into(), -1), F::from_parts(3.into(), -2));
+        let one_bit = Context::<HalfEven>::new(1);
+        let two_bits = Context::<HalfEven>::new(2);
+        assert_eq!(one_bit.acos_unit(&x, 3, None), Ok(Inexact(half, NoOp)), "k = {k}");
+        assert_eq!(two_bits.acos_unit(&x, 3, None), Ok(Inexact(three_q.clone(), AddOne)));
+        // a negative argument sits just above 0.75
+        let neg = -x;
+        assert_eq!(one_bit.acos_unit(&neg, 3, None), Ok(Inexact(F::ONE, AddOne)));
+        assert_eq!(two_bits.acos_unit(&neg, 3, None), Ok(Inexact(three_q, NoOp)));
+    }
+
+    // degrees, 10 digits, rounding down: just below / just above the axis
+    let d = |s: &str| {
+        FBig::<Down, 10>::from_str(s)
+            .unwrap()
+            .with_precision(10)
+            .value()
+    };
+    let below_90 = d("89.99999999");
+    for tiny in ["1e-30", "1e-1000000"] {
+        assert_eq!(d(tiny).acos_unit(360), below_90);
+        assert_eq!(d(&format!("-{tiny}")).acos_unit(360), d("90"));
+        // atan2_unit: next to the y axis, and next to the negative x axis
+        assert_eq!(d("1").atan2_unit(&d(tiny), 360), below_90);
+        assert_eq!(d("1").atan2_unit(&d(&format!("-{tiny}")), 360), d("90"));
+        assert_eq!(d("-1").atan2_unit(&d(tiny), 360), d("-90"));
+        assert_eq!(d("-1").atan2_unit(&d(&format!("-{tiny}")), 360), d("-90.00000001"));
+        assert_eq!(d(tiny).atan2_unit(&d("-1"), 360), d("179.9999999"));
+        assert_eq!(d(&format!("-{tiny}")).atan2_unit(&d("-1"), 360), d("-180"));
+    }
+    for huge in ["1e30", "1e1000000"] {
+        assert_eq!(d(huge).atan_unit(360), below_90);
+        assert_eq!(d(&format!("-{huge}")).atan_unit(360), d("-90"));
+    }
+    // in an odd base a quarter turn of 2 has no finite expansion: nothing to hug, the Ziv
+    // loop settles it — and the result is the plain rounding of 1/2
+    let x = FBig::<HalfEven, 3>::from_parts(1.into(), -40)
+        .with_precision(10)
+        .value();
+    let half = FBig::<HalfEven, 3>::ONE.with_precision(10).value() / 2;
+    assert_eq!(x.acos_unit(2), half);
 }
 
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`

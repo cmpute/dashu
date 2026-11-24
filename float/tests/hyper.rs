@@ -92,6 +92,52 @@ fn test_exact_results_at_unlimited_precision_zero() {
     assert_eq!(F::ONE.acosh(), F::ZERO);
 }
 
+/// Tiny arguments, down to exponents in the lower half of the `isize` range: `sinh`, `tanh`,
+/// `asinh` and `atanh` are the float next to `x` on a known side, `cosh` the float next to 1 —
+/// decided directly, under every mode and with the right flag, instead of by a working
+/// precision of `2·|log2 x|` bits (or an underflowing `x²`).
+#[test]
+fn test_tiny_argument() {
+    use dashu_base::Approximation::Inexact;
+    use dashu_float::round::Rounding::{AddOne, NoOp};
+    let p = 53usize;
+    let ones = (IBig::ONE << p) - IBig::ONE;
+    for e in [
+        -1000isize,
+        -1_000_000,
+        isize::MIN / 4,
+        -(isize::MAX / 2) - 10,
+    ] {
+        let x = Repr::<2>::new(IBig::ONE, e);
+        let same = || FBig::<mode::Down, 2>::from_parts(1.into(), e);
+        let inside = || FBig::<mode::Down, 2>::from_parts(ones.clone(), e - p as isize);
+        let down = Context::<mode::Down>::new(p);
+        // sinh and atanh move away from zero, tanh and asinh towards it
+        assert_eq!(down.sinh(&x, None), Ok(Inexact(same(), NoOp)), "e = {e}");
+        assert_eq!(down.atanh(&x, None), Ok(Inexact(same(), NoOp)));
+        assert_eq!(down.tanh(&x, None), Ok(Inexact(inside(), NoOp)));
+        assert_eq!(down.asinh(&x, None), Ok(Inexact(inside(), NoOp)));
+        assert_eq!(down.cosh(&x, None), Ok(Inexact(FBig::ONE, NoOp)));
+        assert_eq!(down.cosh_pi(&x, None), Ok(Inexact(FBig::ONE, NoOp)));
+        assert_eq!(down.sinh_cosh(&x, None), (down.sinh(&x, None), down.cosh(&x, None)));
+        assert_eq!(down.sinh_cosh_pi(&x, None), (down.sinh_pi(&x, None), down.cosh_pi(&x, None)));
+
+        let up = Context::<mode::Up>::new(p);
+        let above_one = FBig::<mode::Up, 2>::from_parts((IBig::ONE << (p - 1)) + 1, 1 - p as isize);
+        assert_eq!(up.cosh(&x, None), Ok(Inexact(above_one.clone(), AddOne)));
+        assert_eq!(up.cosh_pi(&x, None), Ok(Inexact(above_one, AddOne)));
+        let next = FBig::<mode::Up, 2>::from_parts((IBig::ONE << (p - 1)) + 1, e + 1 - p as isize);
+        assert_eq!(up.sinh(&x, None), Ok(Inexact(next, AddOne)));
+        assert_eq!(up.tanh(&x, None), Ok(Inexact(FBig::from_parts(1.into(), e), AddOne)));
+
+        // sinh(π·x) = π·x·(1 + tiny): the digits of π, at the argument's exponent
+        let pi = Context::<mode::Down>::new(p).pi::<2>(None).value();
+        let (sig, exp) = pi.into_repr().into_parts();
+        let want = FBig::<mode::Down, 2>::from_parts(sig, exp + e);
+        assert_eq!(down.sinh_pi(&x, None).unwrap().value(), want, "sinh_pi, e = {e}");
+    }
+}
+
 #[test]
 fn test_infinities() {
     let ctx = Context::<mode::HalfEven>::new(30);

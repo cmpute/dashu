@@ -10,7 +10,7 @@
 //! magnitude-dependent guard digits and resolve quarter-integer arguments exactly.
 
 use crate::{
-    ball::{ulps, Ball},
+    ball::{ulp_mag, ulps, Ball},
     cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
     fbig::FBig,
@@ -287,6 +287,46 @@ fn scale_unit<const B: Word>(
     v.scale_int(&IBig::from(u), wp)?.div(&two_pi, wp)
 }
 
+/// An exponent `k` with `|x| < B^k` (one past the leading digit, from the digit-count upper
+/// bound). `x` is finite and nonzero.
+pub(crate) fn top_exp<const B: Word>(x: &Repr<B>) -> isize {
+    x.exponent.saturating_add(x.digits_ub() as isize)
+}
+
+/// An exponent `k` with `|x| ≥ B^k` (the leading digit, from the digit-count lower bound —
+/// `digits_lb` is a floor of the logarithm). `x` is finite and nonzero.
+pub(crate) fn bottom_exp<const B: Word>(x: &Repr<B>) -> isize {
+    x.exponent.saturating_add(x.digits_lb() as isize)
+}
+
+/// Is every point `t` of the ball so small that `t²` is below the last place of the working
+/// precision — `|t| < B^(−wp−2)`, with the radius no larger than the midpoint? The series
+/// kernels shortcut such an argument: forming `t²` gains nothing, and for an exponent in the
+/// lower half of the `isize` range it underflows.
+pub(crate) fn square_negligible<const B: Word>(x: &Ball<B>, wp: usize) -> bool {
+    !x.mid.significand.is_zero()
+        && top_exp(&x.mid) < (-(wp as isize)).saturating_sub(2)
+        && x.rad <= Mag::from_repr_lower(&x.mid)
+}
+
+/// `f(x)` for an odd `f` with `|f(t) − t| ≤ |t|³` (sin, tan, asin, atan and their hyperbolic
+/// kin, `|t| ≤ 1/2`) on a ball that is [`square_negligible`]: the ball itself, one ulp wider.
+/// Every `|t| ≤ 2·|mid| < 2·B^(−wp−2)`, so `|t|³ ≤ 8·|mid|·B^(−2wp−4)`, far inside one ulp of
+/// the midpoint.
+pub(crate) fn odd_negligible<const B: Word>(x: &Ball<B>, wp: usize) -> Ball<B> {
+    let mut ball = x.clone();
+    ball.add_error(ulp_mag::<B>(&x.mid, wp));
+    ball
+}
+
+/// `f(x)` for an even `f` with `|f(t) − 1| ≤ t²` (cos, cosh, `|t| ≤ 1`) on a ball that is
+/// [`square_negligible`]: `1`, within one ulp.
+pub(crate) fn even_negligible<const B: Word>(wp: usize) -> Ball<B> {
+    let mut one = Ball::exact_int(IBig::ONE, wp);
+    one.add_error(ulp_mag::<B>(&one.mid, wp));
+    one
+}
+
 /// `sin` of a ball centred on zero. Only a zero *radius* makes the argument exactly zero; a
 /// reduced argument that merely cancelled onto a zero midpoint (`x − k·π/2` for an `x` next to
 /// a multiple of π/2) still spans `[−rad, rad]`, and `|sin t| ≤ |t|` keeps that radius. Dropping
@@ -381,6 +421,76 @@ impl<R: ErrorBounds> Context<R> {
         Ok((work_context, r_ball, quadrant_of(&k)))
     }
 
+    /// The correctly rounded value of an odd function at a tiny `x`, when the result is `x`
+    /// displaced by `0 < δ ≤ |x|³` — away from zero if `outward` (tan, asin, sinh, atanh),
+    /// towards zero otherwise (sin, atan, tanh, asinh). That bound holds for all eight on
+    /// `|x| ≤ 1/2`. `None` when `x` is not small enough for the displacement to stay clear of
+    /// every rounding boundary (see [`round_near`](Self::round_near)): the Ziv loop takes over.
+    pub(crate) fn tiny_odd<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        outward: bool,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        let top = top_exp(x);
+        if top >= 0 {
+            return None; // not certainly below 1/B ≤ 1/2
+        }
+        let dir = if outward { x.sign() } else { -x.sign() };
+        self.round_near(x, dir, top.saturating_mul(3))
+    }
+
+    /// The correctly rounded value of an even function at a tiny `x`, when the result is `1`
+    /// displaced to the side `dir` by `0 < δ < x²·B^slack` (cos and cosh need no slack; the ×u
+    /// and ×π variants pay for their argument scaling). `None` as for
+    /// [`tiny_odd`](Self::tiny_odd).
+    pub(crate) fn tiny_even<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        dir: Sign,
+        slack: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        let top = top_exp(x);
+        if top >= 0 {
+            return None;
+        }
+        self.round_near(&Repr::one(), dir, top.saturating_mul(2).saturating_add(slack))
+    }
+
+    /// `cos_unit` for a reduced argument next to a multiple of `u`: `cos(2π·r/u) = 1 − δ` with
+    /// `0 < δ ≤ (2π·r/u)²/2 < 32·r²` (`u ≥ 1`), i.e. below `r²·B^5`.
+    fn tiny_cos_unit<const B: Word>(
+        &self,
+        reduced: &UnitReduced<B>,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        match reduced {
+            UnitReduced::Small(r) => self.tiny_even(r, Sign::Negative, 5),
+            UnitReduced::Split { .. } => None,
+        }
+    }
+
+    /// The correctly rounded value of an angle that is `sign·k·u/4` displaced to the side `dir`
+    /// by `0 < δ < B^delta_exp` — the inverse ×u functions next to an axis. `None` when `k·u/4`
+    /// has no finite expansion in base `B` (then nothing nearby is a rounding boundary by
+    /// construction, and the Ziv loop certifies as usual) or the displacement is not small
+    /// enough.
+    fn round_near_quarter<const B: Word>(
+        &self,
+        sign: Sign,
+        k: u8,
+        u: usize,
+        dir: Sign,
+        delta_exp: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        // k·u/4 = (k·u·B²/4)·B^-2 whenever 4 divides k·u·B² (always for an even base)
+        let scaled = IBig::from(u) * IBig::from(k) * IBig::from(B) * IBig::from(B);
+        let (quarter, rem) = scaled.div_rem(IBig::from(4));
+        if !rem.is_zero() {
+            return None;
+        }
+        let v = Repr::<B>::new(quarter * sign, -2);
+        self.round_near(&v, dir, delta_exp)
+    }
+
     /// Calculate the sine of the floating point representation.
     pub fn sin<const B: Word>(
         &self,
@@ -397,6 +507,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return Ok(r);
+        }
 
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series. The reduction error is
@@ -421,6 +535,9 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(sin_zero_mid(x));
         }
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(odd_negligible(x, wp));
+        }
         let x2 = x.mul(x, wp)?;
         let mut sum = x.clone();
         let mut term = x.clone();
@@ -459,6 +576,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `cos(x) = 1 − δ` with `0 < δ ≤ x²/2`.
+        if let Some(r) = self.tiny_even(x, Sign::Negative, 0) {
+            return Ok(r);
+        }
 
         self.ziv(50, |guard| {
             let (work, r, quadrant) =
@@ -479,6 +600,9 @@ impl<R: ErrorBounds> Context<R> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
             return Ok(cos_zero_mid(x, wp));
+        }
+        if square_negligible(x, wp) {
+            return Ok(even_negligible(wp));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
@@ -519,6 +643,14 @@ impl<R: ErrorBounds> Context<R> {
             return (s, c);
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `sin(x) = x − δ` and `cos(x) = 1 − δ'` (see `sin` / `cos`). The two
+        // shortcuts engage at different magnitudes, so either may leave its half to the loop.
+        match (self.tiny_odd(x, false), self.tiny_even(x, Sign::Negative, 0)) {
+            (Some(s), Some(c)) => return (Ok(s), Ok(c)),
+            (Some(s), None) => return (Ok(s), self.cos(x, cache)),
+            (None, Some(c)) => return (self.sin(x, cache), Ok(c)),
+            (None, None) => {}
+        }
 
         let (s, c) = self.ziv_pair(50, |guard| {
             let (work, r, quadrant) =
@@ -545,6 +677,9 @@ impl<R: ErrorBounds> Context<R> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
             return Ok((sin_zero_mid(x), cos_zero_mid(x, wp)));
+        }
+        if square_negligible(x, wp) {
+            return Ok((odd_negligible(x, wp), even_negligible(wp)));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
@@ -595,6 +730,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return Ok(r);
+        }
 
         // tan = sin/cos, correctly rounded via the Ziv loop; the sin/cos error propagation into the
         // quotient is tracked by the Ball division. The closure's `significand.is_zero()` guard
@@ -763,6 +902,9 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         let reduced = reduce_unit_argument(x, u);
+        if let Some(r) = self.tiny_cos_unit(&reduced) {
+            return Ok(r);
+        }
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
@@ -857,6 +999,10 @@ impl<R: ErrorBounds> Context<R> {
 
         // sin is odd (cos even): reduce and evaluate on |x|, apply the sign to sin at the end.
         let reduced = reduce_unit_argument(x, u);
+        if let Some(c) = self.tiny_cos_unit(&reduced) {
+            // the cosine hugs 1; the sine (≈ 2π·r/u) is an ordinary value with its own loop
+            return (self.sin_unit(x, u, cache), Ok(c));
+        }
         let negative = x.sign() == Sign::Negative;
         let (s, c) = self.ziv_pair(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
@@ -1079,6 +1225,15 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
 
+        // A tiny argument: `acos_unit(x) = u/4 ∓ δ` with `0 < δ = |asin_unit(x)| < u·|x|` — next
+        // to the exactly representable `u/4` whenever that has a finite expansion.
+        if top_exp(x) < 0 {
+            let delta_exp = top_exp(&Repr::<B>::new(IBig::from(u), 0)).saturating_add(top_exp(x));
+            if let Some(r) = self.round_near_quarter(Sign::Positive, 1, u, -x.sign(), delta_exp) {
+                return Ok(r);
+            }
+        }
+
         // acos_unit(x) = u/4 − asin_unit(x): the composition avoids the catastrophic
         // cancellation `π/2 − asin(x)` would suffer near x = 1 once scaled.
         self.ziv(50, |guard| {
@@ -1143,6 +1298,15 @@ impl<R: ErrorBounds> Context<R> {
                 IBig::from(u)
             };
             return exact_ratio(self, num, 8);
+        }
+
+        // A huge argument: `atan_unit(x) = ±(u/4 − δ)` with `0 < δ = u·atan(1/|x|)/(2π) < u/|x|`.
+        if bottom_exp(x) > 0 {
+            let delta_exp =
+                top_exp(&Repr::<B>::new(IBig::from(u), 0)).saturating_sub(bottom_exp(x));
+            if let Some(r) = self.round_near_quarter(x.sign(), 1, u, -x.sign(), delta_exp) {
+                return Ok(r);
+            }
         }
 
         self.ziv(50, |guard| {
@@ -1241,6 +1405,29 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
+        // Next to an axis the angle is an exactly representable `k·u/4` displaced by less than
+        // `u·min(|y/x|, |x/y|)` (`atan t < t`), on a side fixed by the quadrant.
+        {
+            let u_top = top_exp(&Repr::<B>::new(IBig::from(u), 0));
+            let (sy, sx) = (y.sign(), x.sign());
+            // |x/y| < B^(top(x) − bottom(y)): next to the y axis, angle `sy·(u/4 ∓ δ)`
+            let steep = top_exp(x).saturating_sub(bottom_exp(y));
+            // |y/x| < B^(top(y) − bottom(x)): next to the negative x axis, angle `sy·(u/2 − δ)`
+            let flat = top_exp(y).saturating_sub(bottom_exp(x));
+            let near = if steep < 0 {
+                // x > 0 pulls the angle towards zero, x < 0 pushes it away
+                let dir = if sx == Sign::Positive { -sy } else { sy };
+                self.round_near_quarter(sy, 1, u, dir, u_top.saturating_add(steep))
+            } else if flat < 0 && sx == Sign::Negative {
+                self.round_near_quarter(sy, 2, u, -sy, u_top.saturating_add(flat))
+            } else {
+                None
+            };
+            if let Some(r) = near {
+                return Ok(r);
+            }
+        }
+
         // x ≠ 0, finite: atan2(y/x) ± (quadrant π), scaled by u/(2π). The inner atan2 is
         // itself correctly rounded at the working precision; the scaling's rounding is
         // tracked by the Ball.
@@ -1271,6 +1458,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return Ok(r);
+        }
 
         // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
         // a vertical tangent of `asin`, so an argument that merely rounds onto it
@@ -1296,6 +1487,10 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            // asin(t) = t·(1 + O(t²))
+            return Ok(odd_negligible(x, wp));
+        }
         let one = Ball::exact_int(IBig::ONE, wp);
         let d = one.sub(&x.mul(x, wp)?, wp)?.sqrt(wp)?;
         if d.mid.significand.is_zero() {
@@ -1424,6 +1619,10 @@ impl<R: ErrorBounds> Context<R> {
             return signed_zero_normal(self, x);
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return Ok(r);
+        }
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
@@ -1442,6 +1641,10 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            // atan(t) = t·(1 − O(t²))
+            return Ok(odd_negligible(x, wp));
+        }
         let sign = x.mid.sign();
         let x_abs = if sign == Sign::Negative {
             -x.clone()
@@ -1532,6 +1735,14 @@ impl<R: ErrorBounds> Context<R> {
         // x == 0, y finite nonzero: atan2 = ±π/2.
         if x.significand.is_zero() {
             return self.pi_fraction(y.sign(), 1, 2, cache);
+        }
+
+        // x = B^k: `y/x` is `y` with its exponent moved, exactly — plain `atan`, which knows
+        // the tiny-argument case (`atan2(y, x) = y/x − δ` sits on a representable value there).
+        if x.significand.is_one() && !y.significand.is_zero() {
+            if let Some(e) = y.exponent.checked_sub(x.exponent) {
+                return self.atan(&Repr::new(y.significand.clone(), e), cache);
+            }
         }
 
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π), all as Ball composition.

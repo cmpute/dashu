@@ -20,6 +20,7 @@ use crate::{
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
+        trig::{even_negligible, odd_negligible, square_negligible, top_exp},
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -45,6 +46,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return Ok(r);
+        }
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). Both `exp_m1` come from the
         // Ball-based `exp_compute`; the subtraction/division roundings, the `exp_m1` errors *and
         // the input's own rounding* are tracked mechanically by the Ball propagation (the raw `x`
@@ -89,6 +94,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(x) = 1 + δ` with `0 < δ ≤ x²`.
+        if let Some(r) = self.tiny_even(x, Sign::Positive, 0) {
+            return Ok(r);
+        }
 
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). Both
         // `exp_m1` come from the Ball-based `exp_compute`; the sum/divide/+1 roundings and the
@@ -141,6 +150,14 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `sinh(x) = x + δ` and `cosh(x) = 1 + δ'` (see `sinh` / `cosh`). The
+        // two shortcuts engage at different magnitudes, so either may leave its half to the loop.
+        match (self.tiny_odd(x, true), self.tiny_even(x, Sign::Positive, 0)) {
+            (Some(s), Some(c)) => return (Ok(s), Ok(c)),
+            (Some(s), None) => return (Ok(s), self.cosh(x, cache)),
+            (None, Some(c)) => return (self.sinh(x, cache), Ok(c)),
+            (None, None) => {}
+        }
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
         // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
@@ -242,6 +259,12 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(π·x) = 1 + δ` with `0 < δ ≤ (π·x)² < x²·B^4` (`|π·x| ≤ 1`).
+        if top_exp(x) < -2 {
+            if let Some(r) = self.tiny_even(x, Sign::Positive, 4) {
+                return Ok(r);
+            }
+        }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // cosh(±π·huge) = +∞ (always positive).
@@ -293,6 +316,12 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(π·x) = 1 + δ` with `0 < δ ≤ (π·x)² < x²·B^4` (`|π·x| ≤ 1`).
+        if top_exp(x) < -2 {
+            if let Some(r) = self.tiny_even(x, Sign::Positive, 4) {
+                return (self.sinh_pi(x, cache), Ok(r));
+            }
+        }
 
         // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
@@ -332,6 +361,9 @@ impl<R: ErrorBounds> Context<R> {
     /// the omitted tail is bounded by the first omitted term (< 1 ulp, as for the sine series).
     fn sinh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(odd_negligible(x, wp));
+        }
         let x2 = x.mul(x, wp)?;
         let mut sum = x.clone();
         let mut term = x.clone();
@@ -352,6 +384,9 @@ impl<R: ErrorBounds> Context<R> {
     /// (see [`sinh_series`](Self::sinh_series)).
     fn cosh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(even_negligible(wp));
+        }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
         let mut sum = one.clone();
@@ -385,6 +420,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return Ok(r);
+        }
 
         // For sufficiently large |x|, tanh(x) = sign(x)·(1 − δ) with 0 < δ = 2/(e^{2|x|}+1) below
         // half an ulp of ±1, so its rounding is fully determined (Up/Zero just above −1 and
@@ -447,6 +486,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
         assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return Ok(r);
+        }
 
         // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
         // `sqrt(x²+1) − 1` cancellation near 0. The composition is tracked as a [`Ball`] from the
@@ -582,6 +625,10 @@ impl<R: ErrorBounds> Context<R> {
                 return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
             }
             _ => {}
+        }
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return Ok(r);
         }
 
         // atanh(x) = ln_1p(2x/(1-x)) / 2. The ratio and the `ln_1p` input error are tracked as a

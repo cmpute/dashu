@@ -19,6 +19,7 @@ use core::cmp::Ordering;
 use dashu_base::{Approximation::*, Sign};
 
 use crate::{
+    cmp::repr_cmp_same_base,
     error::{FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr},
@@ -34,6 +35,10 @@ use dashu_int::{IBig, UBig, Word};
 /// in a handful of attempts only for inputs pathological close to a tie. The cap exists so a
 /// bug in an error-radius bound can never produce an infinite loop.
 const MAX_ZIV_RETRIES: usize = 32;
+
+/// Guard digits beyond the target precision up to which the Ziv loop keeps retrying only to
+/// learn on which side of the returned value the true result lies (see `Context::certified`).
+const SIDE_GUARD: usize = 16;
 
 // A test-only retry counter, so tests can assert the loop converges on the first attempt for
 // typical inputs (validating that the guard-digit heuristic wasn't over-tightened). Reads as
@@ -120,10 +125,11 @@ impl<R: ErrorBounds> Context<R> {
     /// certified.
     ///
     /// The returned [`Exact`]/[`Inexact`] flag is that of rounding the approximation to the target
-    /// precision; the containment test only accepts an attempt for which that flag is also the
-    /// flag of rounding the *true* value (see [`contained`](Self::contained)). A function whose
-    /// true result can be exactly representable (or an exact tie) must therefore report a zero
-    /// radius for it, or resolve it before entering the loop — a positive radius cannot.
+    /// precision. That flag is the true result's own only if the two lie on the same side of the
+    /// returned value, which the loop also establishes before accepting an attempt (see
+    /// [`certified`](Self::certified)). A function whose true result can be exactly
+    /// representable (or an exact tie) should report a zero radius for it, or resolve it before
+    /// entering the loop: under a directed mode a positive radius can never certify it.
     pub(crate) fn ziv<const B: Word>(
         &self,
         initial_guard: usize,
@@ -149,7 +155,7 @@ impl<R: ErrorBounds> Context<R> {
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
-            if Self::contained::<B>(&a.repr, &e.repr, candidate.value_ref()) {
+            if self.certified::<B>(&a.repr, &e.repr, &candidate, guard) {
                 return Ok(candidate);
             }
 
@@ -257,8 +263,8 @@ impl<R: ErrorBounds> Context<R> {
             };
             let c1 = a1.clone().with_precision(self.precision);
             let c2 = a2.clone().with_precision(self.precision);
-            if Self::contained::<B>(&a1.repr, &e1.repr, c1.value_ref())
-                && Self::contained::<B>(&a2.repr, &e2.repr, c2.value_ref())
+            if self.certified::<B>(&a1.repr, &e1.repr, &c1, guard)
+                && self.certified::<B>(&a2.repr, &e2.repr, &c2, guard)
             {
                 return (Ok(c1), Ok(c2));
             }
@@ -273,6 +279,105 @@ impl<R: ErrorBounds> Context<R> {
         // Unreachable in practice: a radius-bound bug would otherwise loop forever. Report it
         // instead of silently returning possibly-1-ULP-wrong best-effort candidates.
         (Err(FpError::ZivRetryLimitExceeded), Err(FpError::ZivRetryLimitExceeded))
+    }
+
+    /// Is the rounded `candidate` certified as the correctly rounded result *with its flag*?
+    ///
+    /// The [containment test](Self::contained) settles the value. The flag needs one thing more:
+    /// the `Rounding` adjustment, and `Exact` itself, describe where the *true* result sits
+    /// relative to the returned `y`, while the candidate's flag describes where the
+    /// *approximation* sits. The two agree once the error interval `[a − e, a + e]` no longer
+    /// reaches `y`. Until then they need not: under a nearest mode an approximation just below
+    /// `y` rounds to it with `AddOne` while the true result just above it would be `NoOp`, and
+    /// an approximation that lands exactly on `y` reads as `Exact` (`cos(2^-10)` at 4 bits is
+    /// exactly `1` at any working precision below 21 bits; the result is `1 − 2^-21`). Such an
+    /// attempt is retried at a higher guard.
+    ///
+    /// A result that *is* exactly representable never separates from `y`, and the loop cannot
+    /// tell it from one that is merely close. Operations are expected to resolve their exact
+    /// results before entering the loop (under a directed mode the containment test cannot
+    /// certify them either); as a backstop, the side is only pursued up to a working precision
+    /// of about `2p` — past every near-miss built from a few terms of the operation's own
+    /// series, whose distance from `y` is bounded by the digits of the argument — after which
+    /// the attempt is accepted with the approximation's flag.
+    fn certified<const B: Word>(
+        &self,
+        a: &Repr<B>,
+        e: &Repr<B>,
+        candidate: &Rounded<FBig<R, B>>,
+        guard: usize,
+    ) -> bool {
+        let y = candidate.value_ref();
+        if !Self::contained::<B>(a, e, y) {
+            return false;
+        }
+        if e.significand.is_zero() {
+            return true; // an exact approximation: its flag is the result's
+        }
+        let side_known = repr_cmp_same_base::<B, true>(&(a - &y.repr), e, None).is_gt();
+        side_known || guard >= self.precision.saturating_add(SIDE_GUARD)
+    }
+
+    /// The exponent `k` such that an offset `0 < δ ≤ B^k` on either side of the exactly known
+    /// `v` cannot reach a rounding boundary of this context — neither a representable value nor
+    /// a midpoint between two. `None` at unlimited precision or if the exponent leaves `isize`.
+    ///
+    /// The boundaries around `v` are multiples of half the spacing of the binade *below* `v`'s
+    /// leading digit (the finest one in reach), `g = B^(lead − 1 − p)/2`, and `v` itself is a
+    /// multiple of its last digit `B^e`. If `B^e` is the coarser of the two, `v` is a boundary
+    /// and the next one is `g` away; otherwise the nearest boundary is at least `B^e/2` away.
+    /// Two digits below the finer of the two is inside both.
+    fn near_exact_exp<const B: Word>(&self, v: &Repr<B>) -> Option<isize> {
+        debug_assert!(v.is_finite() && !v.significand.is_zero());
+        if !self.is_limited() {
+            return None;
+        }
+        let p = isize::try_from(self.precision).ok()?;
+        // A lower bound on the leading digit's exponent keeps the grid on the fine side
+        // (`digits_lb` is a floor of the logarithm: at least one short of the digit count).
+        let lead_lb = v.exponent.checked_add(v.digits_lb() as isize)?;
+        let grid = v.exponent.min(lead_lb.checked_sub(p)?);
+        grid.checked_sub(2)
+    }
+
+    /// Round `v + dir·B^eps_exp` for an `eps_exp` at or below [`near_exact_exp`](Self::near_exact_exp):
+    /// the correctly rounded value, and flag, of every `v + dir·δ` with `0 < δ ≤ B^eps_exp`.
+    fn round_offset<const B: Word>(
+        &self,
+        v: &Repr<B>,
+        dir: Sign,
+        eps_exp: isize,
+    ) -> Rounded<FBig<R, B>> {
+        let shift = (v.exponent - eps_exp) as usize; // ≥ 2
+        let unit = IBig::from_parts(dir, UBig::ONE);
+        // the last digit is ±1, so the significand is normalized
+        let offset = Repr {
+            significand: crate::utils::shl_digits::<B>(&v.significand, shift) + unit,
+            exponent: eps_exp,
+        };
+        self.repr_round(offset).map(|repr| FBig::new(repr, *self))
+    }
+
+    /// Correctly round a result known to be `v + dir·δ` — the exactly representable `v` plus an
+    /// unknown offset `0 < δ < B^delta_exp` on the side `dir` — when that offset is too small to
+    /// reach a rounding boundary. `None` when it is not (the caller falls back to its Ziv loop).
+    ///
+    /// This is the shortcut for the functions that hug an exact value: `sin(x) = x − δ` and
+    /// `cos(x) = 1 − δ` for a tiny `x`, `cosh(x) = 1 + δ`, … There the Ziv loop only certifies
+    /// once the working precision reaches `δ` itself — `~2·|log_B x|` digits, however small the
+    /// target precision — because until then the approximation sits exactly on `v`, a boundary
+    /// of the rounding preimage.
+    pub(crate) fn round_near<const B: Word>(
+        &self,
+        v: &Repr<B>,
+        dir: Sign,
+        delta_exp: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        let eps_exp = self.near_exact_exp(v)?;
+        if delta_exp > eps_exp {
+            return None;
+        }
+        Some(self.round_offset(v, dir, eps_exp))
     }
 
     /// Containment test: is the approximation's error interval `[a − e, a + e]` entirely inside
@@ -291,15 +396,12 @@ impl<R: ErrorBounds> Context<R> {
     ///   `a − e ≥ y − lb  ⟺  a + lb ≥ y + e`
     ///   `a + e ≤ y + rb  ⟺  y + rb ≥ a + e`
     ///
-    /// Two refinements make the verdict safe to return *together with its `Exact`/`Inexact` flag*:
+    /// A zero radius means `a` is the true value, so rounding it is correct by definition —
+    /// including a true value that is itself representable or an exact tie, which sits on the
+    /// boundary of the preimage and which no positive radius could ever certify.
     ///
-    /// - A zero radius means `a` is the true value, so rounding it is correct by definition —
-    ///   including a true value that is itself representable or an exact tie, which sits on the
-    ///   boundary of the preimage and which no positive radius could ever certify.
-    /// - With a positive radius the candidate must lie strictly outside the error interval
-    ///   (`|a − y| > e`). Otherwise the true value may be on either side of `y` (or equal to it),
-    ///   so neither the `Exact` flag (when `a` happens to round to itself) nor the direction of
-    ///   the `Inexact` flag is known yet; a retry at a higher guard separates them.
+    /// Containment settles the *value* only. Whether the candidate's `Exact`/`Inexact` flag is
+    /// also the true result's flag is decided by [`certified`](Self::certified).
     fn contained<const B: Word>(a: &Repr<B>, e: &Repr<B>, y: &FBig<R, B>) -> bool {
         if e.significand.is_zero() && !e.is_infinite() {
             return true;
@@ -327,15 +429,6 @@ impl<R: ErrorBounds> Context<R> {
         let e_lower = e.exponent as i128 + e.digits_lb() as i128 - 1; // e ≥ B^e_lower
         let y_upper = y.repr.exponent as i128 + y.repr.digits_ub() as i128; // |y| < B^y_upper
         if e_lower >= y_upper {
-            return false;
-        }
-        let gap = a - &y.repr;
-        let gap = if gap.sign() == Sign::Negative {
-            -gap
-        } else {
-            gap
-        };
-        if gap.cmp(e) != Ordering::Greater {
             return false;
         }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
@@ -408,11 +501,112 @@ mod tests {
     fn ziv_retries_until_contained() {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let r = ctx.ziv(2, |guard| {
-            // value 1 + 2^-6, radius 2^(-guard): large on the first attempt, tiny later.
-            Ok((F::ONE + (F::ONE >> 6), F::ONE >> guard as isize))
+            // value 1 + 2^-10, radius 2^(-guard): large on the first attempt, tiny later.
+            Ok((F::ONE + (F::ONE >> 10), F::ONE >> guard as isize))
         });
-        let _ = r.unwrap().value();
+        assert_eq!(r, Ok(Inexact(F::ONE, NoOp)));
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
+    }
+
+    // An approximation that lands exactly on a representable value while its radius is nonzero
+    // is not certified as `Exact`: the true value is on one side of it, and both the flag and
+    // (under a directed mode) the value depend on which. Modelled on cos(2^-10) = 1 − 2^-21 at
+    // 4 bits, whose approximation is exactly 1 until the working precision reaches 21 bits.
+    #[test]
+    fn ziv_does_not_certify_exact_with_radius() {
+        fn run<R: ErrorBounds>() -> FpResult<FBig<R, 2>> {
+            let exact = FBig::<R, 2>::ONE - (FBig::<R, 2>::ONE >> 21);
+            Context::<R>::new(4).ziv(2, |guard| {
+                let wp = 4 + guard;
+                let a = exact.clone().with_rounding::<mode::HalfEven>();
+                let a = a.with_precision(wp).value().with_rounding::<R>();
+                Ok((a, FBig::ONE >> wp as isize))
+            })
+        }
+        fn one<R: ErrorBounds>(sig: u8, exp: isize) -> FBig<R, 2> {
+            FBig::from_parts(sig.into(), exp)
+        }
+        assert_eq!(run::<mode::HalfEven>(), Ok(Inexact(one(1, 0), AddOne)));
+        assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
+        assert_eq!(run::<mode::Up>(), Ok(Inexact(one(1, 0), AddOne)));
+        assert_eq!(run::<mode::Down>(), Ok(Inexact(one(15, -4), NoOp)));
+        // an exact approximation (zero radius) is still reported as Exact
+        let r = Context::<mode::Down>::new(4).ziv(2, |_| Ok((FBig::<_, 2>::ONE, FBig::ZERO)));
+        assert_eq!(r, Ok(Exact(one(1, 0))));
+    }
+
+    // The same holds for an approximation on the other side of the returned value from the true
+    // result: 1 + 2^-21 approximated from below by 1 − 2^-wp rounds to 1 with `AddOne`, but the
+    // result's own flag is `NoOp`.
+    #[test]
+    fn ziv_resolves_the_side_of_the_result() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let exact = F::ONE + (F::ONE >> 21);
+        let r = ctx.ziv(2, |guard| {
+            let wp = 4 + guard;
+            let ulp = F::ONE >> wp as isize;
+            let a = if wp < 21 {
+                F::ONE - ulp.clone()
+            } else {
+                exact.clone()
+            };
+            Ok((a, ulp << 1))
+        });
+        assert_eq!(r, Ok(Inexact(F::ONE, NoOp)));
+        assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
+    }
+
+    // A result that really is the representable value never separates from it. Under a nearest
+    // mode the loop stops pursuing the side at about twice the target precision and returns the
+    // (correct) value instead of running to its retry cap.
+    #[test]
+    fn ziv_gives_up_on_the_side_of_an_exact_result() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let r = ctx.ziv(2, |guard| Ok((F::ONE, F::ONE >> (4 + guard) as isize)));
+        assert_eq!(r.map(|v| v.value()), Ok(F::ONE));
+        let retries = LAST_ZIV_RETRIES.with(|c| c.get());
+        assert!((1..=5).contains(&retries), "{retries} retries");
+    }
+
+    // `round_near` rounds `v ± δ` for an offset too small to reach a rounding boundary, and
+    // declines when the bound on `δ` is not small enough.
+    #[test]
+    fn round_near_offsets() {
+        let r = |sig: i32, exp: isize| Repr::<2>::new(sig.into(), exp);
+        fn f<R: ErrorBounds>(sig: i32, exp: isize) -> FBig<R, 2> {
+            FBig::from_parts(sig.into(), exp)
+        }
+        let up = Context::<mode::Up>::new(4);
+        let down = Context::<mode::Down>::new(4);
+        let even = Context::<mode::HalfEven>::new(4);
+        // 1 − δ: the binade below 1 has spacing 2^-4
+        assert_eq!(down.round_near(&r(1, 0), Sign::Negative, -6), Some(Inexact(f(15, -4), NoOp)));
+        assert_eq!(up.round_near(&r(1, 0), Sign::Negative, -6), Some(Inexact(f(1, 0), AddOne)));
+        assert_eq!(even.round_near(&r(1, 0), Sign::Negative, -6), Some(Inexact(f(1, 0), AddOne)));
+        assert_eq!(down.round_near(&r(1, 0), Sign::Negative, -5), None);
+        // 1 + δ
+        assert_eq!(down.round_near(&r(1, 0), Sign::Positive, -6), Some(Inexact(f(1, 0), NoOp)));
+        assert_eq!(up.round_near(&r(1, 0), Sign::Positive, -6), Some(Inexact(f(9, -3), AddOne)));
+        // −5·2^-20 ± δ (3 of 4 digits used): the binade below its leading digit has spacing 2^-22
+        assert_eq!(
+            down.round_near(&r(-5, -20), Sign::Negative, -24),
+            Some(Inexact(f(-11, -21), SubOne))
+        );
+        assert_eq!(
+            down.round_near(&r(-5, -20), Sign::Positive, -24),
+            Some(Inexact(f(-5, -20), SubOne))
+        );
+        assert_eq!(
+            up.round_near(&r(-5, -20), Sign::Positive, -24),
+            Some(Inexact(f(-9, -21), NoOp))
+        );
+        assert_eq!(down.round_near(&r(-5, -20), Sign::Positive, -23), None);
+        // a value wider than the context: 37 = 100101b at 4 bits, its own last digit decides
+        assert_eq!(even.round_near(&r(37, 0), Sign::Positive, -2), Some(Inexact(f(9, 2), NoOp)));
+        assert_eq!(up.round_near(&r(37, 0), Sign::Negative, -2), Some(Inexact(f(5, 3), AddOne)));
+        assert_eq!(up.round_near(&r(37, 0), Sign::Negative, -1), None);
+        // unlimited precision has nothing to round to
+        assert_eq!(Context::<mode::Up>::new(0).round_near(&r(1, 0), Sign::Negative, -100), None);
     }
 
     // Unlimited-precision context short-circuits to a single Exact call (counter untouched).
@@ -466,9 +660,10 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let (r1, r2) = ctx.ziv_pair(2, |guard| {
             let radius = F::ONE >> guard as isize;
-            Ok(((F::ONE, F::ZERO), (F::ONE + (F::ONE >> 6), radius)))
+            Ok(((F::ONE, F::ZERO), (F::ONE + (F::ONE >> 10), radius)))
         });
-        let _ = (r1.unwrap().value(), r2.unwrap().value());
+        assert_eq!(r1, Ok(Exact(F::ONE)));
+        assert_eq!(r2, Ok(Inexact(F::ONE, NoOp)));
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
     }
 
