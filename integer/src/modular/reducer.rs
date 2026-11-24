@@ -104,7 +104,7 @@ impl Reducer<UBig> for ConstDivisor {
             (ConstDivisorRepr::Double(_), TypedReprRef::RefLarge(_)) => false,
             (ConstDivisorRepr::Large(_), TypedReprRef::RefSmall(_)) => true,
             (ConstDivisorRepr::Large(d), TypedReprRef::RefLarge(words)) => {
-                cmp::cmp_in_place(words, &d.normalized_divisor).is_le()
+                cmp::cmp_in_place(words, &d.normalized_divisor).is_lt()
                     && words[0] & math::ones_word(d.shift) == 0 // must be shifted
             }
         }
