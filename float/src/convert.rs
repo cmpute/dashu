@@ -420,6 +420,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn to_int(&self) -> Rounded<IBig> {
         assert_finite(&self.repr);
 
+        // A zero of either sign is the integer 0. (The sign of `-0` lives in a `-1` exponent
+        // sentinel, which must not be read as "has a fractional part".)
+        if self.repr.significand.is_zero() {
+            return Exact(IBig::ZERO);
+        }
+
         // shortcut when the number is already an integer
         if self.repr.exponent >= 0 {
             return Exact(shl_digits::<B>(&self.repr.significand, self.repr.exponent as usize));
@@ -976,7 +982,10 @@ impl<const B: Word> Repr<B> {
     pub fn to_int(&self) -> Rounded<IBig> {
         assert_finite(self);
 
-        if self.exponent >= 0 {
+        if self.significand.is_zero() {
+            // a zero of either sign is the integer 0 (`-0` has a `-1` exponent sentinel)
+            Exact(IBig::ZERO)
+        } else if self.exponent >= 0 {
             // the number is already an integer
             Exact(shl_digits::<B>(&self.significand, self.exponent as usize))
         } else if self.smaller_than_one() {
@@ -1068,7 +1077,12 @@ macro_rules! fbig_unsigned_conversions {
             type Error = ConversionError;
 
             fn try_from(value: Repr<B>) -> Result<Self, Self::Error> {
-                if value.sign() == Sign::Negative || value.is_infinite() {
+                if value.is_infinite() {
+                    Err(ConversionError::OutOfBounds)
+                } else if value.significand.is_zero() {
+                    // a zero of either sign is the integer 0
+                    Ok(0)
+                } else if value.sign() == Sign::Negative {
                     Err(ConversionError::OutOfBounds)
                 } else {
                     let (log2_lb, _) = value.log2_bounds();
@@ -1109,6 +1123,9 @@ macro_rules! fbig_signed_conversions {
             fn try_from(value: FBig<R, B>) -> Result<Self, Self::Error> {
                 if value.repr.is_infinite() {
                     Err(ConversionError::OutOfBounds)
+                } else if value.repr.significand.is_zero() {
+                    // a zero of either sign is the integer 0
+                    Ok(0)
                 } else {
                     let (log2_lb, _) = value.repr.log2_bounds();
                     if log2_lb >= <$t>::BITS as f32 {

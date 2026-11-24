@@ -949,3 +949,50 @@ fn test_to_float_just_above_max() {
         assert_eq!(DBig::from_str(s).unwrap().to_f32().value(), want, "DBig {s}");
     }
 }
+
+// Negative zero is the integer 0: its sign lives in a `-1` exponent sentinel, which the integer
+// conversions used to read as a fractional part (and the unsigned ones as a negative value).
+#[test]
+fn test_negative_zero_to_int() {
+    use dashu_float::{Context, Repr};
+
+    fn check<R: dashu_float::round::Round, const B: dashu_int::Word>(z: FBig<R, B>) {
+        assert!(z.repr().is_neg_zero());
+        assert!(z.repr().is_int());
+        assert_eq!(z.to_int(), Exact(IBig::ZERO));
+        assert_eq!(z.repr().to_int(), Exact(IBig::ZERO));
+        assert_eq!(IBig::try_from(z.clone()), Ok(IBig::ZERO));
+        assert_eq!(UBig::try_from(z.clone()), Ok(UBig::ZERO));
+        assert_eq!(i8::try_from(z.clone()), Ok(0));
+        assert_eq!(i32::try_from(z.clone()), Ok(0));
+        assert_eq!(i64::try_from(z.clone()), Ok(0));
+        assert_eq!(i128::try_from(z.clone()), Ok(0));
+        assert_eq!(isize::try_from(z.clone()), Ok(0));
+        assert_eq!(u8::try_from(z.clone()), Ok(0));
+        assert_eq!(u32::try_from(z.clone()), Ok(0));
+        assert_eq!(u64::try_from(z.clone()), Ok(0));
+        assert_eq!(u128::try_from(z.clone()), Ok(0));
+        assert_eq!(usize::try_from(z.clone()), Ok(0));
+        assert_eq!(u64::try_from(z.into_repr()), Ok(0));
+    }
+
+    check(DBig::from_str("-0").unwrap());
+    check(DBig::from_str("-0.000").unwrap());
+    check(-DBig::ZERO);
+    check(FBig::<Zero, 2>::try_from(-0.0f64).unwrap());
+    check(FBig::<HalfEven, 2>::try_from(-0.0f32).unwrap());
+    check(-FBig::<Zero, 2>::ZERO);
+    for precision in [20, 50, 100, 500] {
+        check(FBig::<HalfEven, 2>::from_repr(Repr::neg_zero(), Context::new(precision)));
+        check(FBig::<Up, 3>::from_repr(Repr::neg_zero(), Context::new(precision)));
+    }
+
+    // positive zero and ordinary values are unaffected
+    assert!(Repr::<2>::zero().is_int());
+    assert!(Repr::<10>::neg_one().is_int());
+    assert!(!Repr::<10>::new(IBig::from(-5), -1).is_int());
+    assert!(!Repr::<2>::infinity().is_int());
+    assert_eq!(DBig::ZERO.to_int(), Exact(IBig::ZERO));
+    assert_eq!(u8::try_from(DBig::from_str("-1").unwrap()), Err(OutOfBounds));
+    assert_eq!(i8::try_from(DBig::from_str("-0.5").unwrap()), Err(LossOfPrecision));
+}

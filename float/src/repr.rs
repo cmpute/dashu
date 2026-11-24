@@ -344,12 +344,15 @@ impl<const B: Word> Repr<B> {
     /// assert!(Repr::<2>::zero().is_int());
     /// assert!(Repr::<10>::one().is_int());
     /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
+    /// // negative zero is the integer 0 as well
+    /// assert!(Repr::<10>::neg_zero().is_int());
     /// ```
     pub const fn is_int(&self) -> bool {
         if self.is_infinite() {
             false
         } else {
-            self.exponent >= 0
+            // `-0` carries its sign in a `-1` exponent sentinel, it has no fractional part
+            self.exponent >= 0 || self.significand.is_zero()
         }
     }
 
