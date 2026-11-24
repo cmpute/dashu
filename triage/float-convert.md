@@ -1,8 +1,9 @@
 # float-convert
 
-35 reports, 22 distinct issues, all real and all fixed. Every cluster was reproduced at the
-base commit by running its regression test against an unmodified export of `a0fc535` (see
-"Reproduction" at the end); the report's own reproducer was not re-run separately.
+35 reports, 22 distinct issues, all real and all fixed. The clusters were reproduced at the
+base commit by running their regression tests against an unmodified export of `a0fc535` (see
+"Reproduction" at the end for the two tests that did not finish there); the reports' own
+reproducers were not re-run separately.
 
 ## Clusters
 
@@ -327,5 +328,9 @@ Fix: `(ZERO, ZERO, true, true)` for precision 0. Committed together with the pre
 ## Reproduction
 
 The new tests were run against an export of `a0fc535` with only the test files (and the
-`[[test]] num_traits` stanza) overlaid; see the final report for the list of tests that fail
-there.
+`[[test]] num_traits` stanza) overlaid. Every new float test listed above fails there, with
+two exceptions that did not finish: the `convert` run was killed by its time limit after ten
+new tests had failed, before `test_base_change_huge_exponent` reported, and the `num_order`
+run was killed while `test_ord_same_base_large_exponent` was running (consistent with E257's
+allocation of the full power of the base, but not observed to fail as such). The two new
+`rational/tests/dashu_float.rs` tests were not run against the base commit.
