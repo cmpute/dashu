@@ -23,7 +23,7 @@ use crate::{
     error::{FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr},
-    round::{ErrorBounds, Rounded, Rounding::*},
+    round::{ErrorBounds, Rounded},
 };
 use dashu_int::{IBig, UBig, Word};
 
@@ -173,11 +173,10 @@ impl<R: ErrorBounds> Context<R> {
         Err(FpError::ZivRetryLimitExceeded)
     }
 
-    /// Directed-rounded endpoint for a value that equals `sign·(1 − δ)` with `0 < δ` below half an
-    /// ulp of `±1`: the rounding is fully determined by the mode — the result is `±1` itself, or the
-    /// next representable *inside* it (`sign·(B^p − 1) × B^(−p)`), the latter under the modes that
-    /// round the magnitude down toward zero (`Up`/`Zero` just above `−1`, `Down`/`Zero` just below
-    /// `+1`).
+    /// The correctly rounded value of `sign·(1 − δ)` for a `0 < δ` below half an ulp of the
+    /// values just inside `±1` (`δ < B^(−p)/2`): `±1` itself, or the next representable inside it
+    /// (`sign·(B^p − 1) × B^(−p)`) under the modes that round the magnitude down (`Up`/`Zero`
+    /// just above `−1`, `Down`/`Zero` just below `+1`).
     ///
     /// Shared by `exp_m1` (whose value is `−1` plus a sub-representable positive residual once
     /// `exp(x)` has underflowed below the smallest representable FBig — the reduction quotient
@@ -189,46 +188,30 @@ impl<R: ErrorBounds> Context<R> {
     /// of a directed rounding preimage (one-sided), so the containment test never resolves and the
     /// loop would run its retry cap at an astronomically large working precision.
     ///
-    /// `Round::round_low_part` decides the endpoint: fed the integer `sign·1` with a residual of the
-    /// opposite sign (below half an ulp), its `AddOne`/`SubOne`/`NoOp` verdict is exactly the
-    /// "step one ulp toward zero / stay" decision. (The literal significand arithmetic
-    /// `round_low_part` would do is irrelevant here — only its directional verdict is used.)
+    /// No rounding boundary lies between `±1` and `±(1 − B^(−p)/2)`, so every such `δ` rounds
+    /// like one fixed tiny offset — an ordinary rounding of `±0.99…9…`, which also yields the
+    /// ordinary [`Rounding`](crate::round::Rounding) flag: the adjustment applied to the
+    /// *truncated* significand (`NoOp` when the result is the all-nines value, `AddOne`/`SubOne`
+    /// when the magnitude is carried up to `1`), the same flag the Ziv loop reports for a value
+    /// that is not quite saturated.
+    ///
+    /// Panics at unlimited precision (there is nothing to round to).
     ///
     /// Not part of the stable API surface (`#[doc(hidden)]`) — shared with dashu-cmplx's `tan`
     /// saturation gate so the endpoint logic lives in one place, not a typed-in-stone contract.
     #[doc(hidden)]
     pub fn near_one_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
-        // The value sits just *inside* sign·1: the residual pulls it toward zero, so it carries
-        // the opposite sign.
-        let res_sign = -sign;
-        match R::round_low_part(&IBig::from_parts(sign, UBig::ONE), res_sign, || Ordering::Less) {
-            AddOne | SubOne => {
-                // One ulp toward zero: the largest p-digit significand at exponent −p, with `sign`
-                // (e.g. p=1, B=2 → ±0.5). `AddOne` steps above −1, `SubOne` below +1.
-                let p = self.precision;
-                let next_mag = Repr::<B>::BASE.pow(p) - UBig::ONE;
-                let next = Repr::new(IBig::from_parts(sign, next_mag), -(p as isize));
-                let adj = if sign == Sign::Positive {
-                    SubOne
-                } else {
-                    AddOne
-                };
-                Inexact(FBig::new(next, *self), adj)
-            }
-            // Carry the input context: `±FBig::ONE` is precision 0, which would make a downstream op
-            // on the result panic via `assert_limited_precision(0)`.
-            _ => Inexact(
-                FBig::new(
-                    if sign == Sign::Positive {
-                        Repr::<B>::one()
-                    } else {
-                        Repr::<B>::neg_one()
-                    },
-                    *self,
-                ),
-                NoOp,
-            ),
-        }
+        let one = if sign == Sign::Positive {
+            Repr::<B>::one()
+        } else {
+            Repr::<B>::neg_one()
+        };
+        // two digits below the spacing just inside ±1: well within half an ulp
+        let eps_exp = self
+            .near_exact_exp(&one)
+            .expect("the precision is limited and fits the exponent range");
+        // the value sits just *inside* sign·1, so the offset carries the opposite sign
+        self.round_offset(&one, -sign, eps_exp)
     }
 
     /// Pair variant of [`ziv`](Self::ziv) for functions that return two values (e.g. `sin_cos`,
@@ -458,7 +441,7 @@ impl<R: ErrorBounds> Context<R> {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
-    use crate::round::mode;
+    use crate::round::{mode, Rounding::*};
 
     type F = crate::FBig<mode::HalfEven>;
 

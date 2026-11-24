@@ -1396,12 +1396,16 @@ mod tests {
                             };
                             let got = r.value();
                             assert_eq!(got.repr(), &want, "{name} tanh(±{mag}) p={p}");
-                            let expected_adj = if $stays {
+                            // The flag is the adjustment applied to the *truncated*
+                            // significand `±0.99…9`: none when the result is that value, a
+                            // carry of the magnitude when it stays at `±1` — the same flag the
+                            // Ziv path reports just below the saturation threshold.
+                            let expected_adj = if !$stays {
                                 Rounding::NoOp
                             } else if sign == Sign::Positive {
-                                Rounding::SubOne
-                            } else {
                                 Rounding::AddOne
+                            } else {
+                                Rounding::SubOne
                             };
                             assert_eq!(got_adj, expected_adj, "{name} flag tanh(±{mag}) p={p}");
                             assert_eq!(

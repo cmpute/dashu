@@ -1445,12 +1445,15 @@ mod tests {
                         ($mode:ty, $stays:expr) => {{
                             let ctx = Context::<$mode>::new(p);
                             let name = stringify!($mode);
-                            let expected_adj = if $stays {
+                            // The flag is the adjustment applied to the *truncated*
+                            // significand `±0.99…9`: none when the result is that value, a
+                            // carry of the magnitude when it stays at `±1`.
+                            let expected_adj = if !$stays {
                                 Rounding::NoOp
                             } else if sign == Sign::Positive {
-                                Rounding::SubOne
-                            } else {
                                 Rounding::AddOne
+                            } else {
+                                Rounding::SubOne
                             };
                             // The saturated endpoint is never the exact value, so the result
                             // is `Inexact` even when the adjustment is `NoOp` (the flag channel

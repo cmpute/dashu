@@ -138,6 +138,52 @@ fn test_tiny_argument() {
     }
 }
 
+/// The `Rounding` flag of a `tanh` that saturates next to `±1` is the adjustment applied to
+/// the truncated significand, as everywhere else: `tanh(13)` at 10 digits towards zero is the
+/// truncation `0.9999999999` itself — `NoOp`, like `tanh(12)` one step below the saturation
+/// shortcut — and a result carried up to `±1` is `AddOne` / `SubOne`.
+#[test]
+fn test_tanh_saturation_flag() {
+    use dashu_base::Approximation::Inexact;
+    use dashu_float::round::Rounding::{AddOne, NoOp, SubOne};
+    type Z = FBig<mode::Zero, 10>;
+    let nines = Z::from_str("0.9999999999").unwrap();
+    let ctx = Context::<mode::Zero>::new(10);
+    for s in ["12", "13", "100", "1e30"] {
+        let x = Z::from_str(s).unwrap();
+        assert_eq!(ctx.tanh(x.repr(), None), Ok(Inexact(nines.clone(), NoOp)), "tanh({s})");
+        let neg = -x;
+        assert_eq!(ctx.tanh(neg.repr(), None), Ok(Inexact(-nines.clone(), NoOp)), "tanh(-{s})");
+    }
+    // 400 digits: 461.0 is below the shortcut's threshold, 461.4 above it
+    let ctx = Context::<mode::Zero>::new(400);
+    let nines = Z::from_str(&format!("0.{}", "9".repeat(400))).unwrap();
+    for s in ["461.0", "461.4"] {
+        let x = Z::from_str(s).unwrap();
+        assert_eq!(ctx.tanh(x.repr(), None), Ok(Inexact(nines.clone(), NoOp)), "tanh({s})");
+    }
+    // the modes that carry the magnitude up to 1 (1 − tanh(12.5) = 2.8e-11, below half an ulp;
+    // 12.5 is still on the Ziv path, 13 past the shortcut's threshold)
+    type H = FBig<mode::HalfEven, 10>;
+    let ctx = Context::<mode::HalfEven>::new(10);
+    for s in ["12.5", "13", "100"] {
+        let x = H::from_str(s).unwrap();
+        assert_eq!(ctx.tanh(x.repr(), None), Ok(Inexact(H::ONE, AddOne)), "tanh({s})");
+        let neg = -x;
+        assert_eq!(ctx.tanh(neg.repr(), None), Ok(Inexact(H::NEG_ONE, SubOne)), "tanh(-{s})");
+    }
+    // base 2 at each of the standard precisions, both directed modes
+    for p in [20usize, 50, 100, 500] {
+        let x = Repr::<2>::new(IBig::from(1755648), 0);
+        let ones = FBig::from_parts((IBig::ONE << p) - IBig::ONE, -(p as isize));
+        let down = Context::<mode::Down>::new(p);
+        assert_eq!(down.tanh(&x, None), Ok(Inexact(ones, NoOp)), "p = {p}");
+        assert_eq!(down.tanh(&-x.clone(), None), Ok(Inexact(FBig::NEG_ONE, SubOne)));
+        let up = Context::<mode::Up>::new(p);
+        assert_eq!(up.tanh(&x, None), Ok(Inexact(FBig::ONE, AddOne)));
+    }
+}
+
 #[test]
 fn test_infinities() {
     let ctx = Context::<mode::HalfEven>::new(30);
