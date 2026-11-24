@@ -94,6 +94,11 @@ pub(crate) mod repr {
     impl TypedReprRef<'_> {
         /// Floor logarithm, returns (log(self), base^log(self))
         pub fn log(self, base: TypedReprRef<'_>) -> (usize, Repr) {
+            // the logarithm of zero is undefined for every base
+            if let RefSmall(0) = self {
+                panic_invalid_log_oprand()
+            }
+
             // shortcuts
             if let RefSmall(dw) = base {
                 match dw {
