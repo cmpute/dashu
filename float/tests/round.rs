@@ -838,3 +838,68 @@ fn test_error_bounds_at_power_of_base() {
         check_all::<10>(-25, -1, p);
     }
 }
+
+/// `ErrorBounds::error_bounds` describes the set of reals that round to a value. Check the
+/// defining property on both endpoints, in particular at a power of the base, where the gap to
+/// the neighbour on the toward-zero side is `B` times narrower than the ulp: an endpoint
+/// marked inclusive must round back to the value, and one marked exclusive must not.
+#[test]
+fn test_error_bounds_preimage_probes() {
+    use dashu_float::round::{mode, ErrorBounds};
+    use dashu_float::{Context, FBig, Repr};
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: u64>(sig: i64, exp: isize, p: usize) {
+        let f: FBig<R, B> = FBig::from_repr(Repr::new(IBig::from(sig), exp), Context::new(p));
+        let (lb, rb, incl_l, incl_r) = R::error_bounds(&f);
+        let exact = |v: &FBig<R, B>| FBig::<R, B>::from_repr(v.repr().clone(), Context::new(0));
+        let rounds_to_f = |x: FBig<R, B>| x.with_precision(p).value().repr() == f.repr();
+        let lo = exact(&f) - exact(&lb);
+        let hi = exact(&f) + exact(&rb);
+        assert_eq!(rounds_to_f(lo.clone()), incl_l, "low endpoint of {f:?} (p={p})");
+        assert_eq!(rounds_to_f(hi.clone()), incl_r, "high endpoint of {f:?} (p={p})");
+        // a point strictly inside each half rounds to f, a point just outside does not
+        let tiny: FBig<R, B> =
+            FBig::from_repr(Repr::new(IBig::ONE, exp - 3 * p as isize - 8), Context::new(0));
+        if !lb.repr().significand().is_zero() {
+            assert!(rounds_to_f(lo.clone() + tiny.clone()), "inside low of {f:?} (p={p})");
+        }
+        if !rb.repr().significand().is_zero() {
+            assert!(rounds_to_f(hi.clone() - tiny.clone()), "inside high of {f:?} (p={p})");
+        }
+        assert!(!rounds_to_f(lo - tiny.clone()), "outside low of {f:?} (p={p})");
+        assert!(!rounds_to_f(hi + tiny), "outside high of {f:?} (p={p})");
+    }
+
+    macro_rules! all_modes {
+        ($base:literal, $sig:expr, $exp:expr, $p:expr) => {{
+            check::<mode::Zero, $base>($sig, $exp, $p);
+            check::<mode::Away, $base>($sig, $exp, $p);
+            check::<mode::Down, $base>($sig, $exp, $p);
+            check::<mode::Up, $base>($sig, $exp, $p);
+            check::<mode::HalfAway, $base>($sig, $exp, $p);
+            check::<mode::HalfEven, $base>($sig, $exp, $p);
+        }};
+    }
+    for p in [1usize, 2, 12, 20, 50, 100, 500] {
+        for sign in [1i64, -1] {
+            // powers of the base (the asymmetric case), their neighbours, and generic values
+            all_modes!(2, sign, 6, p);
+            all_modes!(2, sign, -3, p);
+            all_modes!(10, sign, 2, p);
+            all_modes!(10, sign, -5, p);
+            if p >= 12 {
+                all_modes!(2, sign * 4095, -6, p); // odd (p = 12) / padded-even significand
+                all_modes!(2, sign * 2047, -5, p);
+                all_modes!(2, sign * 5, 0, p);
+                all_modes!(10, sign * 25, 0, p); // odd last digit
+                all_modes!(10, sign * 12, 0, p); // even last digit
+                all_modes!(10, sign * 999, -1, p);
+            }
+        }
+    }
+    // a full-width even decimal significand: a tie rounds *to* it under HalfEven
+    check::<mode::HalfEven, 10>(2, 1, 1);
+    check::<mode::HalfEven, 10>(12, 0, 2);
+    check::<mode::HalfEven, 10>(13, 0, 2);
+}
