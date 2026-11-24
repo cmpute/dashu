@@ -366,6 +366,10 @@ Run on the final tree (aarch64 macOS, stable toolchain):
 - `cargo clippy --all-features --all-targets --workspace --exclude dashu-python -- -D warnings`: clean.
 - `cargo check -p dashu-int --no-default-features`: ok.
 - `fuzz/tests/integer.rs` (GMP differentials, `--ignored`): 16 passed.
+- `fuzz/tests/integer_stress.rs` (100k- and 1M-bit algebraic campaigns,
+  `--ignored`) with `FUZZ_CASES=200`: 3 passed (98 s). With the default case
+  budget `large_gcd` did not finish within a 400 s limit (no failure observed;
+  `large_arithmetic` and `large_modular_arithmetic` passed).
 
 Not verified by running: MSRV 1.68 (no such toolchain installed; the changes
 use only long-stable language features), and the house Dylint lints.
