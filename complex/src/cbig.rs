@@ -75,8 +75,10 @@ impl<R: Round, const B: Word> CBig<R, B> {
     /// The result context is `max(re.context(), im.context())` (the larger precision wins; an
     /// unlimited `0` precision is treated as the minimum, so a limited operand's precision wins),
     /// and the smaller-precision part is effectively widened to it — widening is exact, so only the
-    /// precision cap changes. The rounding mode and base must match and are enforced by the type
-    /// parameters.
+    /// precision cap changes. The one lossy case is an unlimited-precision part paired with a
+    /// limited one: it is rounded to the shared (limited) precision if it holds more digits, just
+    /// as mixing the two precisions in `FBig` arithmetic rounds the result. The rounding mode and
+    /// base must match and are enforced by the type parameters.
     ///
     /// # Examples
     ///
@@ -94,9 +96,20 @@ impl<R: Round, const B: Word> CBig<R, B> {
     #[inline]
     pub fn from_parts(re: FBig<R, B>, im: FBig<R, B>) -> Self {
         let fctx = dashu_float::Context::max(re.context(), im.context());
+        let precision = fctx.precision();
+        // A part at unlimited precision can hold more digits than the shared (limited) precision
+        // admits: round it to that precision, as mixing the two precisions in `FBig` arithmetic
+        // does. (A limited part never exceeds the larger of the two limited precisions.)
+        let fit = |part: FBig<R, B>| {
+            if precision != 0 && part.context().precision() == 0 {
+                part.with_precision(precision).value()
+            } else {
+                part
+            }
+        };
         Self {
-            re: re.into_repr(),
-            im: im.into_repr(),
+            re: fit(re).into_repr(),
+            im: fit(im).into_repr(),
             context: Context(fctx),
         }
     }
