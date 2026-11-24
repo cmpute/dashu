@@ -28,7 +28,42 @@ fn test_cbig_decimal_default() {
     assert_eq!(cbig!(-3, -4), cbig!(-3 - 4i));
 
     // decimal precision: derived from the digits, converted to bits
-    assert_eq!(cbig!(3 + 4i).precision(), 3);
+    // (enough bits to hold any integer with as many decimal digits)
+    assert_eq!(cbig!(3 + 4i).precision(), 4);
+    assert_eq!(cbig!(999).precision(), 10);
+}
+
+#[test]
+fn test_cbig_decimal_integers_exact() {
+    // every decimal (and octal) integer coefficient converts exactly: these used to be
+    // truncated to 8, 64, 98 and 998
+    assert_eq!(cbig!(9), cbig!(0x9));
+    assert_eq!(cbig!(65), cbig!(0x41));
+    assert_eq!(cbig!(99), cbig!(0x63));
+    assert_eq!(cbig!(999), cbig!(0x3e7));
+    assert_eq!(cbig!(9 + 65i), cbig!(0x9 + 0x41i));
+    assert_eq!(cbig!(-9, -99), cbig!(-0x9 - 0x63i));
+    assert_eq!(cbig!(7), cbig!(0x7));
+    assert_eq!(cbig!(63), cbig!(0x3f));
+    assert_eq!(cbig!(0o7 + 0o77i), cbig!(0x7 + 0x3fi));
+    assert_eq!(cbig!(0o777), cbig!(0x1ff));
+    assert_eq!(cbig!(9e2), cbig!(0x384));
+    assert_eq!(
+        cbig!(99999999999999999999 + 18446744073709551617i),
+        cbig!(0x56bc75e2d630fffff + 0x10000000000000001i)
+    );
+    assert_eq!(*static_cbig!(9 + 99i), cbig!(0x9 + 0x63i));
+    assert_eq!(cbig!(9).re().to_string(), "1001");
+}
+
+#[test]
+fn test_cbig_negative_zero() {
+    // the sign of a zero coefficient is kept, as by `CBig::from_str`
+    assert!(cbig!(-0.0).re().is_neg_zero());
+    assert!(cbig!(1 - 0.0i).im().is_neg_zero());
+    assert!(cbig!(-0x0, 1).re().is_neg_zero());
+    assert!(cbig!(0.0).re().is_pos_zero());
+    assert!(cbig!(-0.0).im().is_pos_zero());
 }
 
 #[test]

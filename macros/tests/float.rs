@@ -113,3 +113,60 @@ fn test_static_dbig() {
         DBig::from_str("515377520732011331036461129765621272702107522001e-100").unwrap()
     );
 }
+
+#[test]
+#[rustfmt::skip::macros(fbig, dbig)]
+fn test_negative_zero() {
+    // the sign of a zero literal is kept, as by `from_str`
+    assert!(FBig::from_str("-0.0").unwrap().repr().is_neg_zero());
+    assert!(fbig!(-0.0).repr().is_neg_zero());
+    assert!(fbig!(-0).repr().is_neg_zero());
+    assert!(fbig!(-0x0p3).repr().is_neg_zero());
+    assert!(fbig!(0.0).repr().is_pos_zero());
+    assert!(fbig!(+0.0).repr().is_pos_zero());
+
+    assert!(DBig::from_str("-0.0").unwrap().repr().is_neg_zero());
+    assert!(dbig!(-0.0).repr().is_neg_zero());
+    assert!(dbig!(-0).repr().is_neg_zero());
+    assert!(dbig!(-0e5).repr().is_neg_zero());
+    assert!(dbig!(0.0).repr().is_pos_zero());
+    assert!(dbig!(+0.0).repr().is_pos_zero());
+    assert_eq!(dbig!(-0.0).to_string(), "-0");
+
+    // also in const and static position
+    const F: FBig = fbig!(-0.0);
+    const D: DBig = dbig!(-0.0);
+    assert!(F.repr().is_neg_zero() && D.repr().is_neg_zero());
+    use dashu_macros::{static_dbig, static_fbig};
+    assert!(static_fbig!(-0.0).repr().is_neg_zero());
+    assert!(static_dbig!(-0.0).repr().is_neg_zero());
+    assert!(static_dbig!(0.0).repr().is_pos_zero());
+
+    // nonzero literals are unaffected
+    assert_eq!(dbig!(-1.0), DBig::from_str("-1.0").unwrap());
+    assert_eq!(fbig!(-1.0), FBig::from_str("-1.0").unwrap());
+}
+
+#[test]
+#[rustfmt::skip::macros(static_fbig, static_dbig)]
+fn test_static_precision() {
+    use dashu_macros::{static_dbig, static_fbig};
+
+    // static floats have unlimited precision, whether or not the significand fits in 32 bits
+    assert_eq!(static_dbig!(4294967295).precision(), 0);
+    assert_eq!(static_dbig!(4294967296).precision(), 0);
+    assert_eq!(static_dbig!(12300).precision(), 0);
+    assert_eq!(static_dbig!(5.000).precision(), 0);
+    assert_eq!(static_dbig!(-1.5e-3).precision(), 0);
+    assert_eq!(static_fbig!(0xffffffff).precision(), 0);
+    assert_eq!(static_fbig!(0x100000000).precision(), 0);
+    assert_eq!(static_fbig!(-1.01).precision(), 0);
+
+    // the values are those of the non-static literals
+    assert_eq!(*static_dbig!(4294967295), dbig!(4294967295));
+    assert_eq!(*static_dbig!(12300), dbig!(12300));
+    assert_eq!(*static_dbig!(5.000), dbig!(5));
+    assert_eq!(*static_dbig!(-1.5e-3), dbig!(-1.5e-3));
+    assert_eq!(*static_fbig!(0xffffffff), fbig!(0xffffffff));
+    assert_eq!(*static_fbig!(-1.01), fbig!(-1.01));
+}

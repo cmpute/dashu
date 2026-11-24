@@ -55,7 +55,9 @@ fn test_static_macros() {
 
     static SC: &Real = static_fbig!(0x1234p-4);
     static SD: &Decimal = static_dbig!(12.34);
-    assert!(SC.to_decimal().value() > *SD);
+    // static floats have unlimited precision: set one before a lossy operation
+    assert_eq!((SC.precision(), SD.precision()), (0, 0));
+    assert!(SC.clone().with_base_and_precision(20).value() > *SD);
 
     static SE: &Rational = static_rbig!(2 / 5);
     static SF: &Relaxed = static_rbig!(~2/7);

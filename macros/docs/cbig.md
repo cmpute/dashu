@@ -30,7 +30,15 @@ widened exactly, so only the precision cap changes):
 ```rust
 # use dashu_macros::cbig;
 let z = cbig!(3.125 + 4i); // re has 4 decimal digits, im has 1
-assert_eq!(z.precision(), 13); // decimal digits converted to bits
+assert_eq!(z.precision(), 14); // decimal digits converted to bits
+```
+
+A coefficient with `n` decimal (or octal) digits gets as many bits as the largest `n`-digit
+integer needs, so integers are never truncated by the conversion:
+
+```rust
+# use dashu_macros::cbig;
+assert_eq!(cbig!(9 + 999i), cbig!(0x9 + 0x3e7i));
 ```
 
 When both coefficients are small enough (their significands fit in a
