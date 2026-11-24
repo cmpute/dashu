@@ -750,3 +750,145 @@ fn test_hypot_unlimited_precision() {
     let one = DBig::ONE;
     let _ = one.hypot(&one);
 }
+
+/// `hypot` does not depend on where the operands sit in the exponent range: scaling both by the
+/// same power of the base scales the result. Regressions: operands near `2^(isize::MIN/2)` gave
+/// `Err(Underflow)`, 0 or a huge positive exponent (a debug overflow panic); operands near
+/// `2^(isize::MAX/2)` with a significand wider than the precision gave `Err(Overflow)`.
+#[test]
+fn test_hypot_is_exponent_invariant() {
+    fn check<R: ErrorBounds, const B: Word>(p: usize, a: i64, b: i64, gap: isize, e: isize) {
+        let ctx = Context::<R>::new(p);
+        let at = |e: isize| {
+            ctx.hypot(&Repr::<B>::new(a.into(), e), &Repr::<B>::new(b.into(), e + gap))
+                .unwrap_or_else(|err| panic!("hypot({a}·B^{e}, {b}·B^({e}+{gap})): {err:?}"))
+        };
+        let want = at(0).map(|v| {
+            let r = v.into_repr();
+            FBig::<R, B>::from_parts(r.significand().clone(), r.exponent() + e)
+        });
+        assert_eq!(at(e), want, "hypot({a}·B^{e}, {b}·B^({e}+{gap})) at {p} digits");
+    }
+    let exponents = [
+        isize::MIN / 2 - 70,
+        isize::MIN / 2,
+        isize::MIN / 2 + 64,
+        isize::MIN / 4,
+        isize::MAX / 2 - 3,
+        isize::MAX / 2,
+        isize::MAX / 2 + 10,
+        isize::MAX - 2000,
+        isize::MIN + 2000,
+    ];
+    for e in exponents {
+        for (a, b, gap) in [
+            (1i64, 1i64, 0isize),
+            (1, 5, 0),
+            (1, 47, 0),
+            (1, 1023, 0),
+            (1, (1 << 40) - 1, 0),
+            (3, 4, 0),
+            (7, 4, 0),
+            (7, 5, -30),
+            (1, 1, 300),
+        ] {
+            for p in [1usize, 2, 10, 20, 50, 53, 100, 500] {
+                check::<mode::HalfEven, 2>(p, a, b, gap, e);
+                check::<mode::Down, 2>(p, a, b, gap, e);
+                check::<mode::Up, 2>(p, a, b, gap, e);
+                check::<mode::HalfAway, 10>(p, a, b, gap, e);
+                check::<mode::Zero, 10>(p, a, b, gap, e);
+            }
+        }
+    }
+
+    // the reported shapes, spelled out
+    let ctx = Context::<mode::HalfEven>::new(53);
+    let one = Repr::<2>::one();
+    let sqrt2 = ctx.hypot(&one, &one).unwrap().value();
+    for e in [isize::MIN / 2, isize::MIN / 2 + 64] {
+        let tiny = Repr::<2>::new(1.into(), e);
+        let r = ctx.hypot(&one, &tiny).unwrap();
+        assert_eq!(r, Inexact(FBig::ONE, NoOp), "hypot(1, 2^{e})");
+        let r = ctx.hypot(&tiny, &tiny).unwrap().value();
+        let expect =
+            Repr::<2>::new(sqrt2.repr().significand().clone(), sqrt2.repr().exponent() + e);
+        assert_eq!(r.repr(), &expect, "hypot(2^{e}, 2^{e})");
+        // through the convenience API (this returned 0)
+        let (a, b) = (
+            FBig::<mode::HalfEven, 2>::ONE,
+            FBig::<mode::HalfEven, 2>::from_parts(1.into(), e),
+        );
+        assert_eq!(a.with_precision(53).value().hypot(&b), FBig::<mode::HalfEven, 2>::ONE);
+    }
+}
+
+/// At the very edge of the exponent range the result itself can be out of range, and only then
+/// is a range error reported.
+#[test]
+fn test_hypot_range_errors() {
+    use dashu_float::FpError;
+    let ctx = Context::<mode::HalfEven>::new(10);
+    // 2^(MAX-1)·√2 has a 10-bit significand at exponent MAX-10: representable
+    let big = Repr::<2>::new(1.into(), isize::MAX - 1);
+    assert!(ctx.hypot(&big, &big).is_ok());
+    // hypot(x, tiny) = x (inexact) for the largest power of two
+    let r = ctx.hypot(&big, &Repr::one()).unwrap();
+    assert_eq!(r, Inexact(FBig::from_parts(1.into(), isize::MAX - 1), NoOp));
+    // a 10-bit significand times 2^(MAX-1) is beyond the range
+    let wide = Repr::<2>::new(1023.into(), isize::MAX - 1);
+    assert_eq!(ctx.hypot(&wide, &wide), Err(FpError::Overflow(Sign::Positive)));
+    // 2^(MIN+1)·√2 needs a 10-bit significand below the smallest exponent
+    let small = Repr::<2>::new(1.into(), isize::MIN + 1);
+    assert_eq!(ctx.hypot(&small, &small), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(
+        ctx.hypot(&small, &Repr::zero()),
+        Ok(Exact(FBig::from_parts(1.into(), isize::MIN + 1)))
+    );
+}
+
+/// A negligible second operand costs one rounding of the first, in every mode. Regression: under
+/// `Up`/`Down` the cost grew with the exponent gap (`hypot(1, 10^10000000)` took two minutes).
+#[test]
+fn test_hypot_negligible_operand() {
+    let ten37 = IBig::from(10u8).pow(37);
+    for gap in [40isize, 10_000, 10_000_000, isize::MAX / 2, isize::MAX - 2] {
+        let small = Repr::<10>::one();
+        let large = Repr::<10>::new(1.into(), gap);
+        for (a, b) in [(&small, &large), (&large, &small)] {
+            let up = Context::<mode::Up>::new(38).hypot(a, b).unwrap();
+            assert_eq!(up, Inexact(FBig::from_parts(ten37.clone() + IBig::ONE, gap - 37), AddOne));
+            let away = Context::<mode::Away>::new(38).hypot(a, b).unwrap();
+            assert_eq!(
+                away,
+                Inexact(FBig::from_parts(ten37.clone() + IBig::ONE, gap - 37), AddOne)
+            );
+            let down = Context::<mode::Down>::new(38).hypot(a, b).unwrap();
+            assert_eq!(down, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+            let zero = Context::<mode::Zero>::new(38).hypot(a, b).unwrap();
+            assert_eq!(zero, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+            let even = Context::<mode::HalfEven>::new(38).hypot(a, b).unwrap();
+            assert_eq!(even, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+        }
+    }
+    // a first operand wider than the precision: the sticky part breaks an exact tie upward
+    let a = Repr::<10>::new(125.into(), 0);
+    let b = Repr::<10>::new(1.into(), -1000);
+    let r = Context::<mode::HalfEven>::new(2).hypot(&a, &b).unwrap();
+    assert_eq!(r, Inexact(FBig::from_parts(13.into(), 1), AddOne));
+    // just outside the shortcut: the gap is too small to be negligible at the precision
+    for p in [1usize, 20, 50, 100, 500] {
+        for gap in [
+            p as isize / 2 - 1,
+            p as isize / 2,
+            p as isize / 2 + 1,
+            p as isize / 2 + 3,
+            p as isize,
+        ] {
+            let (a, b) = (Repr::<2>::new(3.into(), gap), Repr::<2>::new(5.into(), 0));
+            assert_hypot_correct_all_modes::<2>(p, &a, &b);
+            let (a, b) = (Repr::<10>::new(3.into(), gap), Repr::<10>::new(5.into(), 0));
+            assert_hypot_correct_all_modes::<10>(p, &a, &b);
+        }
+    }
+}

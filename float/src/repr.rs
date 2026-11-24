@@ -2,7 +2,7 @@ use crate::{
     error::{assert_finite, FpError, FpResult},
     fbig::FBig,
     round::{Round, Rounded},
-    utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
+    utils::{ceil_usize, digit_len, shl_digits, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -854,6 +854,49 @@ impl<R: Round> Context<R> {
         } else {
             Ok(Exact(Repr::new_wide(significand, exponent)?))
         }
+    }
+
+    /// Round `v + δ` to this context's precision, where `δ` is a nonzero perturbation with the
+    /// sign `sticky` that is too small to be visible next to `v`: with `pad = max(0, precision +
+    /// 1 − digits(v))`, it must satisfy `|δ| ≤ B^(v.exponent − pad − 2)`.
+    ///
+    /// Such a `δ` can only act as a sticky part: every rounding boundary (a representable value
+    /// or a midpoint between two) near `v` is a multiple of half a unit in the last place of the
+    /// `precision + 1`-digit grid `v` is padded to, so none lies strictly between `v` and
+    /// `v + δ`, and `v + δ` rounds like `v` with one extra unit two digits further down. This is
+    /// how a function whose value is a known closed form plus a negligible tail (`exp(x) = 1 + x
+    /// + …` for a tiny `x`, `hypot(a, b) = |a| + …` for a negligible `b`) is rounded directly —
+    /// the Ziv loop would need a working precision proportional to `log(1/|δ|)` to see the tail.
+    ///
+    /// `v` must be finite and nonzero and the precision limited. The result is always inexact.
+    pub(crate) fn round_sticky<const B: Word>(
+        &self,
+        v: &Repr<B>,
+        sticky: Sign,
+    ) -> FpResult<FBig<R, B>> {
+        debug_assert!(self.is_limited() && v.is_finite() && !v.significand.is_zero());
+        let pad = (self.precision + 1).saturating_sub(v.digits()) + 2;
+        let unit = match sticky {
+            Sign::Positive => IBig::ONE,
+            Sign::Negative => IBig::NEG_ONE,
+        };
+        // Round in a frame whose exponent is zero, then restore the exponent with a range
+        // check: the padded significand's own exponent can lie below `isize::MIN`.
+        let rounded = self.repr_round(Repr {
+            significand: shl_digits::<B>(&v.significand, pad) + unit,
+            exponent: 0,
+        });
+        let exponent = rounded.value_ref().exponent as i128 + v.exponent as i128 - pad as i128;
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(v.sign()));
+        }
+        if exponent <= isize::MIN as i128 {
+            return Err(FpError::Underflow(v.sign()));
+        }
+        Ok(rounded.map(|mut r| {
+            r.exponent = exponent as isize;
+            FBig::new(r, *self)
+        }))
     }
 
     /// Round the repr to the desired precision

@@ -1,15 +1,13 @@
 use dashu_base::{
-    ring::DivRem, Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem,
-    UnsignedAbs,
+    ring::DivRem, Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, UnsignedAbs,
 };
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    ball::Ball,
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{mode, ErrorBounds, Round},
+    round::{ErrorBounds, Round},
     utils::{digit_len, shl_digits, split_digits_ref},
 };
 use core::cmp::Ordering;
@@ -299,7 +297,7 @@ impl<R: ErrorBounds> Context<R> {
     /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
     /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
     /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The result is correctly rounded
-    /// via a Ziv retry loop (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
+    /// (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
     ///
     /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
     ///
@@ -339,49 +337,51 @@ impl<R: ErrorBounds> Context<R> {
             return self.finish_rounded(self.repr_round_ref(&large));
         }
 
-        // The result is `sqrt(large² + small²)`, i.e. ∈ [large, large·√2]. It overflows only when
-        // `large` is so large that the result reaches the infinity sentinel exponent — unreachable
-        // for real inputs, but pre-checked here so the Ziv closure can use infallible `FBig`
-        // arithmetic.
-        if large.exponent >= isize::MAX - 1 {
-            return Err(FpError::Overflow(Sign::Positive));
+        // Exponent arithmetic below is done in `i128`: the operands can sit anywhere in the
+        // `isize` exponent range, and the result must not depend on where.
+        let p = self.precision as i128;
+        let (large_exp, small_exp) = (large.exponent as i128, small.exponent as i128);
+
+        // A negligible smaller operand: `hypot = large + δ` with `0 < δ < small²/(2·large)`.
+        // Once `δ` is below the last digit that can influence the rounding of `large`, the result
+        // is `large` rounded with a positive sticky part — no need for the `2·gap` digits the
+        // exact sum of squares would take (`hypot(1, 10^10000000)` is a single rounding).
+        // With `small < B^hi_s` and `large ≥ B^lo_l`, `δ < B^(2·hi_s − lo_l)`.
+        let hi_s = small_exp + small.digits_ub() as i128;
+        let digits_lb_l = large.digits_lb() as i128;
+        let lo_l = large_exp + digits_lb_l - 1;
+        let pad = (p + 1 - digits_lb_l).max(0);
+        if 2 * hi_s - lo_l <= large_exp - pad - 2 {
+            return self.round_sticky(&large, Sign::Positive);
         }
 
-        let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
-        self.ziv(initial_guard, |guard| {
-            let gctx = Context::<mode::HalfEven>::new(self.precision + guard);
-            // result = sqrt(large² + small²), with both operands scaled down by `k` base-B digits
-            // before squaring (so `large²` can't overflow the exponent) and the root scaled back:
-            // sqrt(L² + S²) · B^k = sqrt(large² + small²) for L = large·B⁻ᵏ, S = small·B⁻ᵏ. No
-            // division — so for integer inputs every step is exact (MPFR's `exact` flag), and an
-            // all-exact chain yields the exact true value. The tracking variants report radius 0
-            // then, which `ziv` accepts without the containment test (it can't certify an
-            // exactly-representable result under directed rounding — e.g. hypot(3,4)=5,
-            // hypot(5,12)=13 — which sits on a one-sided preimage boundary).
-            // Scale down by the largest raw exponent of the *two* operands: base-B
-            // normalization can leave the smaller value with the larger raw exponent
-            // (e.g. `4·2^e` normalizes to `1·2^(e+2)`), and it is small's square that
-            // would then collide with the infinity sentinel.
-            let k = (large.exponent.max(small.exponent) as i128 - (isize::MAX as i128 - 2) / 2)
-                .max(0) as isize;
-            let wp = gctx.precision;
-            // The input roundings' exactness folds through `from_rounded`: an exact input keeps
-            // `rad = 0`, so an all-exact chain (integer inputs, no rounding anywhere) carries a
-            // zero radius — the exactly-representable directed-rounding case that no nonzero
-            // radius could certify (e.g. hypot(3,4)=5, hypot(5,12)=13).
-            let large_ball = Ball::from_rounded(gctx.repr_round_ref(&large), wp);
-            let small_ball = Ball::from_rounded(gctx.repr_round_ref(&small), wp);
-            // The shifted balls are used twice (the square), so bind them once — a shift is a full
-            // O(p) clone otherwise.
-            let l = large_ball.shift(-k);
-            let s = small_ball.shift(-k);
-            let l_sq = l.mul(&l, wp)?;
-            let s_sq = s.mul(&s, wp)?;
-            let sum = l_sq.add(&s_sq, wp)?;
-            let root = sum.sqrt(wp)?;
-            let result = root.shift(k); // exact exponent shift — scales back, radius unchanged
-            Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
-        })
+        // Otherwise the exponent gap is bounded by the operands' sizes and the precision, so the
+        // sum of squares is computed *exactly* and handed to the (single-step, correctly rounded)
+        // square root: the result and its `Exact`/`Inexact` flag need no certification. Both
+        // operands are first scaled by `B⁻ᵏ` — an exact exponent shift that puts the larger one
+        // just below 1 — so that the squares cannot leave the exponent range, wherever the
+        // operands sit in it; the root is scaled back at the end.
+        let k = large_exp + large.digits_ub() as i128;
+        let scaled = |v: &Repr<B>| Repr::<B> {
+            significand: v.significand.clone(),
+            exponent: (v.exponent as i128 - k) as isize,
+        };
+        let (l, s) = (scaled(&large), scaled(&small));
+        let sum = &(&l * &l) + &(&s * &s);
+        let root = self.sqrt(&sum)?;
+        let exponent = root.value_ref().repr.exponent as i128 + k;
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(Sign::Positive));
+        }
+        if exponent <= isize::MIN as i128 {
+            // (the *value* is at least `large`, but its normalized significand has too many
+            // digits to keep the exponent above the sentinel)
+            return Err(FpError::Underflow(Sign::Positive));
+        }
+        Ok(root.map(|mut v| {
+            v.repr.exponent = exponent as isize;
+            v
+        }))
     }
 }
 
