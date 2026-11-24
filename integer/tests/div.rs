@@ -380,3 +380,54 @@ fn test_div_rem_euclid_ubig_ibig() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::op_ref)]
+fn test_div_rem_ibig_unsigned() {
+    // The remainder has the sign of the dividend, so it's returned as an IBig
+    // when the divisor is an unsigned primitive.
+    assert_eq!(ibig!(-23) % 10u8, ibig!(-3));
+    assert_eq!(ibig!(-23) % &10u8, ibig!(-3));
+    assert_eq!(&ibig!(-23) % 10u8, ibig!(-3));
+    assert_eq!(&ibig!(-23) % &10u8, ibig!(-3));
+    assert_eq!(ibig!(23) % 10u8, ibig!(3));
+    assert_eq!(ibig!(-24) % 2u8, ibig!(0));
+    assert_eq!(ibig!(-1) % 2u32, ibig!(-1));
+    assert_eq!(ibig!(-1) % u128::MAX, ibig!(-1));
+    assert_eq!(ibig!(-255) % u8::MAX, ibig!(0));
+    assert_eq!(ibig!(-509) % u8::MAX, ibig!(-254));
+    assert_eq!(-(IBig::ONE << 200) % 7usize, ibig!(-4));
+
+    assert_eq!(ibig!(-23).div_rem(10u32), (ibig!(-2), ibig!(-3)));
+    assert_eq!(ibig!(-23).div_rem(&10u32), (ibig!(-2), ibig!(-3)));
+    assert_eq!((&ibig!(-23)).div_rem(10u32), (ibig!(-2), ibig!(-3)));
+    assert_eq!((&ibig!(-23)).div_rem(&10u32), (ibig!(-2), ibig!(-3)));
+    assert_eq!((&ibig!(-1)).div_rem(2u32), (ibig!(0), ibig!(-1)));
+    assert_eq!(ibig!(23).div_rem(10u64), (ibig!(2), ibig!(3)));
+
+    // likewise the quotient of an unsigned primitive divided by an IBig can be negative
+    assert_eq!(23u8 / ibig!(-10), ibig!(-2));
+    assert_eq!(23u8 / &ibig!(-10), ibig!(-2));
+    assert_eq!(&23u8 / ibig!(-10), ibig!(-2));
+    assert_eq!(&23u8 / &ibig!(-10), ibig!(-2));
+    assert_eq!(23u8 / ibig!(10), ibig!(2));
+    assert_eq!(u128::MAX / ibig!(-1), -IBig::from(u128::MAX));
+    assert_eq!(7usize / -(IBig::ONE << 200), ibig!(0));
+
+    let mut x = ibig!(-23);
+    assert_eq!(x.div_rem_assign(10u8), ibig!(-3));
+    assert_eq!(x, ibig!(-2));
+    let mut x = ibig!(-23);
+    assert_eq!(x.div_rem_assign(&10u8), ibig!(-3));
+    assert_eq!(x, ibig!(-2));
+
+    // consistent with the IBig divisor for every combination of signs
+    for a in -20i8..=20 {
+        for b in 1u8..=20 {
+            let (x, y) = (IBig::from(a), IBig::from(b));
+            assert_eq!(&x % b, &x % &y);
+            assert_eq!((&x).div_rem(b), (&x).div_rem(&y));
+            assert_eq!((&x / b) * b + (&x % b), x);
+        }
+    }
+}
