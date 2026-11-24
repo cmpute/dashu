@@ -267,6 +267,148 @@ fn test_rbig_in_expanded_scientific_zero_leading() {
 }
 
 #[test]
+fn test_rbig_in_expanded_rounding_odd_radix() {
+    // In an odd radix the half-way point has no finite expansion, so a single guard digit
+    // cannot decide the rounding: (radix-1)/2 followed by anything larger is above half.
+    assert_eq!(format!("{:.4}", rbig!(1 / 7).in_expanded(3)), "0.0110"); // 0.0102|12..
+    assert_eq!(format!("{:.0}", rbig!(5 / 9).in_expanded(3)), "1"); // 0.|12
+    assert_eq!(format!("{:.0}", rbig!(4 / 9).in_expanded(3)), "0"); // 0.|11
+    assert_eq!(format!("{:.1}", rbig!(1 / 5).in_expanded(3)), "0.1"); // 0.0|121..
+    assert_eq!(format!("{:.0e}", rbig!(14 / 9).in_expanded(3)), "2@0"); // 1.|12
+    assert_eq!(format!("{:.1e}", rbig!(26 / 27).in_expanded(3)), "1.0@0"); // 2.2|2@-1
+    assert_eq!(format!("{:.2}", rbig!(~13/25).in_expanded(5)), "0.23"); // exact: 0.23
+    assert_eq!(format!("{:.1}", rbig!(~13/25).in_expanded(5)), "0.3"); // 0.2|3
+
+    // exact ties still round away from zero
+    assert_eq!(format!("{:.0}", rbig!(1 / 2).in_expanded(3)), "1");
+    assert_eq!(format!("{:.1}", rbig!(1 / 6).in_expanded(3)), "0.1");
+    assert_eq!(format!("{:.0}", rbig!(-1 / 2).in_expanded(3)), "-1");
+
+    // every rounded output is within half a unit in the last place of the value
+    for radix in [3u8, 5, 7, 9, 10, 15, 16, 35] {
+        for den in 1u32..=30 {
+            for num in 0..=2 * den {
+                let x = RBig::from_parts(num.into(), den.into());
+                for prec in 0usize..=4 {
+                    let half_ulp = RBig::from_parts(1.into(), UBig::from(radix).pow(prec) * 2u8);
+
+                    let fixed = format!("{:.*}", prec, x.in_expanded(radix));
+                    let back = RBig::from_str_expanded(&fixed, radix).unwrap();
+                    let err = if back > x { &back - &x } else { &x - &back };
+                    assert!(err <= half_ulp, "{x} in radix {radix} printed as {fixed}");
+                    // a tie is rounded away from zero
+                    assert!(err < half_ulp || back > x, "{x} in radix {radix} printed as {fixed}");
+
+                    if num > 0 {
+                        // the last place of the scientific form is `prec` digits below
+                        // the leading digit of the printed value
+                        let sci = format!("{:.*e}", prec, x.in_expanded(radix));
+                        let back = RBig::from_str_expanded(&sci, radix).unwrap();
+                        let exp: isize = sci.rsplit(['e', '@']).next().unwrap().parse().unwrap();
+                        let half_ulp = half_ulp * RBig::from(radix).pow(exp);
+                        let err = if back > x { &back - &x } else { &x - &back };
+                        assert!(err <= half_ulp, "{x} in radix {radix} printed as {sci}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_rbig_in_expanded_alternate_long_terminating() {
+    // `{:#}` is exact: a finite expansion is printed in full even when it is longer than
+    // the default precision or the repetend detection budget.
+    for radix in [2u8, 3, 10, 16] {
+        for k in [63usize, 64, 65, 100, 127, 128, 129, 300] {
+            let x = RBig::from_parts(1.into(), UBig::from(radix).pow(k));
+            let printed = format!("{:#}", x.in_expanded(radix));
+            assert_eq!(printed.len(), 2 + k.max(64), "radix {radix}, k {k}: {printed}");
+            assert_eq!(RBig::from_str_expanded(&printed, radix).unwrap(), x, "{printed}");
+
+            let relaxed = Relaxed::from_parts(3.into(), UBig::from(radix).pow(k) * 3u8);
+            assert_eq!(format!("{:#}", relaxed.in_expanded(radix)), printed);
+        }
+    }
+    // 3/2^200 has 200 decimal digits after the point
+    let x = RBig::from_parts(3.into(), UBig::ONE << 200);
+    let printed = format!("{:#}", x.in_expanded(10));
+    assert_eq!(printed.len(), 202);
+    assert_eq!(RBig::from_str_decimal(&printed).unwrap(), x);
+    // the precision is only a minimal width for exact output
+    assert_eq!(format!("{:#.2}", rbig!(1 / 8).in_expanded(10)), "0.125");
+    assert_eq!(format!("{:#.5}", rbig!(1 / 8).in_expanded(10)), "0.12500");
+    assert_eq!(format!("{:#.0}", rbig!(7).in_expanded(10)), "7");
+    assert_eq!(format!("{:#.2}", rbig!(7).in_expanded(10)), "7.00");
+    // without the alternate flag the output is rounded as before
+    assert_eq!(format!("{:.2}", rbig!(1 / 8).in_expanded(10)), "0.13");
+    let x = RBig::from_parts(1.into(), UBig::from(10u8).pow(65));
+    assert_eq!(format!("{}", x.in_expanded(10)), format!("0.{}", "0".repeat(64)));
+}
+
+#[test]
+fn test_rbig_in_expanded_repetend_filling_budget() {
+    // prefix + period == 128, exactly the default detection budget
+    for (x, radix) in [(rbig!(1 / 512), 3u8), (rbig!(1 / 5000), 6u8)] {
+        let printed = format!("{:#}", x.in_expanded(radix));
+        assert!(printed.contains('('), "{x} in radix {radix}: {printed}");
+        assert_eq!(RBig::from_str_expanded(&printed, radix).unwrap(), x);
+    }
+    // 1/256 in radix 3 has period 64
+    let printed = format!("{:#}", rbig!(1 / 256).in_expanded(3));
+    assert!(printed.contains('('));
+    assert_eq!(RBig::from_str_expanded(&printed, 3).unwrap(), rbig!(1 / 256));
+
+    // 1/149 has period 148: {:#.147} gives a budget of exactly 148 digits
+    let x = rbig!(1 / 149);
+    for prec in [147usize, 148, 200] {
+        let printed = format!("{:#.*}", prec, x.in_expanded(10));
+        assert!(printed.contains('('), "{printed}");
+        assert_eq!(RBig::from_str_decimal(&printed).unwrap(), x);
+    }
+    // beyond the budget the output falls back to the rounded form
+    assert_eq!(format!("{:#}", x.in_expanded(10)), format!("{}", x.in_expanded(10)));
+    assert_eq!(format!("{:#.146}", x.in_expanded(10)), format!("{:.146}", x.in_expanded(10)));
+}
+
+#[test]
+fn test_rbig_in_expanded_alternate_roundtrip() {
+    // every value whose expansion is resolved within the budget reads back exactly
+    for radix in [2u8, 3, 6, 7, 10, 12, 16, 36] {
+        for den in 1u32..=40 {
+            for num in 0..=den + 3 {
+                let x = RBig::from_parts(num.into(), den.into());
+                let printed = format!("{:#}", x.in_expanded(radix));
+                let back = RBig::from_str_expanded(&printed, radix).unwrap();
+                assert_eq!(back, x, "{x} in radix {radix} printed as {printed}");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_rbig_in_expanded_scientific_zero_marker() {
+    // `e` is only the exponent marker in radix 10 (it is a digit from radix 15 on)
+    assert_eq!(format!("{:e}", rbig!(0).in_expanded(10)), "0e0");
+    assert_eq!(format!("{:E}", rbig!(0).in_expanded(10)), "0E0");
+    for radix in [2u8, 8, 16, 36] {
+        assert_eq!(format!("{:e}", rbig!(0).in_expanded(radix)), "0@0");
+        assert_eq!(format!("{:E}", rbig!(0).in_expanded(radix)), "0@0");
+        assert_eq!(format!("{:.3e}", rbig!(0).in_expanded(radix)), "0.000@0");
+        assert_eq!(format!("{:+.1E}", rbig!(~0).in_expanded(radix)), "+0.0@0");
+        for x in [rbig!(0), rbig!(1), rbig!(-5 / 8)] {
+            for printed in [
+                format!("{:e}", x.in_expanded(radix)),
+                format!("{:E}", x.in_expanded(radix)),
+                format!("{:.3e}", x.in_expanded(radix)),
+            ] {
+                assert_eq!(RBig::from_str_expanded(&printed, radix).unwrap(), x, "{printed}");
+            }
+        }
+    }
+}
+
+#[test]
 fn test_relaxed_from_str_radix() {
     assert_eq!(Relaxed::from_str_radix("", 2).unwrap_err(), ParseError::NoDigits);
     assert_eq!(Relaxed::from_str_radix("+", 2).unwrap_err(), ParseError::NoDigits);

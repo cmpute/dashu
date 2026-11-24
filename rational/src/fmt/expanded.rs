@@ -5,10 +5,9 @@
 //! notation, and repetend display.
 
 use alloc::collections::BTreeMap;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter, LowerExp, UpperExp, Write};
-use dashu_base::{DivRem, Sign, UnsignedAbs};
+use dashu_base::{DivRem, Gcd, Sign, UnsignedAbs};
 use dashu_int::{fast_div::ConstDivisor, UBig, Word};
 
 use crate::rbig::{RBig, Relaxed};
@@ -22,9 +21,16 @@ use crate::rbig::{RBig, Relaxed};
 ///
 /// - `{}` — default expansion with a fixed number of fractional digits.
 /// - `{:.N}` — exactly N digits after the radix point.
-/// - `{:#}` — detect and display the repetend in parentheses (e.g., `0.(3)`).
-/// - `{:e}` / `{:E}` — scientific notation. `#` has no effect in this mode.
+/// - `{:#}` — exact display: a finite expansion is printed in full (padded with zeros up to
+///   the precision), and a repeating one is printed with its repetend in parentheses
+///   (e.g., `0.(3)`). The repetend is found when the non-repeating digits and the period
+///   together are at most `max(N + 1, 128)` digits long, where `N` is the precision;
+///   otherwise the output falls back to the rounded form of `{:.N}`.
+/// - `{:e}` / `{:E}` — scientific notation. `#` has no effect in this mode. The exponent
+///   marker is `e` / `E` for radix 10 and `@` for every other radix (where `e` can be a digit).
 /// - `{:.Ne}` / `{:.NE}` — scientific notation with N digits of precision.
+///
+/// Rounded output is rounded to the nearest value, with ties away from zero.
 pub struct InExpanded<'a> {
     sign: Sign,
     num_abs: UBig,
@@ -32,79 +38,64 @@ pub struct InExpanded<'a> {
     radix: u8,
 }
 
-/// Returned by `expand`.
-struct Expanded {
-    int_digits: Vec<u8>,
-    frac_prefix: Vec<u8>, // non-repeating fractional digits
-    repetend: Vec<u8>,    // repeating part (empty = terminating)
-}
-
-/// Perform long division and record digits.
-///
-/// If `track_repetend` is true, the expansion is produced one digit at a time so a
-/// cycle can be detected and displayed exactly (e.g. `1/6 -> 0.1(6)`). Otherwise a
-/// batched fast path is used: each iteration emits [`digits_per_word`] digits via a
-/// single division by a precomputed [`ConstDivisor`], trading `k` big-int divisions
-/// for one. Stops once `max_digits` fractional digits have been produced or the
-/// expansion terminates (or a cycle is found, in the repetend path).
-fn expand(num: &UBig, den: &UBig, radix: u8, max_digits: usize, track_repetend: bool) -> Expanded {
-    let (int_part, mut rem) = num.div_rem(den);
-    let int_digits: Vec<u8> = int_part
-        .to_digits(radix as Word)
+/// Convert an integer into its base-`radix` digits, most-significant first.
+fn to_radix_digits(n: &UBig, radix: u8) -> Vec<u8> {
+    n.to_digits(radix as Word)
         .into_iter()
         .map(|d| d as u8)
-        .collect();
+        .collect()
+}
 
-    if track_repetend {
-        // Per-digit long division so the cycle can be detected at single-digit granularity.
-        let mut frac_digits: Vec<u8> = Vec::with_capacity(max_digits);
-        let mut seen: BTreeMap<UBig, usize> = BTreeMap::new();
-        let mut repetend_start: Option<usize> = None;
-
-        while frac_digits.len() < max_digits {
-            if rem.is_zero() {
-                break;
-            }
-            if let Some(&pos) = seen.get(&rem) {
-                repetend_start = Some(pos);
-                break;
-            }
-            seen.insert(rem.clone(), frac_digits.len());
-
-            let scaled = &rem * radix;
-            let (digit, new_rem) = scaled.div_rem(den);
-            rem = new_rem;
-            // digit is guaranteed 0..radix-1 (radix <= 36), so fits in u8
-            frac_digits.push(u8::try_from(&digit).unwrap());
+/// Exact expansion of the fraction `rem / den` (with `rem < den`), produced one digit at a
+/// time so that a cycle can be detected at single-digit granularity (e.g. `1/6 -> 0.1(6)`).
+///
+/// Returns the non-repeating prefix and the repetend (empty for a terminating expansion)
+/// if the expansion is resolved within `budget` digits, i.e. if the number of prefix digits
+/// plus the period is at most `budget`. Returns `None` otherwise.
+fn expand_exact(rem: &UBig, den: &UBig, radix: u8, budget: usize) -> Option<(Vec<u8>, Vec<u8>)> {
+    let mut rem = rem.clone();
+    let mut digits: Vec<u8> = Vec::new();
+    let mut seen: BTreeMap<UBig, usize> = BTreeMap::new();
+    loop {
+        // The state after `digits.len()` digits is checked before the budget, so that an
+        // expansion using exactly `budget` digits is still recognized.
+        if rem.is_zero() {
+            return Some((digits, Vec::new()));
         }
+        if let Some(&pos) = seen.get(&rem) {
+            let repetend = digits.split_off(pos);
+            return Some((digits, repetend));
+        }
+        if digits.len() >= budget {
+            return None;
+        }
+        seen.insert(rem.clone(), digits.len());
 
-        let (frac_prefix, repetend) = if let Some(start) = repetend_start {
-            let repetend = frac_digits.split_off(start);
-            (frac_digits, repetend)
-        } else {
-            (frac_digits, Vec::new())
-        };
-        Expanded {
-            int_digits,
-            frac_prefix,
-            repetend,
-        }
-    } else {
-        // Batched fast path: emit k digits per big-int division.
-        let radix_word = radix as Word;
-        let (k, radix_k) = if radix_word == 10 {
-            DECIMAL_DIGITS_PER_WORD
-        } else {
-            digits_per_word(radix_word)
-        };
-        let den_div = ConstDivisor::new(den.clone());
-        let frac_digits = expand_frac_fast(rem, &den_div, radix_word, radix_k, k, max_digits);
-        Expanded {
-            int_digits,
-            frac_prefix: frac_digits,
-            repetend: Vec::new(),
-        }
+        let (digit, new_rem) = (&rem * radix).div_rem(den);
+        rem = new_rem;
+        // digit is guaranteed 0..radix-1 (radix <= 36), so fits in u8
+        digits.push(u8::try_from(&digit).unwrap());
     }
+}
+
+/// Whether the expansion of `rem / den` in the given radix is finite, that is whether every
+/// prime factor of the reduced denominator divides the radix.
+fn expansion_terminates(rem: &UBig, den: &UBig, radix: u8) -> bool {
+    if rem.is_zero() {
+        return true;
+    }
+    let mut d = den / rem.gcd(den);
+    // strip the factors shared with the radix, a word-sized power of the radix at a time
+    let (_, radix_k) = digits_per_word(radix as Word);
+    let radix_k = UBig::from(radix_k);
+    loop {
+        let g = (&d).gcd(&radix_k);
+        if g.is_one() {
+            break;
+        }
+        d /= g;
+    }
+    d.is_one()
 }
 
 /// Largest `k` such that `radix^k <= Word::MAX`, together with the value `radix^k`, used to batch
@@ -119,49 +110,46 @@ const fn digits_per_word(radix: Word) -> (usize, Word) {
     (k, power)
 }
 
-/// Precomputed value for the common decimal (radix 10) case.
-///
-/// This is a separate constant rather than a `radix == 10` branch inside `digits_per_word`:
-/// the const initializer calls `digits_per_word(10)`, so a self-referential branch there would
-/// form a const-evaluation cycle. Callers read this constant directly on the radix-10 path.
-const DECIMAL_DIGITS_PER_WORD: (usize, Word) = digits_per_word(10);
-
 /// Extract up to `limit` fractional base-`radix` digits of the value `rem / den`
 /// (with `rem < den`, i.e. the value is in `[0, 1)`), stopping early if the expansion
-/// terminates. Each iteration produces `k` digits: multiply the remainder by `radix^k`,
-/// divide once by the precomputed `den_div`, then split the word-sized quotient chunk
-/// into `k` digits (most-significant first).
-fn expand_frac_fast(
-    mut rem: UBig,
-    den_div: &ConstDivisor,
-    radix: Word,
-    radix_k: Word,
-    k: usize,
-    limit: usize,
-) -> Vec<u8> {
-    let mut digits: Vec<u8> = Vec::with_capacity(limit);
-    let mut chunk: Vec<u8> = Vec::with_capacity(k); // reused; one chunk, LSB-first
+/// terminates. Returns the digits together with the remainder left after them: the
+/// part of the value not covered by the returned digits is `remainder / den` units of the
+/// last digit (zero iff the returned digits are the complete expansion).
+///
+/// Each iteration produces up to `k` digits (`radix^k` being the largest power of the radix
+/// fitting a word): multiply the remainder by `radix^k`, divide once by the precomputed
+/// divisor, then split the word-sized quotient chunk into `k` digits (most-significant first).
+/// This trades `k` big-int divisions for one.
+fn expand_frac(mut rem: UBig, den: &UBig, radix: u8, limit: usize) -> (Vec<u8>, UBig) {
+    let radix = radix as Word;
+    let (k, radix_k) = digits_per_word(radix);
+    let den_div = ConstDivisor::new(den.clone());
+
+    let mut digits: Vec<u8> = Vec::new();
     while digits.len() < limit && !rem.is_zero() {
-        let scaled = &rem * radix_k;
-        let (quot, new_rem) = scaled.div_rem(den_div);
+        // The last chunk may be shorter, so that the remainder corresponds to exactly
+        // `limit` digits (it decides the rounding of the last digit).
+        let take = (limit - digits.len()).min(k);
+        let scale = if take == k {
+            radix_k
+        } else {
+            radix.pow(take as u32)
+        };
+        let (quot, new_rem) = (&rem * scale).div_rem(&den_div);
         rem = new_rem;
 
-        // quot < radix^k <= Word::MAX, so it always fits in a single Word.
+        // quot < radix^take <= Word::MAX, so it always fits in a single Word.
         let mut word: Word = quot.try_into().unwrap();
 
-        // split `word` into k base-radix digits, LSB-first
-        chunk.clear();
-        for _ in 0..k {
-            chunk.push((word % radix) as u8);
+        // split `word` into `take` base-radix digits, filling the chunk from its end
+        let start = digits.len();
+        digits.resize(start + take, 0);
+        for d in digits[start..].iter_mut().rev() {
+            *d = (word % radix) as u8;
             word /= radix;
         }
-        // append up to `limit - len` digits, most-significant first
-        let take = (limit - digits.len()).min(k);
-        for i in 0..take {
-            digits.push(chunk[k - 1 - i]);
-        }
     }
-    digits
+    (digits, rem)
 }
 
 /// Default number of fractional digits for a given radix.
@@ -187,16 +175,13 @@ fn propagate_carry(digits: &mut [u8], radix: u8) -> bool {
     true
 }
 
-/// Check the guard digit at position `keep`, truncate, and apply half-up rounding.
-/// Returns `true` if the carry propagated through all `keep` digits (rollover).
-/// Returns `false` immediately if there are not enough digits for a guard.
-fn round_and_carry(digits: &mut Vec<u8>, radix: u8, keep: usize) -> bool {
-    if digits.len() <= keep {
-        return false;
-    }
-    let extra = digits[keep];
-    digits.truncate(keep);
-    extra * 2 >= radix && propagate_carry(digits, radix)
+/// Whether a value whose discarded part is `rem / den` units of the last kept digit is
+/// rounded up (round half up on the magnitude).
+///
+/// The decision is made on the exact remainder rather than on a guard digit: in an odd radix
+/// a single guard digit cannot tell which side of the half-way point the value is on.
+fn rounds_up(rem: &UBig, den: &UBig) -> bool {
+    (rem << 1usize) >= *den
 }
 
 impl Display for InExpanded<'_> {
@@ -220,56 +205,67 @@ impl Display for InExpanded<'_> {
         let prec = f
             .precision()
             .unwrap_or_else(|| default_precision(self.radix));
-        let show_repetend = f.alternate();
+        let (int_part, rem) = (&self.num_abs).div_rem(self.denominator);
+        let mut int_digits = to_radix_digits(&int_part, self.radix);
 
-        // When detecting repetends we need extra digits to find the cycle.
-        let max_digits = if show_repetend {
-            (prec + 1).max(128)
-        } else {
-            prec + 1
-        };
-
-        let expanded =
-            expand(&self.num_abs, self.denominator, self.radix, max_digits, show_repetend);
-
-        let mut int_digits = expanded.int_digits;
-
-        // When repetend display is active, show the exact pattern without rounding.
-        if show_repetend && !expanded.repetend.is_empty() {
-            write_digits(f, &int_digits, self.radix, false)?;
-            if !expanded.frac_prefix.is_empty() || !expanded.repetend.is_empty() {
-                f.write_char('.')?;
-            }
-            write_digits(f, &expanded.frac_prefix, self.radix, false)?;
-            f.write_char('(')?;
-            write_digits(f, &expanded.repetend, self.radix, false)?;
-            f.write_char(')')?;
-        } else {
-            let total_frac: Vec<u8> = if !expanded.repetend.is_empty() {
-                [&expanded.frac_prefix[..], &expanded.repetend[..]].concat()
-            } else {
-                expanded.frac_prefix.clone()
+        // With the alternate flag the value is displayed exactly whenever its expansion can
+        // be resolved: either it is finite, or the repetend is found within the budget.
+        if f.alternate() {
+            // When detecting repetends we need extra digits to find the cycle.
+            let budget = (prec + 1).max(128);
+            let exact = match expand_exact(&rem, self.denominator, self.radix, budget) {
+                // A finite expansion is exact however long it is.
+                None if expansion_terminates(&rem, self.denominator, self.radix) => {
+                    let (mut digits, _) =
+                        expand_frac(rem.clone(), self.denominator, self.radix, usize::MAX);
+                    // the last chunk of digits may extend past the end of the expansion
+                    while digits.last() == Some(&0) {
+                        digits.pop();
+                    }
+                    Some((digits, Vec::new()))
+                }
+                resolved => resolved,
             };
 
-            let mut frac_digits = total_frac;
-
-            if round_and_carry(&mut frac_digits, self.radix, prec)
-                && propagate_carry(&mut int_digits, self.radix)
-            {
-                int_digits.insert(0, 1);
-            }
-
-            // Print integer part
-            write_digits(f, &int_digits, self.radix, false)?;
-
-            // Print fractional part if needed
-            if !frac_digits.is_empty() || prec > 0 {
-                f.write_char('.')?;
-                let printed = frac_digits.len().min(prec);
-                write_digits(f, &frac_digits[..printed], self.radix, false)?;
-                for _ in printed..prec {
-                    f.write_char('0')?;
+            if let Some((frac_prefix, repetend)) = exact {
+                write_digits(f, &int_digits, self.radix, false)?;
+                if !repetend.is_empty() {
+                    f.write_char('.')?;
+                    write_digits(f, &frac_prefix, self.radix, false)?;
+                    f.write_char('(')?;
+                    write_digits(f, &repetend, self.radix, false)?;
+                    f.write_char(')')?;
+                } else if !frac_prefix.is_empty() || prec > 0 {
+                    // all the digits of the finite expansion, padded up to the precision
+                    f.write_char('.')?;
+                    write_digits(f, &frac_prefix, self.radix, false)?;
+                    for _ in frac_prefix.len()..prec {
+                        f.write_char('0')?;
+                    }
                 }
+                return Ok(());
+            }
+        }
+
+        // Otherwise round the expansion to `prec` fractional digits.
+        let (mut frac_digits, rem) = expand_frac(rem, self.denominator, self.radix, prec);
+        if rounds_up(&rem, self.denominator)
+            && propagate_carry(&mut frac_digits, self.radix)
+            && propagate_carry(&mut int_digits, self.radix)
+        {
+            int_digits.insert(0, 1);
+        }
+
+        // Print integer part
+        write_digits(f, &int_digits, self.radix, false)?;
+
+        // Print fractional part if needed
+        if prec > 0 {
+            f.write_char('.')?;
+            write_digits(f, &frac_digits, self.radix, false)?;
+            // the expansion may have terminated early
+            for _ in frac_digits.len()..prec {
+                f.write_char('0')?;
             }
         }
 
@@ -290,8 +286,34 @@ impl UpperExp for InExpanded<'_> {
 }
 
 impl InExpanded<'_> {
+    /// `floor(log_radix(num_abs / denominator))` for a nonzero value.
+    fn floor_log(&self) -> isize {
+        let base = UBig::from(self.radix);
+        let (num, den) = (&self.num_abs, self.denominator);
+        // radix^exp <= value  <=>  num >= den * radix^exp
+        let reaches = |exp: isize| {
+            if exp >= 0 {
+                *num >= den * base.pow(exp as usize)
+            } else {
+                num * base.pow(exp.unsigned_abs()) >= *den
+            }
+        };
+
+        // the difference of the integer logarithms is off by at most one
+        let mut exp = num.ilog(&base) as isize - den.ilog(&base) as isize;
+        while !reaches(exp) {
+            exp -= 1;
+        }
+        while reaches(exp + 1) {
+            exp += 1;
+        }
+        exp
+    }
+
     fn fmt_scientific(&self, f: &mut Formatter<'_>, exp_char: char) -> fmt::Result {
         f.write_str(self.sign.as_sign_str(f.sign_plus()))?;
+        // `e`/`E` are digits in large radices, so the marker is `@` except in decimal
+        let exp_marker = if self.radix == 10 { exp_char } else { '@' };
 
         if self.num_abs.is_zero() {
             f.write_char('0')?;
@@ -302,108 +324,44 @@ impl InExpanded<'_> {
                     f.write_char('0')?;
                 }
             }
-            return write!(f, "{}0", exp_char);
+            return write!(f, "{}0", exp_marker);
         }
 
         let prec = f
             .precision()
             .unwrap_or_else(|| default_precision(self.radix));
-        let exp_marker = if self.radix == 10 { exp_char } else { '@' };
 
-        // Compute integer part and remainder
-        let (int_part, rem) = (&self.num_abs).div_rem(self.denominator);
-
-        let exp: isize;
-        let mut significand_digits: Vec<u8>;
-
-        if !int_part.is_zero() {
-            // Integer part >= 1: exponent = number of int digits - 1
-            let int_digits: Vec<u8> = int_part
-                .to_digits(self.radix as Word)
-                .into_iter()
-                .map(|d| d as u8)
-                .collect();
-            exp = int_digits.len() as isize - 1;
-            significand_digits = int_digits;
-            // Compute fractional digits to reach prec + 2 total (1 before point, prec+1 after)
-            let need_frac = (prec + 2).saturating_sub(significand_digits.len());
-            let more = expand_fraction(rem, self.denominator, self.radix, need_frac);
-            significand_digits.extend_from_slice(&more);
+        // Scale the value by a power of the radix so that its integer part holds exactly
+        // the `prec + 1` significant digits, then round on the exact remainder.
+        let base = UBig::from(self.radix);
+        let mut exp = self.floor_log();
+        let shift = exp - prec as isize;
+        let (num, den) = if shift >= 0 {
+            (self.num_abs.clone(), self.denominator * base.pow(shift as usize))
         } else {
-            // Integer part == 0: find first non-zero fractional digit
-            let mut cur_rem = rem.clone();
-            let mut leading_zeros: isize = 0;
-            loop {
-                if cur_rem.is_zero() {
-                    // The number is exactly zero — should have been caught above
-                    exp = 0;
-                    significand_digits = vec![0];
-                    break;
-                }
-                let scaled = &cur_rem * self.radix;
-                let (d, new_rem) = scaled.div_rem(self.denominator);
-                cur_rem = new_rem;
-                if !d.is_zero() {
-                    leading_zeros += 1;
-                    exp = -leading_zeros;
-                    significand_digits = vec![u8::try_from(&d).unwrap()];
-                    // Compute remaining significand digits
-                    let more = expand_fraction(cur_rem, self.denominator, self.radix, prec + 1);
-                    significand_digits.extend_from_slice(&more);
-                    break;
-                }
-                leading_zeros += 1;
-            }
+            (&self.num_abs * base.pow(shift.unsigned_abs()), self.denominator.clone())
         };
-
-        // Round the significand
-        if round_and_carry(&mut significand_digits, self.radix, prec + 1) {
-            significand_digits.insert(0, 1);
+        let (mut significand, rem) = num.div_rem(&den);
+        if rounds_up(&rem, &den) {
+            significand += UBig::ONE;
         }
-
-        // Re-check for rollover
-        let actual_exp = if significand_digits.len() > prec + 1 {
-            // Rollover happened
+        let mut significand_digits = to_radix_digits(&significand, self.radix);
+        if significand_digits.len() > prec + 1 {
+            // the rounding carried into a new leading digit (e.g. 9.99 -> 10.0)
             significand_digits.truncate(prec + 1);
-            exp + 1
-        } else {
-            exp
-        };
+            exp += 1;
+        }
 
         // Print: first digit, '.', remaining digits, exp marker, exponent
         let upper = exp_char == 'E';
-        let first = significand_digits.first().copied().unwrap_or(0);
-        write_digit_char(f, first, self.radix, upper)?;
-
-        let rest = &significand_digits[1..];
-        if !rest.is_empty() || prec > 0 {
+        write_digit_char(f, significand_digits[0], self.radix, upper)?;
+        if prec > 0 {
             f.write_char('.')?;
-            let end = prec.min(rest.len());
-            write_digits(f, &rest[..end], self.radix, upper)?;
-            // Pad with zeros if needed
-            for _ in end..prec {
-                f.write_char('0')?;
-            }
+            write_digits(f, &significand_digits[1..], self.radix, upper)?;
         }
 
-        write!(f, "{}{}", exp_marker, actual_exp)
+        write!(f, "{}{}", exp_marker, exp)
     }
-}
-
-/// Compute `n` fractional digits via long division starting from `rem`.
-/// Does not track repetends.
-fn expand_fraction(rem: UBig, den: &UBig, radix: u8, n: usize) -> Vec<u8> {
-    let radix_word = radix as Word;
-    let (k, radix_k) = if radix_word == 10 {
-        DECIMAL_DIGITS_PER_WORD
-    } else {
-        digits_per_word(radix_word)
-    };
-    let den_div = ConstDivisor::new(den.clone());
-    let mut digits = expand_frac_fast(rem, &den_div, radix_word, radix_k, k, n);
-    // the expansion may terminate before `n` digits; pad with zeros
-    digits.resize(n, 0);
-    digits
 }
 
 /// Write a slice of digit values in the given radix to the formatter.
