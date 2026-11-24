@@ -42,13 +42,23 @@ impl<const B: Word> EstimatedLog2 for Repr<B> {
         } else {
             B.log2_bounds()
         };
-        let e = self.exponent as f32;
-        let (lb, ub) = if self.exponent >= 0 {
-            (logs_lb + e * logb_lb, logs_ub + e * logb_ub)
+        // The exponent is an arbitrary `isize`, while an f32 holds only 24 bits exactly: beyond
+        // 2^24 the conversion of the exponent alone moves the estimate by whole units, in
+        // either direction. So the sum is formed in f64 and widened by a bound on what the
+        // f64 operations (the exponent conversion, the product and the sum, each within 2^-53
+        // relative) can have lost, before it is narrowed to f32 outwards.
+        fn bound(log_signif: f32, exponent: isize, log_base: f32) -> (f64, f64) {
+            let scaled = exponent as f64 * log_base as f64;
+            let sum = log_signif as f64 + scaled;
+            let magnitude = |x: f64| if x < 0.0 { -x } else { x };
+            (sum, (magnitude(log_signif as f64) + magnitude(scaled)) * (1.0 / (1u64 << 50) as f64))
+        }
+        let ((lb, lb_slack), (ub, ub_slack)) = if self.exponent >= 0 {
+            (bound(logs_lb, self.exponent, logb_lb), bound(logs_ub, self.exponent, logb_ub))
         } else {
-            (logs_lb + e * logb_ub, logs_ub + e * logb_lb)
+            (bound(logs_lb, self.exponent, logb_ub), bound(logs_ub, self.exponent, logb_lb))
         };
-        (next_down(lb), next_up(ub))
+        (next_down((lb - lb_slack) as f32), next_up((ub + ub_slack) as f32))
     }
 
     fn log2_est(&self) -> f32 {
