@@ -451,7 +451,7 @@ fn test_farey_neighbours_large_limit() {
     let tiny = RBig::try_from(1e-9f64).unwrap();
     let nearest = tiny.nearest(&limit);
     assert_eq!(nearest, Inexact(rbig!(1 / 1000000000), Negative));
-    let pi = RBig::try_from(3.141592653589793f64).unwrap();
+    let pi = RBig::try_from(core::f64::consts::PI).unwrap();
     assert_eq!(pi.nearest(&limit), Inexact(rbig!(1257316528023 / 400216280932), Negative));
 
     let googol = UBig::from(10u8).pow(100);
