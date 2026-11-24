@@ -170,3 +170,22 @@ fn test_zeroth_root_panic() {
 fn test_even_root_negative_panic() {
     let _ = ibig!(-1).nth_root(4);
 }
+
+#[test]
+fn test_cbrt_ibig() {
+    use dashu_int::IBig;
+
+    // the cubic root of a negative integer is a (negative) real number
+    assert_eq!(ibig!(-1).cbrt(), ibig!(-1));
+    assert_eq!(ibig!(-7).cbrt(), ibig!(-1));
+    assert_eq!(ibig!(-8).cbrt(), ibig!(-2));
+    assert_eq!(ibig!(-9).cbrt(), ibig!(-2));
+    for v in [-1000i64, -999, -27, -26, -2, 0, 2, 27, 1000] {
+        let x = IBig::from(v);
+        assert_eq!(x.cbrt(), x.nth_root(3));
+        assert_eq!((-&x).cbrt(), -x.cbrt());
+    }
+    let big = -(IBig::from(3).pow(300));
+    assert_eq!(big.cbrt(), -IBig::from(3).pow(100));
+    assert_eq!((big + ibig!(1)).cbrt(), -IBig::from(3).pow(100) + ibig!(1));
+}

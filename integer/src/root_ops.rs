@@ -110,11 +110,8 @@ impl CubicRoot for IBig {
     type Output = IBig;
     #[inline]
     fn cbrt(&self) -> IBig {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        IBig(mag.nth_root(3).with_sign(sign))
+        // an odd root of a negative number is real
+        self.nth_root(3)
     }
 }
 
