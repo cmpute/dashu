@@ -578,3 +578,62 @@ fn test_ln_extreme_exponents() {
     // log2 of the same value is the exact integer
     assert_eq!(x.log2().to_f64().value(), isize::MIN as f64);
 }
+
+/// A tiny `ln_1p` argument: `ln(1 + x) = x − x²/2 + …` rounds like `x` with a negative sticky
+/// part, at a cost that does not depend on how tiny `x` is (the certification loop would need a
+/// working precision proportional to `log(1/|x|)` to tell the result from `x`).
+#[test]
+fn test_ln_1p_tiny_arguments() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, k: isize) {
+        let ctx = Context::<R>::new(p);
+        let pad = p + 3;
+        for sig in [1i32, -1, 7, -7] {
+            let x = Repr::<B>::new(sig.into(), -k);
+            // x − B^(x.exponent − pad), exactly, rounded to the precision
+            let nudged = x.significand() * IBig::from(B).pow(pad) - IBig::ONE;
+            let nudged = Repr::<B>::new(nudged, x.exponent() - pad as isize);
+            let want = FBig::<R, B>::from_repr(nudged, Context::new(0)).with_precision(p);
+            assert_eq!(ctx.ln_1p(&x, None), Ok(want), "ln_1p({x:?}) at {p} digits");
+        }
+    }
+    for p in [1usize, 20, 50, 100, 500] {
+        for k in [2 * p as isize + 8, 5_000, 1_000_000_000, isize::MAX / 4] {
+            check::<mode::Zero, 2>(p, k);
+            check::<mode::Away, 2>(p, k);
+            check::<mode::Down, 2>(p, k);
+            check::<mode::Up, 2>(p, k);
+            check::<mode::HalfEven, 2>(p, k);
+            check::<mode::HalfAway, 10>(p, k);
+            check::<mode::Up, 10>(p, k);
+            check::<mode::Down, 10>(p, k);
+        }
+    }
+
+    // around the shortcut's threshold the direct rounding agrees with the series evaluated at a
+    // much higher precision
+    fn check_threshold<R: ErrorBounds, const B: Word>(p: usize) {
+        let (ctx, hi) = (Context::<R>::new(p), Context::<mode::HalfEven>::new(3 * p + 60));
+        for k in (p as isize / 2).max(5)..p as isize + 8 {
+            for sig in [1i32, -1, 9, -9] {
+                let x = Repr::<B>::new(sig.into(), -k);
+                let want = hi.ln_1p(&x, None).unwrap().value();
+                let want = want.with_rounding::<R>().with_precision(p).value();
+                let got = ctx.ln_1p(&x, None).unwrap().value();
+                assert_eq!(got, want, "ln_1p({x:?}) at {p} digits");
+            }
+        }
+    }
+    for p in [1usize, 20, 50, 100] {
+        check_threshold::<mode::Zero, 2>(p);
+        check_threshold::<mode::Up, 2>(p);
+        check_threshold::<mode::HalfEven, 2>(p);
+        check_threshold::<mode::HalfAway, 10>(p);
+        check_threshold::<mode::Down, 10>(p);
+    }
+}

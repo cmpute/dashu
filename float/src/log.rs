@@ -639,6 +639,19 @@ impl<R: ErrorBounds> Context<R> {
 
         assert_limited_precision(self.precision);
 
+        // A tiny `ln_1p` argument: `ln(1 + x) = x − x²/2 + …` is `x` plus a tail of magnitude
+        // below `x²` (for `|x| < 1/2`) on the negative side. Once that tail is below everything
+        // the rounding of `x` can see, the result is `x` rounded with a negative sticky part
+        // ([`Context::round_sticky`]) — the Ziv loop would need a working precision
+        // proportional to `log(1/|x|)` to tell the result from `x` itself.
+        if one_plus {
+            let hi = x.exponent as i128 + x.digits_ub() as i128; // |x| < B^hi
+            let pad = (self.precision as i128 + 1 - x.digits_lb() as i128).max(0);
+            if hi < 0 && 2 * hi <= x.exponent as i128 - pad - 2 {
+                return self.round_sticky(x, Sign::Negative);
+            }
+        }
+
         // Correct rounding via the Ziv loop: `ln_compute` evaluates the atanh series at `p + guard`
         // and reports a provable error radius; the driver retries with more guard digits until the
         // approximation's error interval lies entirely inside one rounding bin. The guard is a
