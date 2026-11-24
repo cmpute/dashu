@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Add
+- Reflected `%`, `divmod`, `&`, `|`, `^` and `**` for `UBig` / `IBig` (`7 % UBig(3)`, `2 ** UBig(10)`), and `UBig` / `IBig` exponents and moduli in `pow`.
+- `math.floor`, `math.ceil`, `math.trunc` and `round()` for `RBig` (exact).
+- `CBig` arithmetic and comparison accept `UBig` / `IBig`.
+
+### Change
+- `UBig` has no `__isub__` any more: `n -= m` is `n = n - m`.
+- `pow(UBig, e, negative modulus)` returns an `IBig` when the result is negative instead of raising `ValueError`.
+- `CBig(1) == "1"` is `False` (strings are not parsed in comparisons).
+
+### Fix
+- `del n[i]` / `del n[a:b]` on a `UBig` returned wrong values when a bit below the deleted range was set; deleting or assigning an empty slice with `stop < start` panicked.
+- An integer index that does not fit in an index-sized integer raises `IndexError` instead of `TypeError` (`Words`, `UBig`, `IBig`).
+- Division and modulo by zero raise `ZeroDivisionError` instead of a Rust panic (`%`, `//`, `/`, `divmod` on integers and rationals, `%` on floats), `pow(x, e, 0)` raises `ValueError`, and `gcd(0, 0)` / `lcm(0, 0)` / `gcd_ext(0, 0)` return zeros. `nth_root(0)`, `ilog` of zero, `RBig.pow(0, -n)` and `RBig.from_parts(n, 0)` raise instead of panicking.
+- `UBig - UBig` returns an `IBig` when the difference is negative instead of panicking.
+- In-place operators of `UBig` / `IBig` fall back to the binary operator for operands they cannot take in place (`m = UBig(10); m += -3` raised `TypeError`).
+- `int(DBig)` truncates toward zero instead of rounding; `int` / `math.floor` / `math.ceil` / `math.trunc` / `round` of an infinity raise `OverflowError`.
+- `auto(float)` uses the default precision, like `FBig(float)` (`auto(0.0)` had precision 0).
+- `hash()` agrees with Python's `int`, `float`, `Fraction`, `Decimal` and `complex` for equal values, and across the dashu types.
+- `CBig(re, im)` with a complex `re` or `im` is `re + im*j` instead of dropping the imaginary parts.
+- `CBig == x` / `CBig != x` return a bool for any object instead of raising, and compare real numbers exactly.
+- `format()` of `FBig` / `CBig` with a decimal presentation prints the digits of the exact value (only the first ~15 were right); `format()` of `RBig` rounds once from the exact value.
+- `'g'` / `'G'` use the scientific notation as in Python.
+- The sign option and zero-padding work for the hexadecimal presentations of `FBig` (`'012a'` gives `-0x000003p-1`).
+- Zero-padding with grouping, and the `' '` sign with grouping or zero-padding, are laid out as for `float`.
+
 ## 0.6.2
 
 ### Change

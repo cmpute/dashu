@@ -35,6 +35,117 @@
 - Tighten the composed error bound of the `cubic` fast path: when the second window
   extends past the square's word length, the square's shortfall is rescaled onto a
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
+- Fix `x - x` and `x + (-x)` returning `-0` (outside `mode::Down`) when the operands have exponent `-1` (e.g. `0.5 - 0.5`, `0.3 - 0.3`), and panicking when the operands sit at exponent `isize::MAX`.
+- Fix the exact `Repr` `+` / `-` operators: a sum of zeros is `-0` only for `(-0) + (-0)` / `(-0) - (+0)` regardless of operand order, and an exact cancellation is always `+0`.
+- Fix `FBig::signum` returning a precision-1 value instead of the exact `ONE` / `ZERO` / `NEG_ONE`, which rounded `x * x.signum()` to one digit for unlimited-precision `x`.
+- Fix `FBig / FBig` with an unlimited-precision (or otherwise over-wide) dividend: it failed a debug assertion in debug builds and returned an unrounded or wrongly rounded quotient in release builds.
+- Fix `Product` of an empty iterator of `CachedFBig` returning `0` instead of `1`.
+- Fix `%` / `Context::rem` returning `+0` instead of `-0` when a negative dividend is an exact multiple of the divisor.
+- Fix `%`, `rem_euclid` and `div_rem_euclid` taking time and memory proportional to the exponent gap between the operands (base-2 `%` ran out of memory for a large gap); `rem_euclid` / `div_euclid` now panic on an infinite operand like `%`.
+- Fix `ceil` and `split_at_point` returning `+0` instead of `-0` for the zero integral / fractional part of a negative number; `split_at_point` now matches `(trunc(), fract())` exactly and panics on `+inf` as it did on `-inf`.
+- Fix `fract()` (and the precision of `trunc()`) for values below one that the magnitude estimate did not recognize: `fract()` reset the precision of values in `[0.01, 1)` to their number of fractional digits.
+- Fix `quantize` returning `+0` for a negative value that rounds to zero, and overflowing (debug builds) for a quantum exponent near `isize::MIN`.
+- Fix `Context::fma` ignoring the sign of a zero product: `fma(+0, 1, -0)` is now `+0` (outside `mode::Down`), matching `add` / `sub`.
+- Fix `Context::mul` tagging an exactly representable product of wide operands as `Inexact(_, NoOp)`.
+- Fix the `Rounding` flag of an inexact `add` / `sub` whose operands partly cancel: it is now relative to the truncated exact value like every other operation (e.g. `mode::Away` reported `NoOp` for `4 - 1` rounded to `4`).
+- Fix `Context::mul` / `sqr` / `cubic` / `div` (and the operators) reporting `Underflow` / `Overflow` from the operand exponents when the rounded result is representable, e.g. `2 / (3·2^(isize::MIN+1))`, or narrow operands whose exponents sum to `isize::MIN`.
+- Fix `FBig + FBig` / `FBig - FBig` returning a nonzero significand at the sentinel exponent instead of saturating like the other operators when the sum overflows the exponent range.
+- Fix an overflow panic (debug builds) in `add` / `sub` when the operand exponents are more than `isize::MAX` apart.
+- Fix `<<` / `>>` moving a value onto (or past) the sentinel exponents: an out-of-range shift now overflows / underflows like a multiplication by a power of the base.
+- Fix `Sum` returning `-0` for a sum of `+0` addends under `mode::Down`.
+- Fix `Sum` taking time and memory proportional to the exponent gaps between the addends at limited precision.
+- Fix `CachedFBig::ulp` panicking on infinities and (debug builds) on exponents near the ends of the `isize` range; it now delegates to `FBig::ulp`.
+- Fix `ulp()` / `ulp_lb()` (and the error bounds) of `-0` being one digit smaller than for `+0`.
+- `to_f32`/`to_f64` (on `FBig` and `Repr`) round correctly just below the smallest subnormal (values above half of it no longer become zero under round-to-nearest, and the exact half rounds to the subnormal under `HalfAway`) and just above `MAX` (values below `MAX + ½ulp` round to `MAX` instead of infinity under round-to-nearest).
+- Negative zero converts to the integer 0: `FBig::to_int`/`Repr::to_int` return `Exact(0)`, the primitive integer `TryFrom` impls return `Ok(0)`, and `Repr::is_int` returns `true`.
+- `FBig::with_base` computes the documented precision exactly (it was one digit short when `B^precision` is a power of the new base, e.g. 128 bits to base 16) and keeps at least one digit, so `with_base`, `to_decimal` and the num-traits `from_f32`/`from_f64` no longer panic for binary floats with 1 to 3 bits of precision.
+- Base conversion (`with_base`, `with_base_and_precision`, `to_decimal`, `to_binary`) is correctly rounded, and reports exactness correctly, for every exponent; it used to return wrong digits once the exponent magnitude exceeded 38 (64-bit) at short target precisions.
+- Base conversion maps zeros to zeros of the same sign in every base (negative zero used to panic or turn positive), rounds to the requested precision when the base is unchanged, and converts exactly between bases that are powers of a common root (e.g. 4 and 8).
+- `AbsOrd::abs_cmp` between `FBig`/`Repr` and `UBig`/`IBig` compares magnitudes when either side is negative.
+- `NumOrd` between `FBig`/`Repr` and `f32`/`f64`: a zero no longer ranks above positive floats below 1/2, and exponents beyond `isize::MAX / bit_len(base)` no longer overflow (panic in debug builds, wrong order in release builds).
+- `NumOrd` between two floats of the same base no longer tries to allocate the full power of the base for large exponents.
+- `EstimatedLog2::log2_bounds` for `FBig`/`Repr` stays valid for exponents beyond 2^24.
+- num-traits: `Signed::abs_sub` returns the positive difference (zero when `self <= other`), and the integer `ToPrimitive` conversions return `None` for infinities instead of panicking.
+- rand: `UniformFBig` (and rand's `Uniform`/`gen_range` for `FBig`/`DBig`) always samples inside the requested range; bounds of unlimited precision (such as `FBig::ZERO..FBig::ONE`) sample at the default precision of the builtin distributions instead of returning only the lower bound.
+- rand 0.9/0.10: `Uniform::new`/`new_inclusive` for `FBig`/`DBig` return `Error::EmptyRange`/`Error::NonFinite` instead of accepting an empty range or panicking.
+- `FBig::from_parts_const` infers the same precision as `from_parts` (trailing zero digits count, and significands at the top of the `DoubleWord` range get their last digit), and `Repr::new_const` saturates the exponent like `Repr::new`.
+- `ErrorBounds::error_bounds`: the round-to-nearest bounds no longer exceed half an ulp in odd bases (which made transcendental functions misround there, e.g. `ln(1296)` in base 3), `mode::Down`/`mode::Up` return zero bounds for unlimited-precision values instead of panicking, `mode::HalfEven` includes the ties of floats with an even last digit (it was the other way round), and the bound facing zero is narrowed below powers of the base.
+- Fix the correct-rounding certification (Ziv loop) next to a power of the base: `ErrorBounds::error_bounds` used a full ulp on the toward-zero side of `±B^k`, where the neighbour is in the finer binade below, so a value just below a power of the base could be returned as that power (`exp`/`powi` returning `1` for `0.99949…` at 3 digits, `powf(x, 0.5)` returning `8` for `3.9993` at 1 bit, `15^-16` at 1 bit). The ties-to-even inclusion flags of `HalfEven::error_bounds` now use the significand parity at the precision.
+- Fix the `Exact`/`Inexact` flag (and the rounding direction) reported by the Ziv-backed functions (`exp`, `ln`, `log2`, `log10`, `powi`, `powf`, `hypot`, …): it described the working approximation rather than the true value, so an inexact result could be flagged `Exact` (`ln(55)` at 2 bits, `183^-8` at 53 bits, `hypot(1, 2^40)`) or carry the wrong direction, and under `Zero` a result above the true value could be returned.
+- Fix `powi` failing with `ZivRetryLimitExceeded` (a panic through `FBig::powi`) when the exact power is a rounding tie (`5^2` at 1 decimal digit under `HalfEven`).
+- Fix `sqrt` in non-binary bases: an exact root that is a rounding tie did not terminate (`sqrt(225)` at 1 decimal digit), a perfect square was reported `Inexact` or mis-rounded in base 4 and did not terminate in base 9 (`sqrt(36)`, `sqrt(441)`), and an inexact root could be flagged `Exact`. `sqrt` is now a single correctly rounded step in every base.
+- Fix `sqrt` of a value with an exponent next to `isize::MIN`/`isize::MAX` (debug overflow panic, wrong exponent in release builds).
+- Fix `hypot` for operands far from the middle of the exponent range: spurious `Underflow`/zero or a wrong exponent near `B^(isize::MIN/2)`, spurious `Overflow` near `B^(isize::MAX/2)` when a significand is wider than the precision, and a running time proportional to the exponent gap under directed rounding modes. `hypot` is now computed from the exact sum of squares.
+- Fix `exp(0)`, `exp_m1(±0)`, `exp_m1(-inf)`, `ln(1)`, `ln_1p(±0)`, `log2(1)`, `log10(1)`, `powi(x, 0)`, `powf(x, ±0)`, `powf(1, y)` and `powf(±0, y)` returning a result with precision 0 (unlimited) instead of the context's precision, which made the next operation on the result panic.
+- Fix `cbrt`, `nth_root` and `hypot` panicking on an unlimited-precision zero (`FBig::try_from(0.0)`, `DBig::ZERO`).
+- Fix `log2` not terminating under directed rounding for a negative power of two in a non-binary base (`log2(0.5)` in base 10), and `log10` likewise for a power of ten in a base with other prime factors.
+- Fix `ln`/`log2`/`log10` panicking on a value with exponent `isize::MIN` (the value a directed-mode underflow of `exp` saturates to).
+- Fix `powf` not terminating under directed rounding (including `FBig`'s default `Zero`) when the result is exactly representable (`powf(4, 0.5)`, `powf(0.25, 1.5)`); such results are now returned as `Exact`.
+- Fix `exp` for arguments around `±isize::MAX·ln(B)`: a spurious `Underflow` at low precision, no termination or a spurious `Overflow` for a result within a few hundred digits of either end of the exponent range, and a running time proportional to the argument's exponent before an overflow was reported (also through `sinh`/`cosh`).
+- Fix `powf` returning a value up to `2^260` times too large for a result just above the smallest exponent.
+- Fix `powi`: a spurious `Underflow`/`Overflow` for an exponent of `2^63` or more (`0.999^(2^63)`) and for a negative exponent with a result just above the smallest exponent; no termination for a base of `-1` with an exponent past `2^64` under `Down`/`Up`; and an out-of-memory panic for a base near one with an exponent past `2^64`.
+- Fix `ConstCache::ln_base` for a base other than 2, 10 or a power of two returning a value with `precision + 2` digits and several ulps of error; it is now the correctly rounded `ln(B)`.
+- `FBig::from_str`: a zero literal ignores its scale. `0e-1` parsed as `-0` and
+  `0e<isize::MAX>` / `0e<isize::MIN>` as the infinities; only a leading `-` gives `-0` now.
+- `FBig::from_str`: only one sign is accepted, in front of the integral part. `0.+1` parsed
+  as 0.01, and `++1`, `-+1`, `0x+1` were accepted.
+- `FBig::from_str`: `0x.` (a hex prefix and a dot without any digit) is rejected with
+  `ParseError::NoDigits`.
+- `FBig::from_str`: a nonzero literal whose exponent overflows or lands on the reserved
+  exponents `isize::MIN` / `isize::MAX` is rejected with `ParseError::InvalidDigit`. It used to
+  panic in debug builds, wrap around in release builds, or return a value on which arithmetic
+  panics.
+- `Display` with a width and no precision padded integers one character short
+  (`format!("{:6}", 123)` gave 5 characters).
+- Scientific formatting (`{:e}`, `{:b}`, `{:o}`, `{:x}`) with a precision printed one
+  fractional digit too many when rounding carried into a new leading digit (`95` at `{:.0e}`
+  gave `1.0e2`).
+- Scientific formatting ignored the `0` flag when an alignment was given (`{:<08e}`).
+- `Display` with a precision no longer runs out of memory (or takes time proportional to the
+  exponent) for values with a very large negative exponent.
+- serde: the human-readable string now has exactly as many digits as the precision, so the
+  precision round-trips also when the positional form has more digits than the precision
+  (`10` at precision 1, `0.5` at precision 1) and for digits above 9 in bases above 10. Such
+  values are written with an explicit scale (`"1@1"`, `"5@-1"`).
+- serde: the `inf` / `-inf` strings written for infinities can be deserialized.
+- serde: the struct form can be deserialized from formats that provide owned or transient
+  field names (e.g. CBOR).
+- postgres: negative zero is stored as zero instead of panicking in `to_sql` / `from_sql`.
+- postgres: `dscale` always covers the fractional digits of the value. A result carrying a
+  guard digit (`11 - 0.1` at precision 2) was sent with `dscale = 0`, so the server stored 10.
+- postgres: `to_sql` accepts every value whose weight fits the NUMERIC format (`1e32768` was
+  refused) and no longer overflows for precisions above 32767.
+- postgres-types: `from_sql` returns an error instead of panicking on an unknown sign word, a
+  truncated value or an out-of-range digit.
+- rkyv (0.7 and 0.8): infinities round-trip. `INFINITY` used to come back as `-0` and
+  `NEG_INFINITY` as `+0`. An exponent that does not fit the 32-bit archived exponent is now
+  refused (an error with rkyv 0.8, a panic with rkyv 0.7) instead of being truncated.
+- `atan2_unit` returned the two negative-`y` diagonals swapped (`atan2_unit(-1, 1, 360)` was
+  `-135`).
+- `asin_unit` / `acos_unit` treated 2/3 and 1/3 (base 3), 2/5 (base 5), … as the exact `±1/2`
+  row in odd bases.
+- `atan(±inf)` and `atan2` at infinite arguments or `x = 0` are correctly rounded (they scaled
+  an already rounded π) and report `Inexact`.
+- The trigonometric and hyperbolic functions no longer panic on an exact zero carrying
+  unlimited precision (`FBig::ZERO.sin()`); `acos(1)` and `acosh(1)` likewise.
+- `sin` / `cos` / `tan` no longer return an exact `0` for an argument next to a multiple of
+  π/2 that has more digits than the context.
+- `acos` / `asin` next to `±1` and `acosh` next to `1` no longer trip a debug assertion when
+  the argument is wider than the working precision; the internal `Ball::sqrt` now covers the
+  lower end of its input ball.
+- `sin`, `cos`, `tan`, `asin`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `atanh` (and `cos_unit`,
+  `cosh_pi`, `acos_unit`, `atan_unit`, `atan2_unit` next to their exact values) of a tiny
+  argument are rounded directly: they report `Inexact` with the correct `Rounding` (not
+  `Exact`), take microseconds under the directed modes at any exponent, and no longer underflow
+  to `0` for exponents below `isize::MIN / 2`.
+- The transcendental functions report the `Rounding` flag of the true result, not of the
+  working approximation, when the two fall on opposite sides of the returned value.
+- `tanh` at saturation (and `exp_m1` at its `-1` saturation) report the `Rounding` adjustment
+  relative to the truncated significand, consistently with the unsaturated path.
+- `sinh_pi` / `cosh_pi` / `sinh_cosh_pi` no longer run out of memory for a large argument at a
+  low precision, and `sinh` / `cosh` and their ×π variants report an astronomically large
+  argument as an overflow immediately.
+- `asinh` / `acosh` no longer run out of memory for huge arguments (from about `2^(2^40)`).
 
 ### Change
 - Apply signs directly, avoid redundant absolute-value temporaries, and share quotient/remainder
@@ -73,6 +184,17 @@
   is skipped at medium and large precisions; unbalanced operands (one much wider than
   the target precision) gain much more. Transcendental functions and `CachedFBig`
   benefit automatically through these kernels. No public API change.
+- An overflow that saturates to `±inf` (nearest and outward modes) no longer panics at unlimited precision; only the inward modes, which need the largest finite value, still require a limited precision.
+- Document that `rem_euclid` rounds its result to the operands' precision (and can therefore return `|rhs|`), when a subtraction result carries the guard digit, the precision rule of `fract()`, and what `ulp()` means next to a power of the base.
+- `UniformFBig::new` panics for an empty range (`low >= high`; it used to accept `low == high` and return the excluded bound), `UniformFBig::new`/`new_inclusive` panic for infinite bounds, and the sampling precision is raised to the digit count of the bounds when the requested precision is smaller.
+- `Uniform01::new_open` panics for a precision of 0 (it used to loop forever in base 2).
+- `FBig::with_base`/`with_base_and_precision` on an unlimited-precision integer (non-negative exponent) convert losslessly to any base instead of panicking.
+- `exp`, `exp_m1` and `ln_1p` of an argument too small to be visible next to the result's leading term are rounded directly (no series evaluation), in time independent of the argument's exponent.
+- **(breaking, encoding)** serde: in human-readable formats, an `FBig` whose precision cannot
+  be expressed by a literal (unlimited precision, more significant digits than the precision,
+  or an infinity with a nonzero precision) is serialized as the
+  `(significand, exponent, precision)` struct instead of a string, so that the precision
+  round-trips (`DBig::ONE` came back with precision 1). The deserializer accepts both forms.
 
 ## 0.6.2
 

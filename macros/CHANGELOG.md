@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Change
+- `static_fbig!` / `static_dbig!` produce a value with unlimited precision for every literal, as documented. Literals whose significand fits in 32 bits used to carry the precision of the literal.
+
+### Fix
+- `cbig!` / `static_cbig!`: decimal and octal integer coefficients are converted to base 2 exactly (`cbig!(9)` was 8, `cbig!(99)` was 98). A coefficient with `n` digits now gets as many bits of precision as the largest `n`-digit integer needs, so `cbig!(3 + 4i)` has precision 4 (was 3).
+- `fbig!` / `dbig!` / `cbig!` and their static variants keep the sign of a negative zero literal (`dbig!(-0.0)` was `+0`).
+- `rbig!` / `static_rbig!` accept `base N` without a denominator (`rbig!(a base 16)` failed to compile).
+- `rbig!` / `static_rbig!` reject two numbers that are not separated by `/` (`rbig!(1 - 2)` was -1/2) and repeated signs.
+- `ibig!` / `static_ibig!` reject repeated or mixed signs (`ibig!(--5)` was -5).
+
 ## 0.6.0
 
 ### Change

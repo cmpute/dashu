@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Change
+- With the alternate flag (`{:#}`), `in_expanded` now always prints a finite expansion in full, also when it is longer than the precision (`{:#.2}` of 1/8 is `0.125`, it was rounded to `0.13`). The precision only pads the output and sets the repetend detection budget in this mode.
+- `Display`, `Binary`, `Octal`, `LowerHex`, `UpperHex` and `in_radix` of a fraction apply the `+` flag, the width, the fill and the alignment to the fraction as a whole (`{:+}` of 1/2 is `+1/2`, it was `+1/+2`).
+- `RBig::simplest_from_float` determines the rounding interval from the rounding of `to_float` itself instead of `ErrorBounds::error_bounds`; numbers with unlimited precision are converted exactly.
+
+### Fix
+- `RBig::simplest_from_float` no longer panics for unlimited-precision floats under `mode::Down`/`mode::Up`, and returns a rational that rounds back to the float in odd bases.
+- serde: the struct form of `RBig` / `Relaxed` can be deserialized from formats that provide
+  owned or transient field names (e.g. CBOR).
+- `from_str`, `from_str_radix` and `from_str_with_radix_prefix` of `RBig` / `Relaxed` return `ParseError::InvalidSyntax` for a zero denominator (`"1/0"`) instead of an invalid `RBig` or a panic.
+- `from_str_expanded` / `from_str_decimal` reject a sign after the radix point or inside the repetend (`".+1"` was read as 1/100), reject a repetend that holds only `_` separators (`"0.1(_)"` was read as 0), and no longer run out of memory on a zero literal with a huge exponent (`"0e-41643224064"`).
+- `in_expanded` rounds correctly in odd radices (`{:.4}` of 1/7 in radix 3 is `0.0110`, it was `0.0102`), in both the fixed and the scientific format.
+- `{:#}` of `in_expanded` detects a repetend whose non-repeating prefix and period fill the detection budget exactly, and prints finite expansions longer than 64 digits in full, so that the output reads back with `from_str_expanded`.
+- The scientific format of `in_expanded` uses the `@` exponent marker for zero in non-decimal radices (`0@0`, it was `0e0`).
+- `f32::try_from` / `f64::try_from` of `RBig` and `Relaxed` no longer panic for integers from 2^31 / 2^63 on.
+- `to_f32_fast` / `to_f64_fast` are within one unit in the last place of the correctly rounded result, as documented (they could be 2 ulps off).
+- Integer conversions (`IBig::try_from`, `UBig::try_from`, `i64::try_from`, …) of a `Relaxed` with an integer value succeed when the fraction is not in the lowest terms (`Relaxed::from_parts(3, 3)`).
+- `RBig::to_float` / `Relaxed::to_float` round only once (2.49 at one decimal digit under `HalfAway` gave 3).
+- `NumOrd` between a zero `RBig` / `Relaxed` and a positive `f32` / `f64` below 1/4 returns `Less` (it returned `Greater`).
+- `Inverse::inv` of a zero `RBig` / `Relaxed` panics instead of returning `1/0`.
+- `EstimatedLog2::log2_bounds` of `RBig` / `Relaxed` always contains the logarithm (the bounds of 3/1024 excluded it).
+- `num_traits::Signed::abs_sub` returns the positive difference (zero when `self <= other`) instead of `|self - other|`.
+- `num_traits::Pow<usize>` no longer treats exponents above `isize::MAX` as negative.
+- `Zeroize` leaves a valid zero (`0/1`) instead of `0/0`.
+- `RBig::is_simpler_than` applies its criteria (denominator, numerator, sign) in order, instead of requiring all of them at once.
+- `RBig::simplest_in` no longer returns zero when zero is an endpoint of the interval (`simplest_in(-1, 0)` is `-1/2`).
+- `RBig::simplest_from_f32` / `simplest_from_f64` use the correct rounding interval for floats with an ulp above 1 and at powers of two, and return an included endpoint when it is the simplest (`simplest_from_f64(2^54 + 8)` is `2^54 + 6`).
+- `RBig::simplest_from_float` returns a number that rounds back to the float when its magnitude is a power of the base, and returns an included endpoint when it is the simplest.
+- `RBig::nearest`, `next_up` and `next_down` run in time logarithmic in the limit (they took time proportional to it for values close to a simple fraction), and `next_up` / `next_down` no longer trip a debug assertion for an integer with `limit = 1`.
+- Docs of `RBig::nearest`, `next_up` and `next_down`: the error bounds are inclusive, the denominator is at most `limit`, and the sign returned by `nearest` is that of `nearest - self`.
+
 ## 0.6.0
 
 ### Change
