@@ -421,3 +421,38 @@ fn test_log_rounding_flag() {
         }
     }
 }
+
+/// The exact special cases (`ln(1)`, `log2(1)`, `log10(1)`, `ln_1p(±0)`) carry the context like
+/// every other result. They used to return the precision-0 `FBig::ZERO`, so a following
+/// limited-precision operation (`one.ln().sin()`) panicked with "precision cannot be 0".
+#[test]
+fn test_exact_shortcuts_keep_precision() {
+    use dashu_float::round::mode::HalfEven;
+
+    fn check<const B: Word>(p: usize) {
+        type F<const B: Word> = FBig<HalfEven, B>;
+        let zero = F::<B>::ZERO.with_precision(p).value();
+        let one = F::<B>::ONE.with_precision(p).value();
+        for (i, got) in [one.ln(), one.log2(), one.log10(), zero.ln_1p()]
+            .iter()
+            .enumerate()
+        {
+            assert!(got.repr().is_pos_zero(), "case {i} at {p} digits in base {B}");
+            assert_eq!(got.precision(), p, "case {i} at {p} digits in base {B}");
+        }
+        let neg = (-zero.clone()).ln_1p();
+        assert!(neg.repr().is_neg_zero());
+        assert_eq!(neg.precision(), p);
+
+        // chained operations must not panic
+        assert_eq!(one.ln().exp(), one);
+        assert_eq!(one.ln().sin(), zero);
+        assert_eq!(one.log2().exp_m1(), zero);
+    }
+    for p in [1, 20, 50, 100, 500] {
+        check::<2>(p);
+        check::<10>(p);
+    }
+    // an unlimited-precision one still has its exact logarithm
+    assert_eq!(DBig::ONE.ln(), DBig::ZERO);
+}

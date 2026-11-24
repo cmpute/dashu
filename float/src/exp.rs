@@ -389,7 +389,9 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         if n.is_zero() {
-            return Ok(Exact(FBig::ONE));
+            // the result carries this context like every other one: a precision-0 `FBig::ONE`
+            // would make the next limited-precision operation on it panic
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
         if n.is_one() {
             if negative {
@@ -559,7 +561,7 @@ impl<R: ErrorBounds> Context<R> {
             // pow(x, ±0) = 1 for any base (IEEE 754 §9.2.1); `-0` is numerically zero, so it
             // must take the same shortcut as `+0` (otherwise a negative base falls through to
             // the OutOfDomain path below).
-            return Ok(Exact(FBig::ONE));
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
             return self.finish_rounded(repr);
@@ -573,12 +575,12 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(if exp.sign() == Sign::Negative {
                 FBig::new(Repr::infinity(), *self)
             } else {
-                FBig::ZERO
+                FBig::new(Repr::zero(), *self)
             }));
         }
         if base.is_one() {
             // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
-            return Ok(Exact(FBig::ONE));
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
 
         // Integer-valued exponent: delegate to the integer-power kernel (binary exponentiation),
@@ -736,7 +738,8 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return match x.sign() {
                 Sign::Positive => Ok(Exact(FBig::new(Repr::infinity(), *self))),
-                Sign::Negative => Ok(Exact(-FBig::ONE)), // exp_m1(−∞) = −1
+                // exp_m1(−∞) = −1
+                Sign::Negative => Ok(Exact(FBig::new(Repr::neg_one(), *self))),
             };
         }
         self.exp_internal(x, true, cache)
@@ -764,17 +767,12 @@ impl<R: ErrorBounds> Context<R> {
             // These exact results need no rounding, so handle them before the
             // limited-precision assertion: a precision-0 (unlimited) FBig such as the
             // one produced by `try_from(0.0)` must still compute exp/exp_m1 exactly.
-            return match minus_one {
-                false => Ok(Exact(FBig::ONE)),
-                true => {
-                    let zero = if input_sign == Sign::Negative {
-                        FBig::new(Repr::neg_zero(), Context::new(0))
-                    } else {
-                        FBig::ZERO
-                    };
-                    Ok(Exact(zero))
-                }
-            };
+            // The result carries this context (a precision-0 `FBig::ONE` here made the next
+            // limited-precision operation on a limited-precision input's result panic).
+            return Ok(Exact(match minus_one {
+                false => FBig::new(Repr::one(), *self),
+                true => FBig::new(x.clone(), *self),
+            }));
         }
 
         assert_limited_precision(self.precision);

@@ -625,16 +625,11 @@ impl<R: ErrorBounds> Context<R> {
         // value such as `FBig::ONE` or the one from `try_from(0.0)` must still resolve
         // ln/ln_1p exactly rather than tripping the limited-precision assertion below.
         if !one_plus && x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // ln(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // ln(1) = +0
         }
         if one_plus && x.significand.is_zero() {
             // ln_1p(±0) = ±0
-            let zero = if x.is_neg_zero() {
-                FBig::new(Repr::neg_zero(), *self)
-            } else {
-                FBig::ZERO
-            };
-            return Ok(Exact(zero));
+            return Ok(Exact(FBig::new(x.clone(), *self)));
         }
 
         assert_limited_precision(self.precision);
@@ -706,7 +701,7 @@ impl<R: ErrorBounds> Context<R> {
         // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
         // rejects via its limited-precision assertion.
         if x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // log2(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // log2(1) = +0
         }
 
         // Exact power-of-two shortcut: if x = 2^k for an integer k, log2(x) = k. This is *required*
@@ -799,7 +794,7 @@ impl<R: ErrorBounds> Context<R> {
         // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
         // rejects via its limited-precision assertion.
         if x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // log10(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // log10(1) = +0
         }
 
         // Exact power-of-ten shortcut: if x = 10^m for an integer m, log10(x) = m. This is *required*

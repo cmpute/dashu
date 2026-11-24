@@ -625,3 +625,59 @@ fn test_powf_half_matches_sqrt() {
         }
     }
 }
+
+/// The exact special cases carry the context like every other result. They used to return the
+/// precision-0 constants (`FBig::ONE` / `FBig::ZERO`), so the next limited-precision operation
+/// on the result of e.g. `exp(0)` or `x.powi(0)` panicked with "precision cannot be 0".
+#[test]
+fn test_exact_shortcuts_keep_precision() {
+    use dashu_float::{round::mode, Context, Repr};
+    use dashu_int::IBig;
+
+    fn check<const B: Word>(p: usize) {
+        type F<const B: Word> = FBig<mode::HalfEven, B>;
+        let zero = F::<B>::ZERO.with_precision(p).value();
+        let one = F::<B>::ONE.with_precision(p).value();
+        let three = F::<B>::from(3u8).with_precision(p).value();
+        let exact_shortcuts = [
+            (zero.exp(), F::<B>::ONE),
+            (zero.exp_m1(), F::<B>::ZERO),
+            ((-zero.clone()).exp_m1(), F::<B>::ZERO),
+            (three.powi(IBig::ZERO), F::<B>::ONE),
+            (zero.powi(IBig::ZERO), F::<B>::ONE),
+            (three.powf(&zero), F::<B>::ONE),
+            (three.powf(&-zero.clone()), F::<B>::ONE),
+            (one.powf(&three.sqrt()), F::<B>::ONE),
+            (zero.powf(&three), F::<B>::ZERO),
+        ];
+        for (i, (got, want)) in exact_shortcuts.iter().enumerate() {
+            assert_eq!(got, want, "case {i} at {p} digits in base {B}");
+            assert_eq!(got.precision(), p, "case {i} at {p} digits in base {B}");
+        }
+        assert!((-zero.clone()).exp_m1().repr().is_neg_zero());
+
+        // chained operations must not panic
+        assert_eq!(zero.exp().exp(), one.exp());
+        assert_eq!(three.powi(IBig::ZERO).powi(IBig::from(-1)), one);
+        assert_eq!(three.powi(IBig::ZERO).exp(), one.exp());
+        assert_eq!(one.powf(&three).ln_1p(), (&one + &one).ln());
+
+        // the Context layer reports them at its own precision
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let exp_m1_neg_inf = ctx
+            .exp_m1(&Repr::<B>::neg_infinity(), None)
+            .unwrap()
+            .value();
+        assert_eq!(exp_m1_neg_inf, F::<B>::NEG_ONE);
+        assert_eq!(exp_m1_neg_inf.precision(), p);
+    }
+    for p in [1, 20, 50, 100, 500] {
+        check::<2>(p);
+        check::<10>(p);
+    }
+
+    // an unlimited-precision zero still has its exact results (at unlimited precision)
+    assert_eq!(DBig::ZERO.exp(), DBig::ONE);
+    assert_eq!(DBig::ZERO.exp().precision(), 0);
+    assert_eq!(DBig::ZERO.exp_m1(), DBig::ZERO);
+}
