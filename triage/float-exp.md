@@ -1,6 +1,7 @@
 # float-exp: exp / log / pow / root functions of dashu-float
 
-33 reports, 14 distinct issues. All line references in "Root cause" are to the triaged commit
+33 reports in 13 clusters (the `ziv-certification` and `powi-range` clusters each bundle several
+independent defects). All line references in "Root cause" are to the triaged commit
 (`a0fc535`). Tests live in `float/tests/{exp,log,root,round}.rs`; every new test was run against
 a copy of the triaged commit to confirm it fails (or does not return) there — see
 "Verification" at the end.
@@ -426,11 +427,55 @@ Not touched, but relevant to other groups:
 - E144 is a `powf` report whose root cause is the `exp` scale handling; E225 and half of D40 are
   `hypot`/`sqrt` reports whose root cause is the shared Ziv flag defect.
 
+## Open questions
+
+- **The top of the exponent range.** Arithmetic treats a nonzero significand at exponent
+  `isize::MAX`/`isize::MIN` as out of range (`Repr::check_finite_exponent`), while the directed
+  saturation endpoints (`overflow_repr_endpoint`, `underflow_repr_endpoint`) *produce* values
+  there (`(B^p − 1)·B^isize::MAX`, `1·B^isize::MIN`). E249 reasons from the former being "the
+  largest finite value". This group's fixes follow the arithmetic convention (a result is in range
+  iff its normalized exponent is strictly inside), and accept the endpoint values as inputs
+  (E241). Whether the endpoints should instead sit at `isize::MAX − 1` / `isize::MIN + 1` is a
+  crate-wide decision not taken here.
+- **Cost of the stricter certification outside this group.** See the float-trig note above:
+  tiny-argument trig/hyperbolic calls under the nearest modes now pay what they already paid
+  under the directed modes.
+- **`hypot` with operands far wider than the precision** now squares them exactly (two full
+  multiplications of the operand width) instead of rounding them to the working precision first.
+  That is the price of having no certification loop; it only matters for operands with many
+  times more digits than the result.
+- **`utils::Factored` for a base above 2^32** factors the base by trial division up to 2^16 and
+  keeps any remaining factor as one atom, which is exact only if that factor is prime (always
+  true below 2^32). A base with two prime factors above 2^16 could miss an exact
+  `powf`/`log2`/`log10` result and fall back to the loop.
+- **`Context::add` flags.** While writing the tiny-argument tests, `Context::<Zero>::add(1, -tiny)`
+  at 1 bit reported `Inexact(0.5, SubOne)` where the truncation convention would say `NoOp`, and
+  `add` results carry the documented guard digit; the tests therefore do not use `add` as an
+  oracle. Not investigated (float-arith's area).
+
 ## Verification
 
-- Each new integration test was run against an extracted copy of `a0fc535` (the new test files
-  dropped into it), one test per process with a 40 s limit — see the final report for the table.
-- `cargo test -p dashu-float` (unit, integration and doc tests), `cargo test --workspace
-  --exclude dashu-python`, `cargo fmt --all -- --check` and `cargo clippy --all-features
-  --all-targets --workspace --exclude dashu-python -- -D warnings` pass at the head of this
-  branch.
+Run, not inferred:
+
+- Each of the 35 new integration tests was run against an extracted copy of `a0fc535` (the new
+  test files dropped into it), one test per process with a 40 s limit, debug build: 29 fail on
+  an assertion or a panic and 6 do not return (`exp_range::test_exp_astronomical_arguments`,
+  `pow_range::test_powf_exact_results`, `pow_range::test_powi_unit_base_huge_exponent`,
+  `pow_range::test_powi_base_near_one_huge_exponent`, `test_log_exact_integer_results`,
+  `test_sqrt_exact_tie_decimal`). None passes there. Hangs that sit behind an earlier failing
+  assertion in the same test (the base-9 `sqrt(441)` of E75, the 222-bit `exp` of E230, the
+  `exp` just above `ln(10)·isize::MAX` of E252) were not separately observed to hang; the
+  reports' own observations stand for those. (The two `should_panic` tests pinning that a
+  non-trivial root still needs a precision pass on both sides by construction.)
+- At the head of this branch: `cargo test --workspace --exclude dashu-python`; `cargo test -p
+  dashu-float -p dashu-ratio -p dashu-cmplx --all-features`; the four touched test files also
+  under `--release`; `cargo fmt --all -- --check`; `cargo clippy --all-features --all-targets
+  --workspace --exclude dashu-python -- -D warnings`; the CI rustdoc command (`cargo doc
+  --workspace --exclude dashu-python --all-features --no-deps --document-private-items` with
+  `-D warnings`); `cargo +1.85 check -p dashu-float --lib` with and without default features.
+- The `fuzz/` differentials against MPFR/MPC (`fuzz/run.sh -c 1024 float cmplx`, 72 jobs): all
+  pass except `cbig_tan_fuzz`, which fails identically on the copy of `a0fc535` (complex `tan`
+  under `Down` near `Re z = π/2`; not this group's code, not touched).
+
+Not run: the MSRV build (no 1.68 toolchain on this machine — the new code was written against
+it by hand: no `let … else`, `is_some_and`, etc.), a 32-bit target, and the dylint house lints.
