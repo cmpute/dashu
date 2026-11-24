@@ -637,3 +637,34 @@ fn test_ln_1p_tiny_arguments() {
         check_threshold::<mode::Down, 10>(p);
     }
 }
+
+/// `ConstCache::ln_base` for a base without a cached series (not 2, 10 or a power of two) is
+/// `ln(B)` rounded to the requested precision. Regression: it returned the raw working value —
+/// `precision + 2` digits, more than an `FBig` of that precision may hold, and up to 2.3 ulps
+/// from `ln(7)` at 166/167 digits.
+#[test]
+fn test_const_cache_ln_base_generic() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        ConstCache, Context, Repr,
+    };
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize) {
+        let cached: FBig<R, B> = ConstCache::new().ln_base::<B, R>(p);
+        assert!(cached.repr().digits() <= p, "ln({B}) at {p} digits: {} digits", cached.digits());
+        assert_eq!(cached.precision(), p);
+        let want = Context::<R>::new(p)
+            .ln(&Repr::<B>::new(B.into(), 0), None)
+            .unwrap()
+            .value();
+        assert_eq!(cached, want, "ln({B}) at {p} digits");
+    }
+    for p in [1usize, 20, 50, 100, 165, 166, 167, 500] {
+        check::<mode::Zero, 7>(p);
+        check::<mode::HalfEven, 7>(p);
+        check::<mode::Up, 7>(p);
+        check::<mode::Zero, 3>(p);
+        check::<mode::HalfAway, 12>(p);
+        check::<mode::Down, 255>(p);
+    }
+}

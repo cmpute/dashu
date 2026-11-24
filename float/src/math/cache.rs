@@ -221,19 +221,32 @@ impl ConstCache {
             }
             _ => {
                 // generic base: no cached L(n) sub-series applies, so compute ln(B) directly via
-                // the near-correct `ln_compute` (the cache only stores a near-correct constant — a
-                // cached value is re-rounded on read, and Ziv isn't needed here).
+                // `ln_compute`. Its ball carries more digits than the working precision and an
+                // error of several ulps, so it is evaluated with guard digits and *rounded* to
+                // `precision`: the guard grows until both ends of the error interval round to the
+                // same value, which is then the correctly rounded ln(B) under `R` (ln(B) is
+                // irrational, so the interval eventually clears every rounding boundary). This
+                // needs only `R: Round` — unlike the Ziv driver, which wants the preimage.
+                assert_limited_precision(precision);
                 let ctx = Context::<R>::new(precision);
-                ctx.ln_compute::<B>(
-                    &Repr::new(Repr::<B>::BASE.into(), 0),
-                    // no cache for the generic base (its L(n) isn't cached)
-                    precision,
-                    false,
-                    None,
-                )
-                .expect("ln(BASE) cannot range-error (the base fits the exponent range)")
-                .to_value_radius::<R>(&ctx)
-                .0
+                let base = Repr::new(Repr::<B>::BASE.into(), 0);
+                let mut guard = combine_guard::<B>(precision);
+                loop {
+                    let work = precision + guard;
+                    let ball = Context::<R>::new(work)
+                        .ln_compute::<B>(
+                            &base, // no cache for the generic base (its L(n) isn't cached)
+                            work, false, None,
+                        )
+                        .expect("ln(BASE) cannot range-error (the base fits the exponent range)");
+                    let rad = ball.rad.to_repr::<B>();
+                    let low = ctx.repr_round(&ball.mid - &rad).value();
+                    let high = ctx.repr_round(&ball.mid + &rad).value();
+                    if low == high {
+                        break FBig::new(low, ctx);
+                    }
+                    guard *= 2;
+                }
             }
         }
     }
