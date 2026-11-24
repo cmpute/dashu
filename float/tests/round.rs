@@ -775,3 +775,66 @@ fn test_error_bounds_are_the_rounding_preimage() {
     sweep::<4>();
     sweep::<10>();
 }
+
+/// `ErrorBounds::error_bounds` describes the set of reals that round to a value. At a power of
+/// the base that set is lopsided: the representable values just inside it (towards zero) are
+/// `B` times denser, so it reaches only `ulp/B` (half of that to nearest) on that side. The
+/// bounds used to be symmetric there, which let the Ziv loop certify a value from the binade
+/// below as the power of the base (`acos_unit(2^-52, 3)` at 1 bit returned 1, not 0.5).
+#[test]
+fn test_error_bounds_at_power_of_base() {
+    use dashu_float::round::{mode, ErrorBounds};
+    use dashu_float::FBig;
+
+    // A point just inside each nonzero bound must round to `y`, a point just outside must not.
+    fn check<R: ErrorBounds, const B: dashu_float::Word>(sig: i32, exp: isize, p: usize) {
+        let y = FBig::<R, B>::from_parts(sig.into(), exp)
+            .with_precision(p)
+            .unwrap();
+        let (l, r, _, _) = R::error_bounds(&y);
+        let y0 = y.clone().with_precision(0).value();
+        for (bound, below) in [(l, true), (r, false)] {
+            if bound.repr().significand().is_zero() {
+                continue;
+            }
+            let bound = bound.with_precision(0).value();
+            let delta = bound.clone() >> 4;
+            for (offset, inside) in [(&bound - &delta, true), (&bound + &delta, false)] {
+                let point = if below { &y0 - offset } else { &y0 + offset };
+                let rounded = point.clone().with_precision(p).value();
+                assert_eq!(
+                    rounded == y,
+                    inside,
+                    "{} at {p} digits (base {B}): {} rounds to {}",
+                    y,
+                    point,
+                    rounded
+                );
+            }
+        }
+    }
+    fn check_all<const B: dashu_float::Word>(sig: i32, exp: isize, p: usize) {
+        check::<mode::Zero, B>(sig, exp, p);
+        check::<mode::Away, B>(sig, exp, p);
+        check::<mode::Up, B>(sig, exp, p);
+        check::<mode::Down, B>(sig, exp, p);
+        check::<mode::HalfEven, B>(sig, exp, p);
+        check::<mode::HalfAway, B>(sig, exp, p);
+    }
+    for p in [1usize, 2, 5, 20] {
+        for exp in [-3isize, 0, 4] {
+            // powers of the base, both signs
+            check_all::<2>(1, exp, p);
+            check_all::<2>(-1, exp, p);
+            check_all::<10>(1, exp, p);
+            check_all::<10>(-1, exp, p);
+        }
+    }
+    // ordinary values keep their symmetric bounds
+    for p in [2usize, 5, 20] {
+        check_all::<2>(3, -1, p);
+        check_all::<2>(-3, 2, p);
+        check_all::<10>(7, 0, p);
+        check_all::<10>(-25, -1, p);
+    }
+}
