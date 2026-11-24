@@ -5,7 +5,7 @@ use dashu_int::{IBig, UBig, Word};
 use num_order::{NumHash, NumOrd};
 
 use crate::{
-    cmp::{repr_cmp_ibig, repr_cmp_ubig},
+    cmp::{repr_cmp_ibig, repr_cmp_same_base, repr_cmp_ubig},
     fbig::FBig,
     repr::Repr,
     round::Round,
@@ -14,6 +14,17 @@ use crate::{
 
 impl<const B1: Word, const B2: Word> NumOrd<Repr<B2>> for Repr<B1> {
     fn num_cmp(&self, other: &Repr<B2>) -> Ordering {
+        // case 0: with a common base this is the ordinary comparison, which aligns the
+        // exponents by their difference. (The general path below scales both sides by the
+        // full power of their bases, which is out of reach for a large exponent.)
+        if B1 == B2 {
+            let other = Repr::<B1> {
+                significand: other.significand.clone(),
+                exponent: other.exponent,
+            };
+            return repr_cmp_same_base::<B1, false>(self, &other, None);
+        }
+
         // case 1: compare with inf
         match (self.is_infinite(), other.is_infinite()) {
             (true, true) => return self.exponent.cmp(&other.exponent),
@@ -231,24 +242,34 @@ macro_rules! impl_num_ord_with_float {
                     _ => {}
                 };
 
+                // step2.5: a zero (of either sign) against a nonzero float. The magnitude
+                // estimate below reads a zero significand as the value 1, so it has to be
+                // answered here: the float has the same sign as `self` (step 1), and zero is
+                // below every positive number and above every negative one.
+                if self.significand.is_zero() {
+                    return Some(sign * Ordering::Less);
+                }
+
                 // step3: test if the number is bigger than the max float value
                 // Here we don't use EstimatedLog2, since a direct comparison is not that expensive.
                 // We just need a quick way to determine if one number is much larger than the other.
-                // The bit length (essentially ⌊log2(x)⌋ + 1) is used instead here.
-                let self_signif_log2 = self.significand.bit_len() as isize;
-                let self_log2 = self_signif_log2 + B.bit_len() as isize * self.exponent;
+                // The bit length (essentially ⌊log2(x)⌋ + 1) is used instead here. It is computed
+                // in 128 bits: the exponent is an arbitrary `isize`, and its product with the
+                // bit length of the base does not fit in one.
+                let self_signif_log2 = self.significand.bit_len() as i128;
+                let self_log2 = self_signif_log2 + B.bit_len() as i128 * self.exponent as i128;
                 let (self_log2_lb, self_log2_ub) = if self.exponent >= 0 {
-                    (self_log2 - self.exponent, self_log2)
+                    (self_log2 - self.exponent as i128, self_log2)
                 } else {
-                    (self_log2, self_log2 - self.exponent)
+                    (self_log2, self_log2 - self.exponent as i128)
                 };
-                if self_log2_lb > (<$t>::MANTISSA_DIGITS as isize + <$t>::MAX_EXP as isize) {
+                if self_log2_lb > (<$t>::MANTISSA_DIGITS as i128 + <$t>::MAX_EXP as i128) {
                     return Some(sign * Ordering::Greater);
                 }
 
                 // step4: decode the float and compare the bits
                 let (other_signif, other_exp) = other.decode().unwrap();
-                let other_log2 = other_signif.bit_len() as isize + other_exp as isize;
+                let other_log2 = other_signif.bit_len() as i128 + other_exp as i128;
                 if self_log2_lb > other_log2 {
                     return Some(sign * Ordering::Greater);
                 } else if self_log2_ub < other_log2 {
