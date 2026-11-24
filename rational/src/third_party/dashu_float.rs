@@ -2,7 +2,7 @@ use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
-use dashu_base::{Approximation, ConversionError, DivRem, Gcd};
+use dashu_base::{AbsOrd, Approximation, ConversionError, DivRem, Gcd};
 use dashu_float::{
     round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
@@ -130,33 +130,51 @@ impl Repr {
             return FBig::ZERO.with_precision(precision);
         }
 
+        // Scale the quotient by a power of the base so that its integer part has either
+        // `precision` or `precision + 1` digits: with a = ilog(numerator) and
+        // b = ilog(denominator), the value lies in the open range (B^(a-b-1), B^(a-b+1)).
         let base = UBig::from_word(B);
-        let num_digits = self.numerator.ilog(&base);
-        let den_digits = self.denominator.ilog(&base);
-
-        let shift;
-        let (q, r) = if num_digits >= precision + den_digits {
-            shift = 0;
-            (&self.numerator).div_rem(&self.denominator)
-        } else {
-            shift = (precision + den_digits) - num_digits;
-            if B == 2 {
-                (&self.numerator << shift).div_rem(&self.denominator)
+        let num_log = self.numerator.ilog(&base) as isize;
+        let den_log = self.denominator.ilog(&base) as isize;
+        let mut shift = precision as isize - (num_log - den_log);
+        let (num, mut den) = if shift >= 0 {
+            let num = if B == 2 {
+                &self.numerator << shift as usize
             } else {
-                (&self.numerator * base.pow(shift)).div_rem(&self.denominator)
-            }
+                &self.numerator * base.pow(shift as usize)
+            };
+            (num, self.denominator.clone())
+        } else {
+            (self.numerator.clone(), &self.denominator * base.pow(shift.unsigned_abs()))
         };
+        let (mut q, mut r) = num.div_rem(&den);
+
+        // The rounding must happen exactly once, at the last of the `precision` digits.
+        // If the quotient has one digit more, move that digit into the remainder first
+        // (rounding the longer quotient and then rounding again to the precision would
+        // round twice, e.g. 2.49 -> 2.5 -> 3).
+        if q.abs_cmp(&base.pow(precision)).is_ge() {
+            let (q_high, q_low) = q.div_rem(&base);
+            r += q_low * &den;
+            den *= &base;
+            q = q_high;
+            shift -= 1;
+        }
+        debug_assert!(q.ilog(&base) + 1 == precision);
+
         let rounded = if r.is_zero() {
             Approximation::Exact(q)
         } else {
-            let adjust = R::round_ratio(&q, r, self.denominator.as_ibig());
+            let adjust = R::round_ratio(&q, r, den.as_ibig());
             Approximation::Inexact(q + adjust, adjust)
         };
 
+        // the significand has at most `precision` digits now (or it's B^precision after a
+        // carry), so the conversion below is exact
         let context = Context::<R>::new(precision);
         rounded
             .and_then(|n| context.convert_int(n))
-            .map(|f| f >> (shift as isize))
+            .map(|f| f >> shift)
     }
 }
 
