@@ -17,10 +17,14 @@ use dashu_int::{DoubleWord, IBig, UBig};
 /// with zero exponent).
 ///
 /// When it's used together with a [Context], its precision will be limited so that
-/// `|significand| < base^precision`. As an intentional exception, the result of an inexact
-/// addition or subtraction may carry one extra guard digit, so `|significand|` can be up to
-/// `base^(precision+1)`; the guard digit is what lets a much-smaller operand be reduced to a
-/// sign-only sticky bit during alignment without mis-rounding.
+/// `|significand| < base^precision`. As an intentional exception, the result of an addition
+/// or subtraction of operands with opposite effective signs (a subtraction of magnitudes) may
+/// carry one extra guard digit, so `|significand|` can be up to `base^(precision+1)`; the
+/// guard digit is what lets a much-smaller operand be reduced to a sign-only sticky bit
+/// during alignment without mis-rounding. Such a result is rounded to `precision + 1` digits,
+/// and is reported exact when those digits hold the difference exactly (`1 - 20` at precision
+/// 1 is the exact `-19`); the next operation, or [`FBig::with_precision`], rounds the guard
+/// digit away.
 ///
 /// # Infinity and signed zero
 ///
