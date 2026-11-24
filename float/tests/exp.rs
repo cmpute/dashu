@@ -802,9 +802,10 @@ mod exp_range {
             assert_eq!(ctx.exp(&x, None), Err(FpError::Overflow(Sign::Positive)));
             assert_eq!(ctx.exp(&neg, None), Err(FpError::Underflow(Sign::Positive)));
             assert_eq!(ctx.exp_m1(&x, None), Err(FpError::Overflow(Sign::Positive)));
-            // exp_m1(-huge) is just above -1: -0.75 is the next 2-bit value up
+            // exp_m1(-huge) is just above -1: -0.75 is the next 2-bit value up, which is also
+            // the truncated significand, so no adjustment is applied to it
             let got = ctx.exp_m1(&neg, None);
-            assert_eq!(got, Ok(Inexact(FBig::from_parts((-3).into(), -2), AddOne)));
+            assert_eq!(got, Ok(Inexact(FBig::from_parts((-3).into(), -2), NoOp)));
             assert_eq!(ctx.sinh(&x, None), Err(FpError::Overflow(Sign::Positive)));
             assert_eq!(ctx.sinh(&neg, None), Err(FpError::Overflow(Sign::Negative)));
             assert_eq!(ctx.cosh(&neg, None), Err(FpError::Overflow(Sign::Positive)));
