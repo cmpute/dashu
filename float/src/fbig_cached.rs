@@ -8,7 +8,6 @@ use core::str::FromStr;
 use dashu_base::{AbsOrd, ConversionError, EstimatedLog2, ParseError, Sign, Signed};
 use dashu_int::{IBig, UBig};
 
-use crate::error::panic_unlimited_precision;
 use crate::fbig::FBig;
 use crate::math::cache::ConstCache;
 use crate::repr::{Context, Repr, Word};
@@ -196,15 +195,7 @@ impl<R: Round, const B: Word> CachedFBig<R, B> {
 impl<R: Round, const B: Word> CachedFBig<R, B> {
     /// ULP of the number (see [`FBig::ulp`]).
     pub fn ulp(&self) -> Self {
-        if self.fbig.context.precision == 0 {
-            panic_unlimited_precision();
-        }
-        let repr = Repr {
-            significand: dashu_int::IBig::ONE,
-            exponent: self.fbig.repr.exponent + self.fbig.repr.digits() as isize
-                - self.fbig.context.precision as isize,
-        };
-        Self::from_repr(repr, self.fbig.context, Rc::clone(&self.cache))
+        Self::from_fbig(self.fbig.ulp(), &self.cache)
     }
 
     /// A cheap lower bound on [`ulp`](Self::ulp) (see [`FBig::ulp_lb`]).

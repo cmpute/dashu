@@ -295,8 +295,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, Context::new(precision))
     }
 
-    /// Return the value of the least significant digit of the float number x,
-    /// such that `x + ulp` is the first float number greater than x (given the precision from the context).
+    /// Return the unit in the last place of the float number x: the value of the least
+    /// significant digit of a significand of `precision` digits whose leading digit lines up
+    /// with the leading digit of x (given the precision from the context).
+    ///
+    /// For a positive x this is the distance to the first float number greater than x, so
+    /// `x + ulp` is that number, and symmetrically `x - ulp` is the first float number
+    /// smaller than a negative x. In the direction toward zero the neighbour is one `ulp`
+    /// away as well, except when `|x|` is a power of the base: the floats just below a power
+    /// of the base are spaced `ulp / BASE` apart (for `-0.1` at precision 2 the `ulp` is
+    /// `0.01` and `-0.09` is a float, but `-0.099` is the first float greater than `-0.1`).
+    ///
+    /// The ulp of a zero (of either sign) is `BASE^-precision`; the ulp of an infinity is
+    /// that infinity.
     ///
     /// # Examples
     ///
@@ -324,12 +335,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = Repr {
             significand: IBig::ONE,
             exponent: self
-                .repr
-                .exponent
+                .magnitude_exponent()
                 .saturating_add(self.repr.digits() as isize)
                 .saturating_sub(self.context.precision as isize),
         };
         Self::new(repr, self.context)
+    }
+
+    /// The exponent to derive the ulp from: the stored exponent, except that a zero counts
+    /// as `0 · B^0` whatever its sign (the stored exponent of `-0` is the encoding of its
+    /// sign, not a magnitude).
+    #[inline]
+    fn magnitude_exponent(&self) -> isize {
+        if self.repr.significand.is_zero() {
+            0
+        } else {
+            self.repr.exponent
+        }
     }
 
     /// A cheap lower bound on [`ulp`](Self::ulp), guaranteed strictly smaller than it.
@@ -356,8 +378,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = Repr {
             significand: IBig::ONE,
             exponent: self
-                .repr
-                .exponent
+                .magnitude_exponent()
                 .saturating_add(self.repr.digits_lb() as isize)
                 .saturating_sub(self.context.precision as isize)
                 .saturating_sub(1),
