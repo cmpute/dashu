@@ -1,16 +1,13 @@
 //! Decomposition and miscellaneous operations: `neg`, `conj`, `proj`, `mul_i`, `norm`, `arg`.
 
 use crate::cbig::CBig;
-use crate::repr::{exact, CfpResult, Context};
+use crate::mul::sum_of_products;
+use crate::repr::{combine_parts, exact, CfpResult, Context};
 use core::ops::Neg;
 use dashu_base::Sign;
-use dashu_float::round::{ErrorBounds, Round};
+use dashu_float::round::{ErrorBounds, Round, Rounded};
 use dashu_float::{FBig, FpResult, Repr};
 use dashu_int::Word;
-
-/// Guard digits (base-B) used by `norm` — well-conditioned (sum of squares, no cancellation), so a
-/// small fixed guard comfortably settles the accumulated rounding of two squarings and an add.
-const NORM_GUARD: usize = 8;
 
 impl<R: Round, const B: Word> CBig<R, B> {
     /// The complex conjugate `x - iy`. Exact (sign flip of the imaginary part, including `-0`/`-inf`).
@@ -33,8 +30,8 @@ impl<R: Round, const B: Word> CBig<R, B> {
         self.context.unwrap_cfp(self.context.mul_i(self, negative))
     }
 
-    /// The squared modulus `re² + im²` (a real [`FBig`]). Cheap and near-exact — it avoids the
-    /// `sqrt` of [`CBig::abs`]. Matches num-complex's `norm_sqr`.
+    /// The squared modulus `re² + im²` (a real [`FBig`]), correctly rounded. Cheap — it avoids
+    /// the `sqrt` of [`CBig::abs`]. Matches num-complex's `norm_sqr`.
     #[inline]
     pub fn norm(&self) -> FBig<R, B> {
         self.context.float().unwrap_fp(self.context.norm(self))
@@ -58,23 +55,33 @@ impl<R: Round, const B: Word> Neg for &CBig<R, B> {
 }
 
 impl<R: Round> Context<R> {
-    /// Negate under this context (context layer). Exact.
+    /// Carry one part of an operand over to this context: the part is rounded to this context's
+    /// precision when the operand's own context is wider (or unlimited), and kept as is otherwise.
+    fn part<const B: Word>(&self, repr: Repr<B>, source: Context<R>) -> Rounded<FBig<R, B>> {
+        FBig::from_repr(repr, source.float()).with_precision(self.precision())
+    }
+
+    /// Negate under this context (context layer). Exact unless this context is narrower than the
+    /// operand's, in which case each part is rounded to this context's precision.
     pub fn neg<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
-        Ok(exact(
-            FBig::from_repr(-z.re.clone(), self.float()),
-            FBig::from_repr(-z.im.clone(), self.float()),
+        Ok(combine_parts(
+            self.part(-z.re.clone(), z.context),
+            self.part(-z.im.clone(), z.context),
         ))
     }
 
-    /// Complex conjugate under this context (context layer). Exact.
+    /// Complex conjugate under this context (context layer). Exact unless this context is
+    /// narrower than the operand's, in which case each part is rounded to this context's precision.
     pub fn conj<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
-        Ok(exact(
-            FBig::from_repr(z.re.clone(), self.float()),
-            FBig::from_repr(-z.im.clone(), self.float()),
+        Ok(combine_parts(
+            self.part(z.re.clone(), z.context),
+            self.part(-z.im.clone(), z.context),
         ))
     }
 
-    /// Riemann projection under this context (context layer). Exact.
+    /// Riemann projection under this context (context layer). Exact unless this context is
+    /// narrower than a finite operand's, in which case each part is rounded to this context's
+    /// precision.
     pub fn proj<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
         if z.is_infinite() {
             // +∞ on the real part; the imaginary zero carries the sign of the original imag part.
@@ -88,14 +95,16 @@ impl<R: Round> Context<R> {
                 FBig::from_repr(im, self.float()),
             ))
         } else {
-            Ok(exact(
-                FBig::from_repr(z.re.clone(), self.float()),
-                FBig::from_repr(z.im.clone(), self.float()),
+            Ok(combine_parts(
+                self.part(z.re.clone(), z.context),
+                self.part(z.im.clone(), z.context),
             ))
         }
     }
 
-    /// Multiply by `±i` under this context (context layer). Exact rotation.
+    /// Multiply by `±i` under this context (context layer). An exact rotation unless this
+    /// context is narrower than the operand's, in which case each part is rounded to this
+    /// context's precision.
     pub fn mul_i<const B: Word>(&self, z: &CBig<R, B>, negative: bool) -> CfpResult<R, B> {
         let (re, im) = if negative {
             // ×(-i): (x, y) -> (y, -x)
@@ -104,11 +113,13 @@ impl<R: Round> Context<R> {
             // ×i: (x, y) -> (-y, x)
             (-z.im.clone(), z.re.clone())
         };
-        Ok(exact(FBig::from_repr(re, self.float()), FBig::from_repr(im, self.float())))
+        Ok(combine_parts(self.part(re, z.context), self.part(im, z.context)))
     }
 
-    /// The squared modulus `re² + im²` (context layer). Near-exact; returns `+∞` for an infinite
-    /// input and propagates overflow to a signed infinity via the float `unwrap_fp` policy.
+    /// The squared modulus `re² + im²` (context layer), correctly rounded (the exact value
+    /// rounded once); returns `+∞` for an infinite input and reports an out-of-range result as
+    /// [`FpError::Overflow`](dashu_float::FpError::Overflow) /
+    /// [`FpError::Underflow`](dashu_float::FpError::Underflow).
     pub fn norm<const B: Word>(&self, z: &CBig<R, B>) -> FpResult<FBig<R, B>> {
         if z.is_infinite() {
             return Ok(dashu_base::Approximation::Exact(FBig::from_repr(
@@ -116,13 +127,8 @@ impl<R: Round> Context<R> {
                 self.float(),
             )));
         }
-        // `work_context` (not `guard`): at unlimited precision `sqr`/`add` are exact, so `norm`
-        // is too — it shouldn't panic or round there.
-        let gctx = self.work_context(NORM_GUARD);
-        let re2 = gctx.unwrap_fp(gctx.sqr(z.re()));
-        let im2 = gctx.unwrap_fp(gctx.sqr(z.im()));
-        let n = gctx.unwrap_fp(gctx.add(re2.repr(), im2.repr()));
-        Ok(n.with_precision(self.precision()))
+        let (x, y) = (z.re(), z.im());
+        sum_of_products(&self.float(), &[(x, x, Sign::Positive), (y, y, Sign::Positive)])
     }
 }
 

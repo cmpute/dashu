@@ -1452,14 +1452,11 @@ mod tests {
                             } else {
                                 Rounding::AddOne
                             };
-                            // `combine_parts` collapses an all-NoOp pair to `Exact` (the flag
-                            // channel carries the per-component ulp *adjustment*, not exactness),
-                            // so the endpoint's Inexact-NoOp case surfaces as `Exact` here.
-                            let expected_flag = if expected_adj == Rounding::NoOp {
-                                None
-                            } else {
-                                Some((Rounding::NoOp, expected_adj))
-                            };
+                            // The saturated endpoint is never the exact value, so the result
+                            // is `Inexact` even when the adjustment is `NoOp` (the flag channel
+                            // carries the per-component ulp *adjustment*; exactness is the
+                            // `Exact`/`Inexact` variant).
+                            let expected_flag = Some((Rounding::NoOp, expected_adj));
                             let want = near_one_repr(sign, p, $stays);
 
                             // tan(0 + iy): im saturates to the endpoint, re = +0 exactly.

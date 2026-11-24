@@ -1,86 +1,211 @@
-//! Complex squaring and multiplication (near-correctly rounded via the guard-digit recipe).
+//! Complex squaring, multiplication and fused multiply–add.
+//!
+//! Every result part is a sum of two or three products of the operand parts. Each part is formed
+//! **exactly** and rounded a single time ([`sum_of_products`]), so the result is correctly rounded
+//! per component — including under catastrophic cancellation — and the inexactness flags and
+//! directed-rounding directions are those of the exact value.
 
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, CfpResult, Context};
+use crate::repr::{combine_results, CfpResult, Context};
+use alloc::vec::Vec;
 use core::ops::{Mul, MulAssign};
+use dashu_base::AbsOrd;
+use dashu_base::Approximation::Exact;
 use dashu_base::Sign::{self, *};
 use dashu_float::round::Round;
-use dashu_float::{FBig, Repr};
-use dashu_int::Word;
+use dashu_float::{Context as FloatCtxt, FBig, FpError, FpResult, Repr};
+use dashu_int::{IBig, Word};
 
-/// Guard digits (base-B) for `sqr`/`mul`. The published normwise error bound for complex
-/// multiplication is `< √5·u` (Brent–Percival–Zimmermann), so a small fixed guard comfortably
-/// settles the accumulated rounding of the 2–4 component products for non-cancelling inputs.
-const MUL_GUARD: usize = 10;
+/// One addend `sign · a · b` of a [`sum_of_products`].
+pub(crate) type Term<'a, const B: Word> = (&'a Repr<B>, &'a Repr<B>, Sign);
+
+/// The correctly rounded value of `Σ signᵢ·aᵢ·bᵢ` under `ctx`: the products and their sum are
+/// formed exactly and rounded once, so the value, its inexactness flag and (for directed modes)
+/// its direction are those of the exact result. At unlimited precision the result is exact.
+///
+/// Zero results follow IEEE 754 §6.3: a sum of like-signed zero products keeps that sign, and an
+/// exact cancellation (or a sum of opposite-signed zeros) is `+0`, or `-0` when rounding toward
+/// negative infinity.
+///
+/// An addend lying entirely below the rounding window of the partial sum of the larger ones only
+/// matters through its sign, so it is replaced by a unit just below that window instead of being
+/// aligned — the exact sum never materializes the exponent gap between the addends.
+///
+/// Returns [`FpError::InfiniteInput`] for an infinite operand, and the product's
+/// [`FpError::Overflow`] / [`FpError::Underflow`] when one leaves the exponent range.
+pub(crate) fn sum_of_products<R: Round, const B: Word>(
+    ctx: &FloatCtxt<R>,
+    terms: &[Term<'_, B>],
+) -> FpResult<FBig<R, B>> {
+    if terms
+        .iter()
+        .any(|(a, b, _)| a.is_infinite() || b.is_infinite())
+    {
+        return Err(FpError::InfiniteInput);
+    }
+
+    let exact = FloatCtxt::<R>::new(0);
+    let zero = |negative: bool| {
+        let repr = if negative {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        };
+        Exact(FBig::from_repr(repr, *ctx))
+    };
+
+    // the exact nonzero products, and the signs of the zero ones
+    let (mut pos_zero, mut neg_zero) = (false, false);
+    let mut prods: Vec<FBig<R, B>> = Vec::with_capacity(terms.len());
+    for &(a, b, sign) in terms {
+        if a.significand().is_zero() || b.significand().is_zero() {
+            match sign * a.sign() * b.sign() {
+                Positive => pos_zero = true,
+                Negative => neg_zero = true,
+            }
+            continue;
+        }
+        let prod = exact.mul(a, b)?.value();
+        prods.push(if sign == Negative { -prod } else { prod });
+    }
+    if prods.is_empty() {
+        return Ok(zero(neg_zero && (!pos_zero || R::IS_ROUND_TOWARD_NEGATIVE)));
+    }
+
+    // accumulate from the largest magnitude down
+    prods.sort_unstable_by(|l, r| r.abs_cmp(l));
+    let p = ctx.precision();
+    let mut acc: Option<FBig<R, B>> = None;
+    for (i, t) in prods.iter().enumerate() {
+        let partial = match &acc {
+            None => {
+                acc = Some(t.clone());
+                continue;
+            }
+            Some(partial) => partial,
+        };
+        if p != 0 {
+            // `t` and everything after it (they are no larger) sit below the rounding window
+            // of the partial sum: only the sign of their total can still affect the rounding.
+            let below = match (sticky_position(partial.repr(), p), top_ub(t.repr())) {
+                (Some(k), Some(top)) if top <= k => Some(k),
+                _ => None,
+            };
+            if let (Some(k), Some(tail)) = (below, tail_sign(&prods[i..])) {
+                if let Some(sign) = tail {
+                    let unit = Repr::new(IBig::ONE * sign, k);
+                    acc = Some(exact.add(partial.repr(), &unit)?.value());
+                }
+                break;
+            }
+        }
+        let sum = exact.add(partial.repr(), t.repr())?.value();
+        acc = if sum.repr().significand().is_zero() {
+            None
+        } else {
+            Some(sum)
+        };
+    }
+
+    match acc {
+        // exact cancellation of nonzero addends
+        None => Ok(zero(R::IS_ROUND_TOWARD_NEGATIVE)),
+        Some(sum) => {
+            let rounded = sum.with_precision(p);
+            if rounded.value_ref().repr().is_infinite() {
+                // the rounding carried the exponent out of range
+                return Err(FpError::Overflow(rounded.value_ref().repr().sign()));
+            }
+            Ok(rounded)
+        }
+    }
+}
+
+/// An upper bound on the position just above the top digit of a nonzero `v`
+/// (`|v| < B^top`), or `None` if it does not fit in an `isize`.
+fn top_ub<const B: Word>(v: &Repr<B>) -> Option<isize> {
+    v.exponent()
+        .checked_add(isize::try_from(v.digits_ub()).ok()?)
+}
+
+/// A position `k` such that replacing a nonzero perturbation of magnitude below `2·B^k` by
+/// `±B^k` (same sign) cannot change how the nonzero `v + perturbation` rounds to `precision`
+/// digits, or `None` if it does not fit in an `isize`.
+///
+/// `v` and every rounding boundary near it (a multiple of half an ulp, with the ulp at least
+/// `B^(top − 1 − precision)` even when the perturbation pulls `v` below a power of the base) are
+/// multiples of `g/2` for `g = B^min(exponent, top − 1 − precision)`. A perturbation below `g/2`
+/// in magnitude therefore keeps the sum strictly between `v` and the adjacent boundary, where
+/// only its sign matters. `k` leaves three digits of margin below `g`, so that `2·B^k < g/2` in
+/// every base.
+fn sticky_position<const B: Word>(v: &Repr<B>, precision: usize) -> Option<isize> {
+    let top_lb = v
+        .exponent()
+        .checked_add(isize::try_from(v.digits_lb()).ok()?)?;
+    let window = top_lb.checked_sub(isize::try_from(precision).ok()?.checked_add(1)?)?;
+    v.exponent().min(window).checked_sub(3)
+}
+
+/// The sign of the exact sum of the (nonzero) `tail` addends: `Some(None)` if they cancel
+/// exactly, and `None` if this is not decided here (more than two addends).
+fn tail_sign<R: Round, const B: Word>(tail: &[FBig<R, B>]) -> Option<Option<Sign>> {
+    match tail {
+        [t] => Some(Some(t.sign())),
+        [t, u] if t.sign() == u.sign() => Some(Some(t.sign())),
+        [t, u] => Some(match t.abs_cmp(u) {
+            core::cmp::Ordering::Greater => Some(t.sign()),
+            core::cmp::Ordering::Less => Some(u.sign()),
+            core::cmp::Ordering::Equal => None,
+        }),
+        _ => None,
+    }
+}
 
 impl<R: Round> Context<R> {
     /// Square a complex number under this context: `(x+iy)² = (x²-y²) + i(2xy)`.
+    ///
+    /// Each part is correctly rounded (the exact value rounded once).
     pub fn sqr<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
-        if z.is_zero() {
-            // (x+iy)² = (x²−y²) + i·2xy: the real part is always `+0` (both squares are `+0`); the
-            // imaginary part carries the signed product `2·x·y` — `−0` iff the two parts are
-            // opposite-signed zeros (IEEE: `(−0)(+0) = −0`).
-            let im_sign = z.re().sign() * z.im().sign();
-            return Ok(exact(
-                FBig::from_repr(Repr::zero(), self.float()),
-                FBig::from_repr(Repr::zero_with_sign(im_sign), self.float()),
-            ));
-        }
-        let gctx = self.work_context(MUL_GUARD);
-        let p = self.precision();
         let (x, y) = (z.re(), z.im());
-        // real part: x² - y²
-        let x2 = gctx.sqr(x)?.value();
-        let y2 = gctx.sqr(y)?.value();
-        let re = gctx.sub(x2.repr(), y2.repr())?.value().with_precision(p);
+        let fctx = self.float();
+        // real part: x² − y²
+        let re = sum_of_products(&fctx, &[(x, x, Positive), (y, y, Negative)]);
         // imaginary part: 2·x·y
-        let xy = gctx.mul(x, y)?.value();
-        let im = gctx.add(xy.repr(), xy.repr())?.value().with_precision(p);
-        Ok(combine_parts(re, im))
+        let im = sum_of_products(&fctx, &[(x, y, Positive), (x, y, Positive)]);
+        combine_results(re, im)
     }
 
-    /// Multiply two complex numbers under this context: `(x+iy)(u+iv) = (xu-yv) + i(xv+yu)`
-    /// (naive 4-mul form; near-correctly rounded via the guard re-round).
+    /// Multiply two complex numbers under this context: `(x+iy)(u+iv) = (xu-yv) + i(xv+yu)`.
+    ///
+    /// Each part is correctly rounded (the exact value rounded once), so a real part that nearly
+    /// cancels is still accurate to the last digit.
     pub fn mul<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
-        let gctx = self.work_context(MUL_GUARD);
-        let p = self.precision();
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
-        // real part: xu − yv. Fuse y·v with the subtract via FMA (one rounding
-        // instead of mul-then-sub's two), which also preserves the cancellation
-        // structure when xu ≈ yv.
-        let xu = gctx.mul(x, u)?.value();
-        let re = gctx
-            .fma(y, v, xu.repr(), Negative)?
-            .value()
-            .with_precision(p);
+        let fctx = self.float();
+        // real part: xu − yv
+        let re = sum_of_products(&fctx, &[(x, u, Positive), (y, v, Negative)]);
         // imaginary part: xv + yu
-        let xv = gctx.mul(x, v)?.value();
-        let im = gctx
-            .fma(y, u, xv.repr(), Positive)?
-            .value()
-            .with_precision(p);
-        Ok(combine_parts(re, im))
+        let im = sum_of_products(&fctx, &[(x, v, Positive), (y, u, Positive)]);
+        combine_results(re, im)
     }
 
     /// Multiply a complex number by a real scalar (context layer): `(x+iy)·s = (xs) + i(ys)`.
+    ///
+    /// Each part is a single correctly-rounded real product.
     pub fn mul_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
-        let gctx = self.work_context(MUL_GUARD);
-        let p = self.precision();
-        let re = gctx.mul(z.re(), s.repr())?.value().with_precision(p);
-        let im = gctx.mul(z.im(), s.repr())?.value().with_precision(p);
-        Ok(combine_parts(re, im))
+        let re = self.float().mul(z.re(), s.repr());
+        let im = self.float().mul(z.im(), s.repr());
+        combine_results(re, im)
     }
 
-    /// Fused complex multiply–add under this context: `z1·z2 + sign·z3`, computed
-    /// as chained real FMA per component (each product fused with the running sum,
-    /// so two real roundings per component rather than the four roundings of the
-    /// naive mul-then-add form). `sign` scales `z3` ([`Sign::Positive`] adds it,
-    /// [`Sign::Negative`] subtracts).
+    /// Fused complex multiply–add under this context: `z1·z2 + sign·z3`. Each part of the exact
+    /// result is rounded once, so the result is correctly rounded per component. `sign` scales
+    /// `z3` ([`Sign::Positive`] adds it, [`Sign::Negative`] subtracts).
     ///
-    /// An infinite operand is a terminal value and is not accepted — the per-component float
-    /// `fma` rejects it ([`FpError::InfiniteInput`](dashu_float::FpError::InfiniteInput),
-    /// panicking at the convenience layer).
+    /// An infinite operand is a terminal value and is not accepted — it is rejected with
+    /// [`FpError::InfiniteInput`](dashu_float::FpError::InfiniteInput) (panicking at the
+    /// convenience layer).
     pub fn fma<const B: Word>(
         &self,
         z1: &CBig<R, B>,
@@ -88,26 +213,16 @@ impl<R: Round> Context<R> {
         z3: &CBig<R, B>,
         sign: Sign,
     ) -> CfpResult<R, B> {
-        let gctx = self.work_context(MUL_GUARD);
-        let p = self.precision();
         let (a, b) = (z1.re(), z1.im());
         let (c, d) = (z2.re(), z2.im());
         let (e, f) = (z3.re(), z3.im());
-        // Form z1·z2 with each cross product fused into the sum via FMA — the
-        // subtraction `a·c − b·d` (and addition `a·d + b·c`) is the
-        // cancellation-prone part, so fusing it is the accuracy win. Then add or
-        // subtract z3 wholesale. (FMA's sign scales the product, so it cannot put
-        // the sign on the z3 addend directly; fusing the z1·z2 cross terms instead
-        // is the clean placement.)
-        let ac = gctx.mul(a, c)?.value();
-        let z12_re = gctx.fma(b, d, ac.repr(), Negative)?.value(); // a·c − b·d
-        let re = FBig::from_repr(gctx.addsub_vr(z12_re.into_repr(), e, sign).value(), gctx)
-            .with_precision(p);
-        let ad = gctx.mul(a, d)?.value();
-        let z12_im = gctx.fma(b, c, ad.repr(), Positive)?.value(); // a·d + b·c
-        let im = FBig::from_repr(gctx.addsub_vr(z12_im.into_repr(), f, sign).value(), gctx)
-            .with_precision(p);
-        Ok(combine_parts(re, im))
+        let fctx = self.float();
+        let one = Repr::one();
+        // real part: a·c − b·d ± e
+        let re = sum_of_products(&fctx, &[(a, c, Positive), (b, d, Negative), (e, &one, sign)]);
+        // imaginary part: a·d + b·c ± f
+        let im = sum_of_products(&fctx, &[(a, d, Positive), (b, c, Positive), (f, &one, sign)]);
+        combine_results(re, im)
     }
 }
 
