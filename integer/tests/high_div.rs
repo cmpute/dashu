@@ -83,6 +83,30 @@ fn test_div_high_exact_band() {
 }
 
 #[test]
+fn test_div_high_unsized_window() {
+    // The quotient is not sized for the window: None, including for windows whose bit
+    // size overflows `usize` (which no bit-length difference can match).
+    let b = UBig::ONE << Word::BITS as usize; // two words
+    let b2 = UBig::ONE << (2 * Word::BITS as usize);
+    for n in [
+        2,
+        3,
+        usize::MAX / Word::BITS as usize,
+        usize::MAX - 1,
+        usize::MAX,
+    ] {
+        assert_eq!(div_high(&b, &b, n), None, "n = {n}");
+    }
+    // n * Word::BITS wraps around to exactly the bit-length difference of the operands
+    for wrapped in [1, 2] {
+        let n = usize::MAX / Word::BITS as usize + 1 + wrapped;
+        assert_eq!(n.wrapping_mul(Word::BITS as usize), wrapped * Word::BITS as usize);
+        assert_eq!(div_high(&b2, &b, n), None, "n = {n}");
+        assert_eq!(div_high(&(&b2 * &b), &b, n), None, "n = {n}");
+    }
+}
+
+#[test]
 fn test_div_high_full_width_denominators() {
     // Denominators with a full top word exercise the normalization shifts
     // in the kernel (and the `numer_shift < wn·Word::BITS` copy path —
