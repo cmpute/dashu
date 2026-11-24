@@ -378,7 +378,9 @@ pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
             // single sampled split) is required because the Toom-4x2 band
             // makes the budget non-monotone in the split.
             mul::memory_chain_budget_envelope(rhs_len, rhs_len / 2),
-            mul::memory_chain_budget_envelope(lhs_len, lhs_len / 2),
+            // The coefficient update multiplies a quotient by a coefficient into the
+            // (lhs_len + 1)-word coefficient buffer.
+            mul::memory_chain_budget_envelope(lhs_len + 1, (lhs_len + 1) / 2),
         ),
     )
 }
