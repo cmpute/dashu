@@ -13,7 +13,7 @@ use dashu_float::round::Round;
 use dashu_float::{FBig, Repr};
 use dashu_int::Word;
 use serde::{
-    de::{self, Deserialize, Deserializer, SeqAccess, Visitor},
+    de::{self, Deserialize, DeserializeSeed, Deserializer, SeqAccess, Visitor},
     ser::{Serialize, SerializeStruct, Serializer},
 };
 
@@ -87,6 +87,52 @@ fn write_fbig_padded<R: Round, const B: Word>(
     f.write_str(&s)
 }
 
+/// A field name of the struct form.
+enum Field {
+    Re,
+    Im,
+    Precision,
+}
+
+/// Deserializes a field name. Formats differ in how they hand over map keys (borrowed from
+/// the input, as a transient string, as an owned string, or as bytes), so the name is matched
+/// in a visitor instead of being deserialized as a borrowed `&str`.
+struct FieldSeed;
+
+impl<'de> Visitor<'de> for FieldSeed {
+    type Value = Field;
+
+    #[inline]
+    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+        formatter.write_str("a field name")
+    }
+
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        match v {
+            KEY_RE => Ok(Field::Re),
+            KEY_IM => Ok(Field::Im),
+            KEY_PREC => Ok(Field::Precision),
+            _ => Err(de::Error::unknown_field(v, CBIG_FIELDS)),
+        }
+    }
+
+    fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        match core::str::from_utf8(v) {
+            Ok(v) => self.visit_str(v),
+            Err(_) => Err(de::Error::invalid_value(de::Unexpected::Bytes(v), &self)),
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for FieldSeed {
+    type Value = Field;
+
+    #[inline]
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_identifier(self)
+    }
+}
+
 struct CBigVisitor<R: Round, const B: Word>(PhantomData<R>);
 
 impl<'de, R: Round, const B: Word> Visitor<'de> for CBigVisitor<R, B> {
@@ -125,27 +171,26 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for CBigVisitor<R, B> {
         let mut re: Option<Repr<B>> = None;
         let mut im: Option<Repr<B>> = None;
         let mut precision: Option<usize> = None;
-        while let Some(key) = map.next_key()? {
+        while let Some(key) = map.next_key_seed(FieldSeed)? {
             match key {
-                KEY_RE => {
+                Field::Re => {
                     if re.is_some() {
                         return Err(de::Error::duplicate_field(KEY_RE));
                     }
                     re = Some(map.next_value()?);
                 }
-                KEY_IM => {
+                Field::Im => {
                     if im.is_some() {
                         return Err(de::Error::duplicate_field(KEY_IM));
                     }
                     im = Some(map.next_value()?);
                 }
-                KEY_PREC => {
+                Field::Precision => {
                     if precision.is_some() {
                         return Err(de::Error::duplicate_field(KEY_PREC));
                     }
                     precision = Some(map.next_value()?);
                 }
-                _ => return Err(de::Error::unknown_field(key, CBIG_FIELDS)),
             }
         }
 

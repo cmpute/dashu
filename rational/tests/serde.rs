@@ -49,3 +49,67 @@ fn test_relaxed_serde() {
         assert_eq!(&parsed, ratio);
     }
 }
+
+#[test]
+fn test_serde_struct_field_names() {
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, Configure, Token};
+
+    // A format may hand over the field names borrowed, transient, owned or as bytes.
+    let keys: [fn(&'static str) -> Token; 4] =
+        [Token::BorrowedStr, Token::Str, Token::String, |s| {
+            Token::Bytes(s.as_bytes())
+        }];
+    for key in keys {
+        assert_de_tokens(
+            &rbig!(-1 / 3).compact(),
+            &[
+                Token::Struct {
+                    name: "RBig",
+                    len: 2,
+                },
+                key("numerator"),
+                Token::Bytes(&[0xff]),
+                key("denominator"),
+                Token::Bytes(&[3]),
+                Token::StructEnd,
+            ],
+        );
+        assert_de_tokens(
+            &rbig!(~2/6).compact(),
+            &[
+                Token::Struct {
+                    name: "Relaxed",
+                    len: 2,
+                },
+                key("denominator"),
+                Token::Bytes(&[6]),
+                key("numerator"),
+                Token::Bytes(&[2]),
+                Token::StructEnd,
+            ],
+        );
+    }
+
+    assert_de_tokens_error::<serde_test::Compact<RBig>>(
+        &[
+            Token::Struct {
+                name: "RBig",
+                len: 2,
+            },
+            Token::String("numer"),
+        ],
+        "unknown field `numer`, expected `numerator` or `denominator`",
+    );
+    assert_de_tokens_error::<serde_test::Compact<RBig>>(
+        &[
+            Token::Struct {
+                name: "RBig",
+                len: 2,
+            },
+            Token::String("denominator"),
+            Token::Bytes(&[3]),
+            Token::String("denominator"),
+        ],
+        "duplicate field `denominator`",
+    );
+}

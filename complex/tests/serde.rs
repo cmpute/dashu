@@ -50,3 +50,59 @@ fn cbig_serde_over_precision_value() {
     let parsed: C = from_str(&output).unwrap();
     assert_eq!(parsed, z);
 }
+
+#[test]
+fn cbig_serde_struct_field_names() {
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, Configure, Token};
+
+    // A format may hand over the field names borrowed, transient, owned or as bytes.
+    let keys: [fn(&'static str) -> Token; 4] =
+        [Token::BorrowedStr, Token::Str, Token::String, |s| {
+            Token::Bytes(s.as_bytes())
+        }];
+    for key in keys {
+        assert_de_tokens(
+            &c("0.5", "-2", 10).compact(),
+            &[
+                Token::Struct {
+                    name: "CBig",
+                    len: 3,
+                },
+                key("re"),
+                Token::Struct {
+                    name: "FBigRepr",
+                    len: 2,
+                },
+                key("significand"),
+                Token::Bytes(&[5]),
+                key("exponent"),
+                Token::I64(-1),
+                Token::StructEnd,
+                key("im"),
+                Token::Struct {
+                    name: "FBigRepr",
+                    len: 2,
+                },
+                key("significand"),
+                Token::Bytes(&[0xfe]),
+                key("exponent"),
+                Token::I64(0),
+                Token::StructEnd,
+                key("precision"),
+                Token::U64(10),
+                Token::StructEnd,
+            ],
+        );
+    }
+
+    assert_de_tokens_error::<serde_test::Compact<C>>(
+        &[
+            Token::Struct {
+                name: "CBig",
+                len: 3,
+            },
+            Token::String("real"),
+        ],
+        "unknown field `real`, expected one of `re`, `im`, `precision`",
+    );
+}
