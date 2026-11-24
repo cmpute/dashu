@@ -142,7 +142,12 @@ impl num_traits::Signed for IBig {
 
     #[inline]
     fn abs_sub(&self, other: &Self) -> Self {
-        Abs::abs(self - other)
+        // the positive difference: max(self - other, 0)
+        if self <= other {
+            IBig::ZERO
+        } else {
+            self - other
+        }
     }
 
     #[inline]
