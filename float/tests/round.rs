@@ -298,3 +298,244 @@ fn test_quantize_ulp_invariant() -> Result<(), ParseError> {
 fn test_quantize_inf() {
     let _ = DBig::INFINITY.quantize(0);
 }
+
+// ---------------------------------------------------------------------------
+// Regressions for the rounding-operation reports of the Hegel triage
+// (see triage/float-arith.md).
+// ---------------------------------------------------------------------------
+
+mod triage {
+    use dashu_base::{Approximation, Sign};
+    use dashu_float::{
+        round::{mode, Round, Rounding},
+        Context, DBig, FBig, Repr, Word,
+    };
+    use dashu_int::IBig;
+    use std::panic::catch_unwind;
+
+    fn fbig<R: Round, const B: Word>(sig: i64, exp: isize, precision: usize) -> FBig<R, B> {
+        FBig::from_repr(Repr::new(sig.into(), exp), Context::new(0))
+            .with_precision(precision)
+            .value()
+    }
+
+    /// Assert two floats are identical: same value, same sign of zero, same precision.
+    #[track_caller]
+    fn assert_same<R: Round, const B: Word>(a: &FBig<R, B>, b: &FBig<R, B>) {
+        assert_eq!(a.repr(), b.repr());
+        assert_eq!(a.sign(), b.sign(), "{a:?} vs {b:?}");
+        assert_eq!(a.precision(), b.precision(), "{a:?} vs {b:?}");
+    }
+
+    /// (significand, exponent) samples around the radix point: integers, values below one
+    /// that the cheap magnitude estimate does and does not recognize as such, and mixed ones.
+    const SAMPLES: [(i64, isize); 16] = [
+        (0, 0),
+        (1, 0),
+        (12, 0),
+        (12, 3),
+        (1, -1),
+        (5, -1),
+        (3, -2),
+        (99, -2),
+        (5, -3),
+        (1, -5),
+        (15, -1),
+        (125, -1),
+        (1234, -3),
+        (123456789, -4),
+        (1, -70),
+        (987654321, -9),
+    ];
+
+    /// Rounding a negative number with a zero integer part yields `-0` from every
+    /// round-to-integer operation (IEEE 754: the sign of the operand is kept): `ceil` used to
+    /// return `+0` where `trunc` and `round` returned `-0`.
+    #[test]
+    fn test_round_to_integer_keeps_sign_of_zero() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                for (sig, exp) in SAMPLES {
+                    for sign in [1, -1] {
+                        let x = fbig::<R, B>(sign * sig, exp, precision);
+                        let x = if sig == 0 && sign < 0 { -x } else { x };
+                        for (name, y) in [
+                            ("trunc", x.trunc()),
+                            ("ceil", x.ceil()),
+                            ("floor", x.floor()),
+                            ("round", x.round()),
+                        ] {
+                            assert!(y.repr().exponent() >= 0 || y.repr().is_neg_zero());
+                            if y.repr().significand().is_zero() {
+                                assert_eq!(y.sign(), x.sign(), "{name}({x:?}) = {y:?}");
+                            }
+                        }
+                        // the integer bracket is consistent
+                        assert!(x.floor() <= x && x <= x.ceil());
+                        assert!(x.ceil() - x.floor() <= FBig::<R, B>::ONE);
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Down, 10>();
+        check::<mode::Up, 2>();
+
+        use core::str::FromStr;
+        for s in ["-0.1", "-0.5", "-0.05", "-0.99"] {
+            let x = DBig::from_str(s).unwrap();
+            assert!(x.ceil().repr().is_neg_zero(), "ceil({s})");
+            assert!(x.trunc().repr().is_neg_zero(), "trunc({s})");
+        }
+        assert_eq!(DBig::from_str("-1.5").unwrap().ceil(), DBig::from(-1));
+        assert!(DBig::from_str("0.5").unwrap().floor().repr().is_pos_zero());
+        assert!(DBig::from_str("-0").unwrap().ceil().repr().is_neg_zero());
+    }
+
+    /// `split_at_point()` is `(trunc(), fract())` — value, sign of zero and precision — and,
+    /// like them, rejects the infinities. Its zero parts used to be `+0` for negative inputs,
+    /// and `+inf` came back as `(inf, 0)`.
+    #[test]
+    fn test_split_at_point_matches_trunc_fract() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                for (sig, exp) in SAMPLES {
+                    for sign in [1, -1] {
+                        let x = fbig::<R, B>(sign * sig, exp, precision);
+                        let x = if sig == 0 && sign < 0 { -x } else { x };
+                        let (trunc, fract) = x.clone().split_at_point();
+                        assert_same(&trunc, &x.trunc());
+                        assert_same(&fract, &x.fract());
+                        // both parts carry the sign of the input
+                        assert_eq!(trunc.sign(), x.sign());
+                        assert_eq!(fract.sign(), x.sign());
+                        // and they add back to it exactly
+                        let sum = Context::<R>::new(0)
+                            .add(trunc.repr(), fract.repr())
+                            .unwrap()
+                            .value();
+                        assert_eq!(sum.repr(), x.repr());
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::HalfEven, 3>();
+
+        for x in [DBig::INFINITY, DBig::NEG_INFINITY] {
+            assert!(catch_unwind(|| x.trunc()).is_err());
+            assert!(catch_unwind(|| x.fract()).is_err());
+            let y = x.clone();
+            assert!(catch_unwind(move || y.split_at_point()).is_err());
+        }
+    }
+
+    /// A number below one in magnitude is its own fractional part, precision included,
+    /// whether or not the cheap magnitude estimate recognizes it as below one. `fract()` used
+    /// to reset the precision to the number of fractional digits for values in `[0.01, 1)`.
+    #[test]
+    fn test_fract_below_one_is_identity() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [1usize, 2, 3, 5, 20, 50, 100, 500] {
+                for exp in [-1isize, -2, -3, -5, -40] {
+                    for sig in [1i64, -1] {
+                        let x = fbig::<R, B>(sig, exp, precision);
+                        assert_same(&x.fract(), &x);
+                        let t = x.trunc();
+                        assert!(t.repr().significand().is_zero());
+                        assert_eq!((t.sign(), t.precision()), (x.sign(), 0));
+                    }
+                }
+            }
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::Zero, 2>();
+
+        // a nonzero integral part still leaves the number of fractional digits as precision
+        let x = fbig::<mode::HalfAway, 10>(1234, -3, 7);
+        assert_eq!(x.fract().precision(), 3);
+        assert_eq!(x.trunc().precision(), 4);
+    }
+
+    /// `quantize` keeps the sign of a negative value that rounds to zero (like `round()` and
+    /// IEEE 754 `quantize`), and a zero result is never mistaken for a special value whatever
+    /// the quantum exponent is (`-1` is the exponent of the `-0` encoding).
+    #[test]
+    fn test_quantize_zero_result_sign() {
+        fn check<R: Round, const B: Word>(rounds_to_zero: bool) {
+            for precision in [20usize, 50, 100, 500] {
+                for exp in [-1isize, 0, 1, 5, isize::MAX - 1, isize::MAX] {
+                    for sign in [1i64, -1] {
+                        // far below half a quantum
+                        let x = fbig::<R, B>(sign, exp.saturating_sub(40), precision);
+                        let q = x.quantize(exp);
+                        let (value, rounding) = match q {
+                            Approximation::Inexact(v, r) => (v, r),
+                            Approximation::Exact(v) => panic!("exact: {v:?}"),
+                        };
+                        if rounds_to_zero {
+                            assert!(value.repr().significand().is_zero());
+                            assert_eq!(value.sign(), x.sign(), "{x:?}.quantize({exp})");
+                            assert_eq!(value.precision(), 0);
+                            assert_eq!(rounding, Rounding::NoOp);
+                        } else {
+                            // rounded away from zero to one quantum
+                            assert_eq!(value.repr(), &Repr::new(sign.into(), exp));
+                            assert_eq!(value.precision(), 1);
+                        }
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>(true);
+        check::<mode::HalfAway, 10>(true);
+        check::<mode::HalfEven, 2>(true);
+        check::<mode::Away, 10>(false);
+
+        use core::str::FromStr;
+        let x = DBig::from_str("-0.3").unwrap();
+        assert!(x.round().repr().is_neg_zero());
+        assert!(x.quantize(0).value().repr().is_neg_zero());
+        assert!(DBig::from_str("-1").unwrap().quantize(1).value().repr().is_neg_zero());
+        assert!(DBig::from_str("0.03").unwrap().quantize(-1).value().repr().is_pos_zero());
+        let b = FBig::<mode::Zero, 2>::from_parts(IBig::from(-1), -2); // -0.25
+        assert!(b.quantize(0).value().repr().is_neg_zero());
+        // a nonzero result is unaffected
+        assert_eq!(
+            DBig::from_str("-7").unwrap().quantize(1),
+            Approximation::Inexact(DBig::from_parts(IBig::from(-1), 1), Rounding::SubOne)
+        );
+    }
+
+    /// `quantize` accepts any `isize` quantum exponent: the distance to the stored exponent
+    /// is computed without overflow (a finer quantum near `isize::MIN` used to panic with
+    /// "attempt to subtract with overflow" in debug builds).
+    #[test]
+    fn test_quantize_extreme_exponents() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                let one = fbig::<R, B>(1, 0, precision);
+                for exp in [isize::MIN / 2, isize::MIN + 2, isize::MIN + 1, isize::MIN] {
+                    let q = one.quantize(exp);
+                    assert!(matches!(q, Approximation::Exact(_)));
+                    let q = q.value();
+                    assert_eq!(q, one);
+                    assert_eq!(q.precision(), exp.unsigned_abs() + 1);
+                }
+                // the opposite ends of the exponent range
+                let tiny = fbig::<R, B>(3, isize::MIN + 1, precision);
+                assert!(matches!(tiny.quantize(isize::MAX), Approximation::Inexact(_, _)));
+                let huge = fbig::<R, B>(3, isize::MAX - 1, precision);
+                let q = huge.quantize(isize::MIN + 1);
+                assert_eq!(q.clone().value(), huge);
+                // the exponent distance (isize::MAX - 1) - (isize::MIN + 1), plus the digits
+                assert_eq!(q.value().precision(), usize::MAX - 2 + huge.repr().digits());
+            }
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::Zero, 2>();
+        assert_eq!(Sign::Positive, DBig::ONE.quantize(isize::MIN).value().sign());
+    }
+}
