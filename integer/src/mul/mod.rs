@@ -225,6 +225,10 @@ pub fn mul_word_in_place_with_carry(words: &mut [Word], rhs: Word, mut carry: Wo
 }
 
 /// Temporary scratch space required for multiplication.
+///
+/// Despite the name, this is only valid for a product with exactly these lengths: the
+/// budget is not monotone in either of them. See [`memory_requirement_up_to_operand_len`]
+/// and [`memory_chain_budget_envelope`] for bounds over a range of shapes.
 pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout {
     memory_chain_budget(total_len - smaller_len, smaller_len)
 }
@@ -289,102 +293,88 @@ pub(crate) fn max_layout3(l0: Layout, l1: Layout, l2: Layout) -> Layout {
     memory::max_layout(memory::max_layout(l0, l1), l2)
 }
 
-/// Closed-form bound dominating [`memory_chain_budget`] for every product
-/// shape with total length `<= total`.
+/// Budget of the balanced kernels (Karatsuba, Toom-3, Toom-4) for a smaller operand of `b`
+/// words, without the tail of the chunk loop. It is monotone in `b`.
+fn ladder_budget(b: usize) -> Layout {
+    if b <= threshold::simple() {
+        memory::zero_layout()
+    } else if b <= threshold::karatsuba() {
+        karatsuba::memory_requirement_up_to(b)
+    } else if b <= threshold::toom4() {
+        toom_3::memory_requirement_up_to(b)
+    } else {
+        toom_4::memory_requirement_up_to(b)
+    }
+}
+
+/// Bound on the Toom-4x2 budget ([`toom_4_2::memory_chain_budget`]) of every in-band shape
+/// with total length `<= total`. It is monotone in `total`.
 ///
-/// Derivation: the ladder branches pay at most the Toom-4 budget at the
-/// most balanced split (`12 * total/2` words plus log/constant terms), the
-/// Toom-4x2 band recursions pay `18n + 64` per level with the child totals
-/// shrinking geometrically (at most `0.4x` per level, summing to at most
-/// `5.01 * total` plus logarithmic terms), and the NTT branches pay a
-/// total-driven budget that is evaluated exactly here.
-fn memory_chain_budget_closed_form(total: usize) -> Layout {
-    let words = 6 * total + 24 * (math::ceil_log2(total.max(2)) as usize) + 256;
-    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    let words = {
-        let ntt_words =
-            ntt::memory_requirement_up_to(total, total / 2).size() / mem::size_of::<Word>();
-        words.max(ntt_words)
-    };
-    memory::array_layout::<Word>(words)
+/// An in-band shape `(a, b)` with `a + b = t` splits at `n <= t/5 + 1` (either
+/// `n = ceil(a/4)` with `a < 5t/7`, or `n = ceil(b/2)` with `b < 2t/5`). Its level costs
+/// `18n + 64` words, and its children are the balanced products `(n, n)` and `(n+2, n+1)`,
+/// which only pay the ladder, and a product of total length `<= 2n` that can be of any shape
+/// (possibly in band again).
+fn band_budget_envelope(total: usize) -> Layout {
+    // No shape this short is in the band (the smaller operand has at least `toom42_min` words).
+    if total < 2 * threshold::toom42_min().max(toom_4_2::MIN_LEN) {
+        return memory::zero_layout();
+    }
+    let n = total / 5 + 1;
+    memory::add_layout(
+        memory::array_layout::<Word>(18 * n + 64),
+        memory::max_layout(ladder_budget(n + 1), band_budget_envelope(2 * n)),
+    )
 }
 
 /// Scratch budget dominating [`memory_chain_budget`] for every product
 /// shape with total length `<= total_cap` and smaller side `<= smaller_cap`.
+/// It is monotone in both arguments.
 ///
-/// The per-shape budget is *not* monotone in the smaller side: splits whose
+/// The per-shape budget is *not* monotone in the smaller side or in the total: splits whose
 /// ratio falls in the Toom-4x2 band (about 1.5:1 to 2.5:1) pay the Toom-4x2
 /// appetite (roughly `11*b` words) while a slightly more balanced split of
 /// the same total pays only the Toom-3 ladder (roughly `4*b`), and inside
 /// the band the child products can re-enter the band, so sampling one split
 /// does not bound the neighbors. Callers that cannot predict the exact
-/// operand split of their recursive products (the division and GCD
-/// recursions) must use this envelope instead.
+/// operand lengths of their products (the division and GCD recursions, the modular
+/// multiplications of residues with leading zero words) must use this envelope instead.
 ///
-/// Outside the band the budget is monotone in both arguments, so the exact
-/// most-balanced split bounds the ladder region; inside the band, the
-/// worst case is evaluated at both band edges (the band interior is a
-/// trade-off between the level term `18n` and the child terms, both
-/// extremal at an edge), with the children's band recursions bounded by
-/// the closed form above.
+/// The bound is the maximum over the kinds of shape within the caps:
+/// * ladder shapes pay the (monotone) ladder budget of their smaller side, or the budget of
+///   their chunk-loop tail `(b, a % b)`, which is again a shape within the caps;
+/// * in-band shapes with a smaller side `b` have a total below `3.5 * b`, and are bounded by
+///   [`band_budget_envelope`];
+/// * transform-based shapes pay a budget that is monotone in their total, plus (when the
+///   long operand is processed in chunks, i.e. it is at least 3 times the short one) the
+///   budget of the tail `(b, a % b)`, whose total is below `2 * b <= total / 2`.
 pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize) -> Layout {
-    let b_hi = (total_cap / 2).min(smaller_cap);
-    if b_hi == 0 {
+    let cap = smaller_cap.min(total_cap / 2);
+    if cap == 0 {
         return memory::zero_layout();
     }
-    let mut best = memory_chain_budget(total_cap - b_hi, b_hi);
 
-    // Snap a split of `total` into the Toom-4x2 band, walking `step` words
-    // at a time without leaving the cap range. Returns None if the band is
-    // not reachable within a few steps (e.g. the cap excludes it entirely).
-    let snap_into_band_at =
-        |total: usize, mut b: usize, step: isize, cap: usize| -> Option<usize> {
-            b = b.min(cap).min(total / 2);
-            for _ in 0..8 {
-                if b < 1 || b > cap || b > total / 2 {
-                    return None;
-                }
-                if toom_4_2::in_band(total - b, b) {
-                    return Some(b);
-                }
-                b = (b as isize + step) as usize;
-            }
-            None
-        };
+    let mut best = ladder_budget(cap.min(threshold::ntt()));
+    if cap >= threshold::toom42_min() {
+        let band_total = total_cap.min(cap.saturating_mul(7) / 2);
+        best = memory::max_layout(best, band_budget_envelope(band_total));
+    }
 
-    // Both band edges (ratios ~1.5 and ~2.5) and the band entry threshold.
-    // The band is evaluated at the total cap, and — when the smaller-side
-    // cap truncates the band there — also at the largest total whose band
-    // still fits under the cap (2.5x the cap, the ratio-1.5 edge): the
-    // chunk-tail recursion of ladder shapes re-enters the band at smaller
-    // totals, and the band budget is monotone in the operands.
-    for total in [total_cap, (5 * smaller_cap / 2).min(total_cap)] {
-        for (b0, step) in [
-            (2 * total / 5, -1isize),
-            (2 * total / 7 + 1, 1),
-            (threshold::toom42_min(), 1),
-        ] {
-            let Some(b) = snap_into_band_at(total, b0, step, smaller_cap) else {
-                continue;
-            };
-            // Structural validity alone does not select Toom-4x2: keep
-            // the same length gates as the multiplication dispatcher.
-            if b < threshold::toom42_min() || b > threshold::ntt() {
-                continue;
-            }
-            if let Some((n, s, t)) = toom_4_2::split_params(total - b, b) {
-                // Exact level budget, children either exact (the near-balanced
-                // products) or closed-form-bounded (the band-shaped remainder).
-                let own = memory::add_layout(
-                    memory::array_layout::<Word>(18 * n + 64),
-                    max_layout3(
-                        memory_chain_budget(n, n),
-                        memory_chain_budget(n + 2, n + 1),
-                        memory_chain_budget_closed_form(s + t),
-                    ),
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+    {
+        let asym_reachable = cap >= threshold::ntt_asym_min()
+            && total_cap / (threshold::ntt_asym_ratio().saturating_add(1))
+                >= threshold::ntt_asym_min();
+        if cap > threshold::ntt() || asym_reachable {
+            let mut transform = ntt::memory_requirement_up_to(total_cap, cap);
+            let chunked_cap = cap.min(total_cap / (ntt::CHUNKING_RATIO + 1));
+            if chunked_cap > threshold::ntt() {
+                transform = memory::add_layout(
+                    transform,
+                    memory_chain_budget_envelope(2 * chunked_cap, chunked_cap),
                 );
-                best = memory::max_layout(best, own);
             }
+            best = memory::max_layout(best, transform);
         }
     }
     best
@@ -396,7 +386,8 @@ pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize)
 #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
 fn chunk_tail_budget(a: usize, b: usize, own: Layout) -> Layout {
     let tail = a % b;
-    if tail == 0 {
+    // Without chunking the operands go through a single convolution: there is no tail.
+    if tail == 0 || !ntt::is_chunked(a, b) {
         return own;
     }
     let tail_layout = memory_chain_budget(b, tail);
@@ -414,6 +405,16 @@ fn chunk_tail_budget_max(a: usize, b: usize, own: Layout) -> Layout {
     }
     let tail_layout = memory_chain_budget(b, tail);
     memory::max_layout(own, tail_layout)
+}
+
+/// Temporary scratch space sufficient for any multiplication whose operands both have at
+/// most `max_len` words.
+///
+/// Unlike [`memory_requirement_exact`], which is only valid for the exact operand lengths
+/// it is given, this covers every shorter product too.
+#[inline]
+pub fn memory_requirement_up_to_operand_len(max_len: usize) -> Layout {
+    memory_chain_budget_envelope(2 * max_len, max_len)
 }
 
 /// Temporary scratch space required for multiplication.
@@ -952,33 +953,91 @@ mod threshold_tests {
         }
     }
 
-    /// The split-range envelope must dominate the per-shape chain budget for
-    /// every split of every total below the cap — this is the property the
-    /// division and GCD memory models rely on (a sampled split does NOT
-    /// bound its neighbors since the Toom-4x2 band makes the budget
-    /// non-monotone in the split).
+    /// The envelope must dominate the per-shape chain budget for every shape within the
+    /// caps (total length `<= total_cap`, smaller side `<= smaller_cap`) — this is the
+    /// property the division, GCD and modular multiplication memory models rely on (a
+    /// sampled shape does NOT bound its neighbors since the Toom-4x2 band makes the budget
+    /// non-monotone in both the split and the total).
     #[test]
-    fn test_memory_envelope_dominates_all_splits() {
-        let mut totals: Vec<usize> = Vec::new();
-        let mut t = 90;
-        while t < 4200 {
-            totals.push(t);
-            t += 37;
+    fn test_memory_envelope_dominates_all_shapes_exhaustive() {
+        // Every total cap up to MAX and every smaller-side cap, against every shape.
+        const MAX: usize = 700;
+        // by_smaller[b]: the largest budget seen so far for a smaller side of exactly b
+        let mut by_smaller = vec![0usize; MAX / 2 + 1];
+        for total in 2..=MAX {
+            for (b, slot) in by_smaller
+                .iter_mut()
+                .enumerate()
+                .take(total / 2 + 1)
+                .skip(1)
+            {
+                *slot = (*slot).max(memory_chain_budget(total - b, b).size());
+            }
+            let mut need = 0;
+            for (cap, &budget) in by_smaller.iter().enumerate().take(total / 2 + 1).skip(1) {
+                need = need.max(budget);
+                let envelope = memory_chain_budget_envelope(total, cap).size();
+                assert!(
+                    need <= envelope,
+                    "envelope {envelope} bytes < shape {need} bytes at total={total} cap={cap}"
+                );
+            }
+            // a cap beyond half the total does not add shapes
+            assert_eq!(
+                memory_chain_budget_envelope(total, total).size(),
+                memory_chain_budget_envelope(total, total / 2).size()
+            );
         }
-        totals.extend_from_slice(&[5000, 8000]);
-        for total in totals {
-            for cap in [total / 2, total / 3, total / 5, total / 8] {
-                let envelope = memory_chain_budget_envelope(total, cap);
-                let mut b = 1;
-                while b <= cap {
-                    let shape = memory_chain_budget(total - b, b);
-                    assert!(
-                        shape.size() <= envelope.size(),
-                        "envelope {} words < shape {} words at total={total} cap={cap} b={b}",
-                        envelope.size() / 8,
-                        shape.size() / 8
-                    );
-                    b += 3;
+    }
+
+    #[test]
+    fn test_memory_envelope_dominates_sampled_shapes() {
+        // Larger sizes (through the Toom-4 and transform ranges): sampled shapes within
+        // the caps, including the operands-at-most-n-words square used by the modular
+        // multiplications.
+        let ntt = threshold::ntt();
+        let totals = [
+            900,
+            1500,
+            2100,
+            3333,
+            5000,
+            7999,
+            8001,
+            8002,
+            9000,
+            2 * ntt + 100,
+            4 * ntt,
+            4 * ntt + 8,
+            5 * ntt + 3,
+            8 * ntt + 9,
+            20000,
+            30011,
+            50000,
+        ];
+        for total_cap in totals {
+            for cap in [
+                total_cap / 2,
+                total_cap / 3,
+                total_cap / 4 + 1,
+                total_cap / 7,
+                97,
+            ] {
+                let envelope = memory_chain_budget_envelope(total_cap, cap).size();
+                let larger = memory_chain_budget_envelope(total_cap + 1, cap + 1).size();
+                assert!(envelope <= larger, "not monotone at total={total_cap} cap={cap}");
+                for total in [total_cap, total_cap - 1, total_cap - 37, total_cap * 3 / 4] {
+                    let top = cap.min(total / 2);
+                    let step = (top / 150).max(1);
+                    let smaller = (1..=top).step_by(step).chain(top.saturating_sub(40)..=top);
+                    for b in smaller.filter(|&b| b >= 1) {
+                        let shape = memory_chain_budget(total - b, b).size();
+                        assert!(
+                            shape <= envelope,
+                            "envelope {envelope} bytes < shape {shape} bytes at \
+                             total_cap={total_cap} cap={cap} total={total} b={b}"
+                        );
+                    }
                 }
             }
         }

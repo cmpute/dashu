@@ -110,8 +110,11 @@ pub(crate) fn mul_memory_requirement(ring: &MontgomeryLargeRepr) -> Layout {
         // Product buffer: 2s words for a*b plus one word for the REDC carry.
         memory::array_layout::<Word>(2 * s + 1),
         // Scratch reused by the `a*b` multiply and the `a^2` squaring (REDC itself is in place).
+        // The leading zero words of the operands are trimmed before multiplying, so the
+        // product can have any shape with operands of at most s words — and the budget of a
+        // shorter, unbalanced product can exceed that of the full s by s one.
         memory::max_layout(
-            mul::memory_requirement_exact(2 * s, s),
+            mul::memory_requirement_up_to_operand_len(s),
             sqr::memory_requirement_exact(s),
         ),
     )
