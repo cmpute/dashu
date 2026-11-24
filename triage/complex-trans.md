@@ -6,7 +6,9 @@ nothing is left `#[ignore]`d.
 
 Several clusters share root causes in the complex Ziv driver / ball layer, so the fixes are
 not separable per cluster: they landed as one `float/` commit (`ErrorBounds`, the one
-float-side root cause fixed here) and one `complex/` commit (everything else, with the tests).
+float-side root cause fixed here) and two `complex/` commits (everything else with the tests,
+then the bound on the driver's flag proof — the second depends on the first, and the complex
+tests for E157/E216 depend on the float commit).
 See *Cross-group notes*.
 
 All tests named below were run and pass; `cargo test -p dashu-float -p dashu-cmplx
