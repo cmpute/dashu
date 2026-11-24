@@ -68,6 +68,9 @@ jobs:
         if: matrix.rust != '1.68'
       - run: cargo check --workspace --features "std,num-order,serde,zeroize,rand,num-traits_v02"
         if: matrix.rust == '1.68'
+      # each third-party integration must build when it is the only feature enabled
+      - run: cargo check -p dashu-int --no-default-features --features num-integer
+        if: matrix.rust != '1.68'
 
   rustdoc:
     name: cargo doc
