@@ -206,8 +206,11 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
         }
     }
 
-    // Dropped low-low block.
-    sticky |= ap[..l].iter().any(|&w| w != 0) && bp[..l].iter().any(|&w| w != 0);
+    // Dropped products: the low-low block, and the parts of the cross products that the
+    // recursive calls above never see (ap[..l] * bp[l..k] and ap[l..k] * bp[..l], which span
+    // columns l..n-1). Together they are ap[..l] * bp[..k] and ap[..k] * bp[..l].
+    let nonzero = |words: &[Word]| words.iter().any(|&w| w != 0);
+    sticky |= (nonzero(&ap[..l]) && nonzero(&bp[..k])) || (nonzero(&ap[..k]) && nonzero(&bp[..l]));
     // The two accumulator words below the window hold real product columns
     // (the exact block's boundary words, the cross windows' guard words and
     // the carries into them); they are dropped from the returned value, so
