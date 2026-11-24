@@ -61,10 +61,11 @@
 //! # Optional dependencies
 //!
 //! * `std` (*default*): for `std::error::Error` and some internal usages of `std` functions.
-//! * `num-traits` (*default*): support traits from crate `num-traits`.
-//! * `num-integer` (*default*): support traits from crate `num-integer`.
+//! * `num-traits`: support traits from crate `num-traits`.
+//! * `num-integer`: support traits from crate `num-integer` (this also enables `num-traits`,
+//!   which the traits from `num-integer` are built on).
 //! * `num-order` (*default*): support traits from crate `num-order`.
-//! * `rand` (*default*): support random number generation based on crate `rand`.
+//! * `rand`: support random number generation based on crate `rand`.
 //! * `serde`: support serialization and deserialization based on crate `serde`.
 //! * `zeroize`: support traits from crate `zeroize`
 
