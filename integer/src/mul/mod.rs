@@ -354,9 +354,11 @@ pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize)
         return memory::zero_layout();
     }
 
-    let mut best = ladder_budget(cap.min(threshold::ntt()));
-    if cap >= threshold::toom42_min() {
-        let band_total = total_cap.min(cap.saturating_mul(7) / 2);
+    // The ladder and the band only take smaller sides up to the transform threshold.
+    let direct_cap = cap.min(threshold::ntt());
+    let mut best = ladder_budget(direct_cap);
+    if direct_cap >= threshold::toom42_min() {
+        let band_total = total_cap.min(direct_cap.saturating_mul(7) / 2);
         best = memory::max_layout(best, band_budget_envelope(band_total));
     }
 
