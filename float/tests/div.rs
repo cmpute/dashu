@@ -543,6 +543,7 @@ mod triage {
         fn check<R: Round, const B: Word>() {
             // B^e mod 7 by plain modular exponentiation
             let pow_mod = |mut e: u64| {
+                #[allow(clippy::unnecessary_cast)] // `Word` is not `u64` on every target
                 let (mut base, mut acc) = (B as u64 % 7, 1u64);
                 while e > 0 {
                     if e & 1 == 1 {
