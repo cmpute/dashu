@@ -377,6 +377,112 @@ fn test_from_parts() {
     );
 }
 
+// The const constructors agree with their heap counterparts on the value, the inferred
+// precision (the digit count of the significand as given, trailing zeros included) and the
+// saturation of the exponent. The const digit count used to be taken after the trailing zeros
+// were stripped, and to stop one short for significands at or above the largest power of the
+// base that fits in a double word.
+#[test]
+fn test_from_parts_const_matches_from_parts() {
+    use dashu_float::Repr;
+
+    fn check<const B: Word>(sig: DoubleWord, exp: isize) {
+        for sign in [Sign::Positive, Sign::Negative] {
+            let c = FBig::<mode::Zero, B>::from_parts_const(sign, sig, exp, None);
+            let h = FBig::<mode::Zero, B>::from_parts(IBig::from_parts(sign, sig.into()), exp);
+            assert_eq!(c.repr(), h.repr(), "base {B}: {sig} * B^{exp}");
+            assert_eq!(c.precision(), h.precision(), "base {B}: {sig} * B^{exp}");
+            assert!(c.repr().digits() <= c.precision());
+            // a minimum precision only ever raises it
+            let m = FBig::<mode::Zero, B>::from_parts_const(sign, sig, exp, Some(7));
+            assert_eq!(m.precision(), h.precision().max(7));
+            let r = Repr::<B>::new_const(sign, sig, exp);
+            assert_eq!(&r, h.repr());
+        }
+    }
+    fn sweep<const B: Word>() {
+        let b = B as DoubleWord;
+        let mut sigs = vec![
+            1,
+            2,
+            b - 1,
+            b,
+            b + 1,
+            b * b,
+            b * b * b - 1,
+            1230,
+            1200,
+            1234,
+        ];
+        sigs.extend([
+            DoubleWord::MAX,
+            DoubleWord::MAX - 1,
+            DoubleWord::MAX / 2 + 1,
+        ]);
+        // the largest power of the base in a double word, its neighbors and its multiples
+        let mut top: DoubleWord = 1;
+        while let Some(next) = top.checked_mul(b) {
+            top = next;
+        }
+        sigs.extend([top - 1, top, top + 1, top / b, top / b * (b - 1)]);
+        if let Some(twice) = top.checked_mul(2) {
+            sigs.extend([twice, twice + 1]);
+        }
+        for sig in sigs {
+            for exp in [0isize, -2, 5, isize::MIN + 1, isize::MAX - 200] {
+                check::<B>(sig, exp);
+            }
+        }
+    }
+    sweep::<2>();
+    sweep::<3>();
+    sweep::<8>();
+    sweep::<10>();
+    sweep::<16>();
+    sweep::<36>();
+
+    // the reported cases
+    let sig = 10u128.pow(38) + 1;
+    let c = DBig::from_parts_const(Sign::Positive, sig as DoubleWord, 0, None);
+    assert_eq!(c.precision(), 39);
+    assert_eq!(&c + DBig::ZERO, DBig::from_parts(IBig::from(sig), 0));
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 1230, 0, None).precision(), 4);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 1200, 0, None).precision(), 4);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 10, 0, None).precision(), 2);
+    assert_eq!(FBin::from_parts_const(Sign::Positive, 2, 0, None).precision(), 2);
+    assert_eq!(
+        DBig::from_parts_const(Sign::Positive, 1230, 0, None) + DBig::ONE,
+        DBig::from_parts(ibig!(1231), 0)
+    );
+
+    // folding trailing zeros into an exponent next to `isize::MAX` saturates like `Repr::new`
+    // does (it used to overflow: a panic in debug builds, `isize::MIN` in release builds)
+    for (sig, exp) in [
+        (
+            (1 as DoubleWord) << (DoubleWord::BITS - 2),
+            isize::MAX - (DoubleWord::BITS as isize - 2),
+        ),
+        (
+            (1 as DoubleWord) << (DoubleWord::BITS - 1),
+            isize::MAX - (DoubleWord::BITS as isize - 2),
+        ),
+        (4, isize::MAX),
+    ] {
+        let c = Repr::<2>::new_const(Sign::Positive, sig, exp);
+        assert_eq!(c, Repr::<2>::new(IBig::from(sig), exp));
+        assert_eq!((c.significand(), c.exponent()), (&IBig::ONE, isize::MAX));
+    }
+    for (sig, exp) in [
+        (100, isize::MAX - 1),
+        (10, isize::MAX),
+        (1000, isize::MAX - 3),
+    ] {
+        let c = Repr::<10>::new_const(Sign::Negative, sig, exp);
+        assert_eq!(c, Repr::<10>::new(-IBig::from(sig), exp));
+        assert_eq!(c.exponent(), isize::MAX);
+    }
+}
+
 #[test]
 #[rustfmt::skip::macros(fbig)]
 fn test_format_binary() {

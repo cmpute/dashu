@@ -160,7 +160,10 @@ pub(crate) fn rounded_to_repr<const B: Word>(
 }
 
 /// Normalize a `(significand, exponent)` pair for base `B`: fold trailing base-`B` zero-digits
-/// from the significand into the exponent, and return the number of significant base-`B` digits.
+/// from the significand into the exponent, and return the number of base-`B` digits of the
+/// significand as it was given (trailing zeros included, like the precision that
+/// [`crate::FBig::from_parts`] infers). The exponent saturates at `isize::MAX` like it does in
+/// [`Repr::new`].
 ///
 /// The return triple is all-`Copy`, so it can be destructured in a `const fn` — unlike a pair
 /// carrying a [`Repr`], whose heap drop can't be const-evaluated. It is the shared core of
@@ -173,26 +176,27 @@ pub(crate) const fn normalize_word_const<const B: Word>(
         return (0, exponent, 0);
     }
 
-    let mut digits = 0;
+    let digits;
     if B.is_power_of_two() {
         let base_bits = B.trailing_zeros();
-        let shift = significand.trailing_zeros() / base_bits;
-        significand >>= shift * base_bits;
-        exponent += shift as isize;
         digits =
             ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits) as usize;
+        let shift = significand.trailing_zeros() / base_bits;
+        significand >>= shift * base_bits;
+        exponent = exponent.saturating_add(shift as isize);
     } else {
-        let mut pow: DoubleWord = 1;
+        // count the digits by division: a running power of the base would overflow the double
+        // word for the significands at or above its largest power that fits
+        let mut count = 0;
+        let mut rest = significand;
+        while rest > 0 {
+            rest /= B as DoubleWord;
+            count += 1;
+        }
+        digits = count;
         while significand % (B as DoubleWord) == 0 {
             significand /= B as DoubleWord;
-            exponent += 1;
-        }
-        while let Some(next) = pow.checked_mul(B as DoubleWord) {
-            digits += 1;
-            if next > significand {
-                break;
-            }
-            pow = next;
+            exponent = exponent.saturating_add(1);
         }
     }
     (significand, exponent, digits)
