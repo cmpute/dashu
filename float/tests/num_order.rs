@@ -224,7 +224,11 @@ fn test_ord_zero_with_float() {
         FBin::from_repr(Repr::zero(), Context::new(53)),
         FBin::from_repr(Repr::neg_zero(), Context::new(53)),
     ];
-    let zeros_dec = [DBig::ZERO, -DBig::ZERO, DBig::from_repr(Repr::neg_zero(), Context::new(9))];
+    let zeros_dec = [
+        DBig::ZERO,
+        -DBig::ZERO,
+        DBig::from_repr(Repr::neg_zero(), Context::new(9)),
+    ];
     let floats = [
         f64::MIN_POSITIVE,
         f64::from_bits(1),
@@ -270,7 +274,10 @@ fn test_ord_zero_with_float() {
         let context = Context::<HalfEven>::new(precision);
         for x in [1e-300f64, 0.25, 0.5, 1.0, 3.0, 1e300] {
             let exact = dashu_float::FBig::<HalfEven, 2>::try_from(x).unwrap();
-            let third = context.div::<2>(exact.repr(), &Repr::new(3.into(), 0)).unwrap().value();
+            let third = context
+                .div::<2>(exact.repr(), &Repr::new(3.into(), 0))
+                .unwrap()
+                .value();
             assert_eq!(exact.num_partial_cmp(&x), Some(Ordering::Equal));
             assert_eq!(third.num_partial_cmp(&x), Some(Ordering::Less));
             assert_eq!((&exact + &third).num_partial_cmp(&x), Some(Ordering::Greater));
@@ -329,7 +336,13 @@ fn test_ord_same_base_large_exponent() {
     use dashu_float::round::mode::{HalfAway, Zero};
     use dashu_int::IBig;
 
-    for exp in [1isize << 20, 1 << 40, isize::MAX - 200, -(1 << 40), isize::MIN + 200] {
+    for exp in [
+        1isize << 20,
+        1 << 40,
+        isize::MAX - 200,
+        -(1 << 40),
+        isize::MIN + 200,
+    ] {
         let x = dashu_float::FBig::<Zero, 2>::from_parts(IBig::from(5), exp);
         let same = dashu_float::FBig::<HalfAway, 2>::from_parts(IBig::from(5), exp);
         let more = dashu_float::FBig::<HalfAway, 2>::from_parts(IBig::from(11), exp - 1);
