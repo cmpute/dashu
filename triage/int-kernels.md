@@ -1,6 +1,6 @@
 # int-kernels
 
-28 reports, 10 distinct root causes, all real and all fixed. Every cluster was
+28 reports, 11 distinct root causes, all real and all fixed. Every cluster was
 reproduced at `a0fc535` through its regression test (run against the unfixed
 source, then against the fix). All changes are in `integer/`.
 
