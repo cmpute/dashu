@@ -50,6 +50,10 @@ impl<R: ErrorBounds> Context<R> {
         if let Some(r) = self.tiny_odd(x, true) {
             return Ok(r);
         }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(x.sign()));
+        }
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). Both `exp_m1` come from the
         // Ball-based `exp_compute`; the subtraction/division roundings, the `exp_m1` errors *and
         // the input's own rounding* are tracked mechanically by the Ball propagation (the raw `x`
@@ -97,6 +101,10 @@ impl<R: ErrorBounds> Context<R> {
         // A tiny argument: `cosh(x) = 1 + δ` with `0 < δ ≤ x²`.
         if let Some(r) = self.tiny_even(x, Sign::Positive, 0) {
             return Ok(r);
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(Sign::Positive));
         }
 
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). Both
@@ -158,6 +166,10 @@ impl<R: ErrorBounds> Context<R> {
             (None, Some(c)) => return (self.sinh(x, cache), Ok(c)),
             (None, None) => {}
         }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
+        }
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
         // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
@@ -214,6 +226,10 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
         assert_limited_precision(self.precision);
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(x.sign()));
+        }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // sinh(±π·huge) = ±∞, so the sign follows x.
@@ -222,7 +238,8 @@ impl<R: ErrorBounds> Context<R> {
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -265,6 +282,10 @@ impl<R: ErrorBounds> Context<R> {
                 return Ok(r);
             }
         }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(Sign::Positive));
+        }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // cosh(±π·huge) = +∞ (always positive).
@@ -273,7 +294,8 @@ impl<R: ErrorBounds> Context<R> {
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -322,6 +344,10 @@ impl<R: ErrorBounds> Context<R> {
                 return (self.sinh_pi(x, cache), Ok(r));
             }
         }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
+        }
 
         // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
@@ -330,7 +356,8 @@ impl<R: ErrorBounds> Context<R> {
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
         let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
@@ -854,6 +881,30 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     pub fn atanh(&self) -> Self {
         self.context.unwrap_fp(self.context.atanh(&self.repr, None))
     }
+}
+
+/// Is `e^|x|` (and so `sinh`, `cosh` and their ×π variants) certainly beyond the exponent
+/// range? `|x| ≥ 2^(usize::BITS + 7)` is more than `2·isize::MAX·ln(B) + ln 2` for any word-sized
+/// base, i.e. a result past `B^(2·isize::MAX)` — out of range at any precision. The functions
+/// answer such an argument directly: their reduction would otherwise need `ln(B)` to as many
+/// digits as the argument has integer digits.
+fn exp_certainly_overflows<const B: Word>(x: &Repr<B>) -> bool {
+    x.log2_bounds().0 > (usize::BITS + 7) as f32
+}
+
+/// Extra guard digits for the ×π hyperbolics: the integer digits of the argument.
+///
+/// Their exponent `t = π·x` is formed at the working precision, so it carries a *relative*
+/// error of a few work-ulps — an *absolute* error of `|x|` times that, which is what the
+/// exponential turns into the relative error of the result. Without these digits a large
+/// argument at a low precision leaves `t` uncertain by whole units (`x = 2^45` at 1 bit: by
+/// `2^39`), and the first attempts carry a radius astronomically larger than the result.
+///
+/// Capped: an argument of more than a few hundred digits overflows the exponent range whatever
+/// the base, which the exponential kernel reports before any radius matters.
+fn pi_argument_guard<const B: Word>(x: &Repr<B>) -> usize {
+    const CAP: isize = 4 * usize::BITS as isize;
+    top_exp(x).clamp(0, CAP) as usize + 2
 }
 
 /// `±0` `Repr` carrying the sign of `x` (used by the odd hyperbolics at zero input).

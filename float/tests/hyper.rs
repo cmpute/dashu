@@ -184,6 +184,58 @@ fn test_tanh_saturation_flag() {
     }
 }
 
+/// `sinh_pi` / `cosh_pi` of a large argument at a low precision: the exponent `π·x` formed at
+/// the working precision was uncertain by whole units (`x = 2^45` at 1 bit: by `2^39`), and the
+/// resulting radius — astronomically larger than the value — ran the certification out of
+/// memory. The working precision now covers the argument's integer digits, and an argument
+/// past the exponent range is reported as an overflow at once.
+#[test]
+fn test_sinh_cosh_pi_large_argument() {
+    use dashu_float::FpError;
+    for e in [30isize, 38, 45, 60] {
+        let x = Repr::<2>::new(IBig::from(1), e);
+        // the reference: 100 bits, truncated once more (truncations compose)
+        let wide = Context::<mode::Zero>::new(100);
+        let (sh_wide, ch_wide) = wide.sinh_cosh_pi(&x, None);
+        let (sh_wide, ch_wide) = (sh_wide.unwrap().value(), ch_wide.unwrap().value());
+        // sinh(π·2^e) = 2^(π·2^e/ln 2 − 1): the leading bit is in the right place
+        let lead = (sh_wide.repr().exponent() + sh_wide.repr().digits() as isize) as f64;
+        let want = core::f64::consts::PI * 2f64.powi(e as i32) / core::f64::consts::LN_2;
+        assert!((lead - want).abs() <= want * 1e-15 + 2.0, "2^{e}: {lead} vs {want}");
+        for p in [1usize, 5, 20, 50] {
+            let ctx = Context::<mode::Zero>::new(p);
+            let sh = ctx.sinh_pi(&x, None).unwrap().value();
+            let ch = ctx.cosh_pi(&x, None).unwrap().value();
+            assert_eq!(sh, sh_wide.clone().with_precision(p).value(), "sinh_pi(2^{e}) at {p}");
+            assert_eq!(ch, ch_wide.clone().with_precision(p).value(), "cosh_pi(2^{e}) at {p}");
+            let (sh2, ch2) = ctx.sinh_cosh_pi(&x, None);
+            assert_eq!((sh2.unwrap().value(), ch2.unwrap().value()), (sh.clone(), ch));
+            let neg = ctx.sinh_pi(&-x.clone(), None).unwrap().value();
+            assert_eq!(neg, -sh);
+        }
+    }
+    // past the exponent range, however far: an overflow, not an attempt to reduce the argument
+    for e in [62isize, 70, 100_000, 1 << 40, isize::MAX - 10] {
+        let x = Repr::<2>::new(IBig::from(1), e);
+        let neg = -x.clone();
+        for p in [1usize, 53] {
+            let ctx = Context::<mode::Zero>::new(p);
+            let pos_overflow = Err(FpError::Overflow(Sign::Positive));
+            let neg_overflow = Err(FpError::Overflow(Sign::Negative));
+            assert_eq!(ctx.sinh_pi(&x, None), pos_overflow, "sinh_pi(2^{e})");
+            assert_eq!(ctx.sinh_pi(&neg, None), neg_overflow);
+            assert_eq!(ctx.cosh_pi(&neg, None), pos_overflow);
+            assert_eq!(ctx.sinh_cosh_pi(&neg, None), (neg_overflow.clone(), pos_overflow.clone()));
+            if e >= 100 {
+                // sinh/cosh themselves overflow from 2^63·ln 2 on
+                assert_eq!(ctx.sinh(&neg, None), neg_overflow);
+                assert_eq!(ctx.cosh(&x, None), pos_overflow);
+                assert_eq!(ctx.sinh_cosh(&x, None), (pos_overflow.clone(), pos_overflow));
+            }
+        }
+    }
+}
+
 #[test]
 fn test_infinities() {
     let ctx = Context::<mode::HalfEven>::new(30);

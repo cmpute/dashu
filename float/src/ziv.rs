@@ -16,7 +16,7 @@
 
 use core::cmp::Ordering;
 
-use dashu_base::{Approximation::*, Sign};
+use dashu_base::{Approximation::*, EstimatedLog2, Sign};
 
 use crate::{
     cmp::repr_cmp_same_base,
@@ -420,6 +420,18 @@ impl<R: ErrorBounds> Context<R> {
         let lb = lb.into_repr();
         let rb = rb.into_repr();
 
+        // A radius wider than the whole preimage (`2e ≤ lb + rb` is necessary for containment)
+        // cannot fit either. Answered from the magnitudes, because the exact sums below would
+        // have to align the radius against `y` digit for digit — and an attempt at too low a
+        // working precision can report a radius astronomically larger than the value (an
+        // exponential of an argument that is uncertain by whole units). The margin covers the
+        // `f32` estimates' own rounding at astronomical exponents; a radius it lets through is
+        // simply decided exactly below.
+        let width_ub = lb.log2_bounds().1.max(rb.log2_bounds().1);
+        if e.log2_bounds().0 > width_ub + 2.0 + width_ub.abs() * 1e-6 {
+            return false;
+        }
+
         let left = (a + &lb).cmp(&(y + e));
         let right = (y + &rb).cmp(&(a + e));
         let left_ok = if incl_l {
@@ -549,6 +561,27 @@ mod tests {
         assert_eq!(r.map(|v| v.value()), Ok(F::ONE));
         let retries = LAST_ZIV_RETRIES.with(|c| c.get());
         assert!((1..=5).contains(&retries), "{retries} retries");
+    }
+
+    // A radius astronomically larger than the value is rejected from the magnitudes alone: the
+    // exact interval arithmetic would have to align the two, here across 10^12 digits.
+    #[test]
+    fn contained_rejects_astronomical_radius() {
+        let a = Repr::<2>::new(IBig::from(5), 1_000_000_000_000);
+        let e = Repr::<2>::new(IBig::from(3), 2_000_000_000_000);
+        for p in [1usize, 4, 53] {
+            let y = FBig::<mode::Zero, 2>::new(a.clone(), Context::new(p));
+            assert!(!Context::<mode::Zero>::contained(&a, &e, &y));
+            let y = FBig::<mode::HalfEven, 2>::new(a.clone(), Context::new(p));
+            assert!(!Context::<mode::HalfEven>::contained(&a, &e, &y));
+        }
+        // a radius just above the preimage is still decided exactly: 5·2^10 at 4 bits has an
+        // ulp of 2^9, so a radius of 2^9 fits no preimage and one of 2^7 around the value does
+        let a = Repr::<2>::new(IBig::from(5), 10);
+        let y = FBig::<mode::HalfEven, 2>::new(a.clone(), Context::new(4));
+        let r = |exp: isize| Repr::<2>::new(IBig::ONE, exp);
+        assert!(!Context::<mode::HalfEven>::contained(&a, &r(9), &y));
+        assert!(Context::<mode::HalfEven>::contained(&a, &r(7), &y));
     }
 
     // `round_near` rounds `v ± δ` for an offset too small to reach a rounding boundary, and
