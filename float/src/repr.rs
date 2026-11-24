@@ -54,6 +54,11 @@ pub struct Repr<const BASE: Word> {
     pub(crate) significand: IBig,
 
     /// The exponent of the floating point number.
+    #[cfg_attr(feature = "rkyv_v07", with(crate::third_party::rkyv_v07::Exponent))]
+    #[cfg_attr(
+        all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+        rkyv(with = crate::third_party::rkyv_v08::Exponent)
+    )]
     pub(crate) exponent: isize,
 }
 
