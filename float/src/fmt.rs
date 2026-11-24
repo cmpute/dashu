@@ -4,10 +4,13 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::Zero, Round},
-    utils::{digit_len, split_digits_ref},
+    utils::{digit_len, shr_digits, split_digits_ref},
 };
 use alloc::string::String;
-use core::fmt::{self, Alignment, Display, Formatter, Write};
+use core::{
+    cmp::Ordering,
+    fmt::{self, Alignment, Display, Formatter, Write},
+};
 use dashu_base::Sign;
 use dashu_int::{IBig, Word};
 
@@ -87,12 +90,22 @@ impl<const B: Word> Repr<B> {
         let negative = self.sign() == Sign::Negative;
         let rounded_signif;
         let (signif, exp) = if let Some(prec) = f.precision() {
-            let diff = prec as isize + self.exponent;
+            let diff = (prec as isize).saturating_add(self.exponent);
             if diff < 0 {
-                let shift = -diff as usize;
-                let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
-                let adjust = R::round_fract::<B>(&signif, rem, shift);
-                rounded_signif = signif + adjust;
+                let shift = diff.unsigned_abs();
+                if shift > self.digits_ub() {
+                    // Every digit lies at least one place below the last printed one, so the
+                    // value is a nonzero fraction of magnitude below 1/B <= 1/2 of the unit in
+                    // that place. Round it from its sign alone: splitting at `shift` would
+                    // need B^shift, which is unbounded for a tiny value.
+                    let adjust =
+                        R::round_low_part(&IBig::ZERO, self.significand.sign(), || Ordering::Less);
+                    rounded_signif = IBig::ZERO + adjust;
+                } else {
+                    let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
+                    let adjust = R::round_fract::<B>(&signif, rem, shift);
+                    rounded_signif = signif + adjust;
+                }
                 (&rounded_signif, self.exponent - diff)
             } else {
                 (&self.significand, self.exponent)
@@ -134,7 +147,7 @@ impl<const B: Word> Repr<B> {
             }
 
             let has_sign = (negative || f.sign_plus()) as usize;
-            let has_radix_point = if exp > 0 {
+            let has_radix_point = if exp >= 0 {
                 // if there's no fractional part, the result has the floating point
                 // only if the precision is set to be non-zero
                 f.precision().unwrap_or(0) > 0
@@ -304,8 +317,17 @@ impl<const B: Word> Repr<B> {
                 let shift = -diff as usize;
                 let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
                 let adjust = R::round_fract::<B>(&signif, rem, shift);
-                rounded_signif = signif + adjust;
-                (&rounded_signif, self.exponent - diff)
+                let signif = signif + adjust;
+                // Rounding up can carry into one more digit (9.5 -> 10). The result is then a
+                // power of the base, so dropping its last (zero) digit is exact and brings the
+                // digit count back to the requested one.
+                if digit_len::<B>(&signif) > prec as usize {
+                    rounded_signif = shr_digits::<B>(&signif, 1);
+                    (&rounded_signif, self.exponent - diff + 1)
+                } else {
+                    rounded_signif = signif;
+                    (&rounded_signif, self.exponent - diff)
+                }
             } else {
                 (&self.significand, self.exponent)
             }
@@ -360,6 +382,9 @@ impl<const B: Word> Repr<B> {
 
             if width >= min_width {
                 (0, 0)
+            } else if f.sign_aware_zero_pad() {
+                // the `0` flag overrides fill and alignment: zeros go after the sign and prefix
+                (min_width - width, 0)
             } else {
                 match f.align() {
                     Some(Alignment::Left) => (0, min_width - width),

@@ -883,6 +883,205 @@ fn test_scientific_format_decimal() {
 }
 
 #[test]
+fn test_format_width_without_precision() {
+    // integers whose last digit is nonzero, and zero, take exactly `width` characters
+    assert_eq!(format!("{:6}", dbig!(123)), "   123");
+    assert_eq!(format!("{:3}", DBig::ZERO), "  0");
+    assert_eq!(format!("{:*>2}", DBig::ZERO), "*0");
+    assert_eq!(format!("{:*<4}", dbig!(-7)), "-7**");
+    assert_eq!(
+        format!("{:5}|{:<5}|{:^5}", dbig!(12), dbig!(12), dbig!(12)),
+        "   12|12   | 12  "
+    );
+    assert_eq!(
+        format!("{:5}|{:<5}|{:^5}", dbig!(-3), dbig!(-3), dbig!(-3)),
+        "   -3|-3   | -3  "
+    );
+    assert_eq!(format!("{:05}", dbig!(-3)), "-0003");
+    assert_eq!(format!("{:+5}", dbig!(3)), "   +3");
+    assert_eq!(format!("{:8}", fbig!(0x1)), "       1");
+    assert_eq!(format!("{:8}", fbig!(-0x5)), "    -101");
+    // neighbours that already worked
+    assert_eq!(format!("{:6}", dbig!(1230)), "  1230");
+    assert_eq!(format!("{:6}", dbig!(12.3)), "  12.3");
+    assert_eq!(format!("{:6.1}", dbig!(123)), " 123.0");
+    assert_eq!(format!("{:6.0}", dbig!(123)), "   123");
+}
+
+#[test]
+fn test_format_width_is_exact() {
+    // whenever the unpadded text is shorter than the width, the padded text has exactly
+    // `width` characters and consists of the unpadded text plus fill characters
+    let mut values = vec![DBig::ZERO, DBig::from_str("-0").unwrap()];
+    for signif in [1, 7, 12, 95, 123, 999, 1001, 12345] {
+        for exp in [-7, -3, -2, -1, 0, 1, 2, 5] {
+            values.push(DBig::from_parts(IBig::from(signif), exp));
+            values.push(DBig::from_parts(IBig::from(-signif), exp));
+        }
+    }
+    for x in &values {
+        for w in 0..14usize {
+            let plain = format!("{}", x);
+            for padded in [
+                format!("{:*>w$}", x),
+                format!("{:*<w$}", x),
+                format!("{:*^w$}", x),
+            ] {
+                assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+                assert_eq!(padded.trim_matches('*'), plain);
+            }
+            assert_eq!(format!("{:0w$}", x).len(), plain.len().max(w));
+
+            let plain = format!("{:+}", x);
+            let padded = format!("{:*>+w$}", x);
+            assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+            assert_eq!(padded.trim_matches('*'), plain);
+
+            let plain = format!("{:e}", x);
+            for padded in [
+                format!("{:*>w$e}", x),
+                format!("{:*<w$e}", x),
+                format!("{:*^w$e}", x),
+            ] {
+                assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+                assert_eq!(padded.trim_matches('*'), plain);
+            }
+            assert_eq!(format!("{:0w$e}", x).len(), plain.len().max(w));
+
+            for p in 0..6usize {
+                let plain = format!("{:.p$}", x);
+                for padded in [
+                    format!("{:*>w$.p$}", x),
+                    format!("{:*<w$.p$}", x),
+                    format!("{:*^w$.p$}", x),
+                ] {
+                    assert_eq!(
+                        padded.len(),
+                        plain.len().max(w),
+                        "{plain} at width {w}: {padded:?}"
+                    );
+                    assert_eq!(padded.trim_matches('*'), plain);
+                }
+                assert_eq!(format!("{:0w$.p$}", x).len(), plain.len().max(w));
+
+                let plain = format!("{:.p$e}", x);
+                for padded in [
+                    format!("{:*>w$.p$e}", x),
+                    format!("{:*<w$.p$e}", x),
+                    format!("{:*^w$.p$e}", x),
+                ] {
+                    assert_eq!(
+                        padded.len(),
+                        plain.len().max(w),
+                        "{plain} at width {w}: {padded:?}"
+                    );
+                    assert_eq!(padded.trim_matches('*'), plain);
+                }
+                assert_eq!(format!("{:0w$.p$e}", x).len(), plain.len().max(w));
+            }
+        }
+    }
+}
+
+#[test]
+fn test_format_precision_tiny_value() {
+    // A value far below the last printed digit is rounded from its sign alone, in constant
+    // time and memory, whatever its exponent.
+    for s in [
+        "7e-10",
+        "7e-1000",
+        "7e-100000",
+        "7e-100000000000",
+        "0.7e-9223372036854775778",
+        "123456789e-9223372036854775000",
+    ] {
+        let x = DBig::from_str(s).unwrap();
+        assert_eq!(format!("{:.3}", x), "0.000", "{s}");
+        assert_eq!(format!("{:.0}", x), "0", "{s}");
+        assert_eq!(format!("{:8.2}", x), "    0.00", "{s}");
+        assert_eq!(format!("{:.3}", -x.clone()), "-0.000", "{s}");
+
+        // directed modes still see the nonzero tail
+        type Up = FBig<mode::Up, 10>;
+        type Down = FBig<mode::Down, 10>;
+        type Away = FBig<mode::Away, 10>;
+        type Zero = FBig<mode::Zero, 10>;
+        assert_eq!(format!("{:.3}", Up::from_str(s).unwrap()), "0.001", "{s}");
+        assert_eq!(format!("{:.3}", -Up::from_str(s).unwrap()), "-0.000", "{s}");
+        assert_eq!(format!("{:.3}", Down::from_str(s).unwrap()), "0.000", "{s}");
+        assert_eq!(format!("{:.3}", -Down::from_str(s).unwrap()), "-0.001", "{s}");
+        assert_eq!(format!("{:.3}", Away::from_str(s).unwrap()), "0.001", "{s}");
+        assert_eq!(format!("{:.3}", -Away::from_str(s).unwrap()), "-0.001", "{s}");
+        assert_eq!(format!("{:.3}", Zero::from_str(s).unwrap()), "0.000", "{s}");
+        assert_eq!(format!("{:.0}", Up::from_str(s).unwrap()), "1", "{s}");
+    }
+    let tiny = FBin::from_parts(IBig::from(5), -1_000_000_000_000);
+    assert_eq!(format!("{:.4}", tiny), "0.0000");
+
+    // the boundary between the two paths: one and two places below the last printed digit
+    assert_eq!(format!("{:.3}", dbig!(0.0005)), "0.001");
+    assert_eq!(format!("{:.3}", dbig!(0.0004)), "0.000");
+    assert_eq!(format!("{:.3}", dbig!(0.00099)), "0.001");
+    assert_eq!(format!("{:.3}", dbig!(0.00009)), "0.000");
+    assert_eq!(format!("{:.3}", dbig!(0.000099999)), "0.000");
+}
+
+#[test]
+fn test_scientific_format_carry() {
+    // rounding that carries into a new leading digit still prints exactly `precision`
+    // fractional digits
+    assert_eq!(format!("{:.0e}", dbig!(94)), "9e1");
+    assert_eq!(format!("{:.0e}", dbig!(95)), "1e2");
+    assert_eq!(format!("{:.0e}", dbig!(9.4)), "9e0");
+    assert_eq!(format!("{:.0e}", dbig!(9.5)), "1e1");
+    assert_eq!(format!("{:.1e}", dbig!(99.4)), "9.9e1");
+    assert_eq!(format!("{:.1e}", dbig!(99.5)), "1.0e2");
+    assert_eq!(format!("{:.1e}", dbig!(9.96)), "1.0e1");
+    assert_eq!(format!("{:.1e}", dbig!(996)), "1.0e3");
+    assert_eq!(format!("{:.1e}", dbig!(0.999)), "1.0e0");
+    assert_eq!(format!("{:.1e}", dbig!(9.94)), "9.9e0");
+    assert_eq!(format!("{:.1e}", dbig!(9.99)), "1.0e1");
+    assert_eq!(format!("{:.1e}", dbig!(-9.99)), "-1.0e1");
+    assert_eq!(format!("{:.3E}", dbig!(99999)), "1.000E5");
+    assert_eq!(format!("{:.2e}", dbig!(12345)), "1.23e4");
+    assert_eq!(format!("{:8.0e}", dbig!(9.5)), "     1e1");
+    assert_eq!(format!("{:08.1e}", dbig!(-99.5)), "-001.0e2");
+
+    // other bases, including the hexadecimal form of a binary float (4 bits per digit)
+    type FBinAway = FBig<mode::HalfAway, 2>;
+    type FHexAway = FBig<mode::HalfAway, 16>;
+    assert_eq!(format!("{:.1b}", FBinAway::from_parts(IBig::from(0b111), 0)), "1.0b3");
+    assert_eq!(format!("{:.0b}", FBinAway::from_parts(IBig::from(0b11), -1)), "1b1");
+    assert_eq!(format!("{:.1x}", FHexAway::from_parts(IBig::from(0xfff), 0)), "1.0h3");
+    let x = FBinAway::from_parts(IBig::from(0x1ff), 0);
+    let hex = format!("{:.1x}", x);
+    assert_eq!(hex, "0x8.0p6");
+    assert_eq!(FBinAway::from_str(&hex).unwrap(), FBinAway::from_parts(IBig::from(1), 9));
+}
+
+#[test]
+fn test_scientific_format_zero_flag_alignment() {
+    // the `0` flag overrides fill and alignment, as it does for `Display` and for `f64`
+    let d = dbig!(1.5);
+    assert_eq!(format!("{:08e}", d), "0001.5e0");
+    assert_eq!(format!("{:<08e}", d), "0001.5e0");
+    assert_eq!(format!("{:^08e}", d), "0001.5e0");
+    assert_eq!(format!("{:>08e}", d), "0001.5e0");
+    assert_eq!(format!("{:*<08E}", -d.clone()), "-001.5E0");
+    assert_eq!(format!("{:<+010.2e}", d), "+0001.50e0");
+    assert_eq!(format!("{:<08}", d), "000001.5");
+
+    let f = FBin::from_parts(IBig::from(3), -1);
+    assert_eq!(format!("{:010b}", f), "000001.1b0");
+    assert_eq!(format!("{:<010b}", f), "000001.1b0");
+    assert_eq!(format!("{:^010b}", f), "000001.1b0");
+    assert_eq!(format!("{:<010x}", f), format!("{:010x}", f));
+    assert_eq!(format!("{:^010X}", f), format!("{:010X}", f));
+    let o = FOct::from_parts(IBig::from(0o15), -1);
+    assert_eq!(format!("{:<08o}", o), format!("{:08o}", o));
+}
+
+#[test]
 fn test_format_other_bases() {
     assert_eq!(format!("{}", FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2)), "12.21");
     assert_eq!(format!("{:o}", FBig::<mode::Zero, 8>::from_parts(ibig!(100), -2)), "1.44o0");
