@@ -6,6 +6,14 @@ use num_traits_v02 as num_traits;
 
 macro_rules! impl_num_traits {
     ($t:ty) => {
+        impl $t {
+            /// `self^n` for an unsigned exponent, which might not fit in an `isize`.
+            #[inline]
+            fn pow_unsigned(&self, n: usize) -> Self {
+                Self(self.0.pow_unsigned(n))
+            }
+        }
+
         impl num_traits::Zero for $t {
             #[inline]
             fn zero() -> Self {
@@ -44,7 +52,12 @@ macro_rules! impl_num_traits {
 
             #[inline]
             fn abs_sub(&self, other: &Self) -> Self {
-                Abs::abs(self - other)
+                // the positive difference: zero unless self > other
+                if self <= other {
+                    <$t>::ZERO
+                } else {
+                    self - other
+                }
             }
 
             #[inline]
@@ -78,17 +91,16 @@ macro_rules! impl_num_traits {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: usize) -> $t {
-                // A `usize` exponent is non-negative, so it maps directly onto
-                // the `isize` signature. (A `usize` beyond `isize::MAX` wraps —
-                // an unrealistic pow exponent.)
-                <$t>::pow(&self, rhs as isize)
+                // A `usize` exponent is never negative, including the values beyond
+                // `isize::MAX` (which would wrap to a negative `isize`).
+                <$t>::pow_unsigned(&self, rhs)
             }
         }
         impl num_traits::Pow<usize> for &$t {
             type Output = $t;
             #[inline]
             fn pow(self, rhs: usize) -> $t {
-                <$t>::pow(self, rhs as isize)
+                <$t>::pow_unsigned(self, rhs)
             }
         }
 
