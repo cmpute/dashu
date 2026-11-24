@@ -294,16 +294,19 @@ impl<R: ErrorBounds> Context<R> {
 
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
-    /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
-    /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
-    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The result is correctly rounded
+    /// Both operands are scaled by the same power of the base (an exact exponent shift) so that
+    /// the larger one is just below 1; the sum of the scaled squares is then computed exactly and
+    /// its correctly rounded square root is scaled back. The squares therefore cannot leave the
+    /// exponent range, wherever the operands sit in it, and a range error is reported only when
+    /// the result itself is out of range. An operand too small to affect the other beyond a
+    /// sticky part is not squared at all. The result is correctly rounded
     /// (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
     ///
     /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless both operands are zero).
     pub fn hypot<const B: Word>(&self, a: &Repr<B>, b: &Repr<B>) -> FpResult<FBig<R, B>> {
         if a.is_infinite() || b.is_infinite() {
             return Ok(Approximation::Exact(FBig::new(Repr::infinity(), *self)));
