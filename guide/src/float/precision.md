@@ -115,16 +115,25 @@ assert_eq!(a.clone().with_precision(5), Exact(DBig::from_str("2.345")?));
 `Context::new(0)` (equivalently `with_precision(0)`) sets **unlimited**
 precision: no cap on the significand, so `+`, `-`, and `*` are exact whenever
 the true result is finitely representable in the base — e.g. `0.1 + 0.2` in
-base 10 keeps full precision, and a product never loses a digit:
+base 10 keeps full precision, and a product never loses a digit. A parsed
+value is **not** unlimited by itself (its precision is the number of digits
+written, see the table above), so lift the cap with `with_precision(0)` first:
 
 ```rust
 # use core::str::FromStr;
 # use dashu_float::DBig;
-let a = DBig::from_str("0.1")?;
-let b = DBig::from_str("0.2")?;
+let a = DBig::from_str("0.1")?.with_precision(0).value();
+let b = DBig::from_str("0.2")?.with_precision(0).value();
 let c = a + b;                   // exact: 0.3
 assert_eq!(c, DBig::from_str("0.3")?);
 assert_eq!(c.precision(), 0);    // still unlimited
+
+// exact product: 9 × 2 = 18 ...
+let nine = DBig::from_str("9")?.with_precision(0).value();
+let two = DBig::from_str("2")?.with_precision(0).value();
+assert_eq!(nine * two, DBig::from_str("18")?);
+// ... while the parsed 1-digit operands round the result to 1 digit
+assert_eq!(DBig::from_str("9")? * DBig::from_str("2")?, DBig::from_str("2e1")?);
 # Ok::<(), dashu_base::ParseError>(())
 ```
 
@@ -135,15 +144,19 @@ Caveats:
   target to round to, and **panic** on an unlimited-precision operand — there
   is no rounding mode that can produce an infinite significand. `ulp()` /
   `ulp_lb()` likewise panic (there is no fixed unit to report).
-- The common pattern is to hold a value at unlimited precision (e.g. a parsed
-  constant) and call `with_precision(p)` before a lossy operation:
+- The common pattern is to hold a value at unlimited precision (e.g. a
+  constant, or a parsed value after `with_precision(0)`) and call
+  `with_precision(p)` before a lossy operation:
 
 ```rust
 # use core::str::FromStr;
 # use dashu_float::DBig;
-let x = DBig::from_str("3.1415926535897932384626433832795028841971")?; // unlimited
-let r = x.with_precision(20).unwrap();   // round to 20 significant digits
+let x = DBig::from_str("3.1415926535897932384626433832795028841971")?
+    .with_precision(0)
+    .value();                            // unlimited
+let r = x.with_precision(20).value();    // round to 20 significant digits
 let y = r / DBig::from(2u8);             // division is now allowed
+assert_eq!(y.precision(), 20);
 # Ok::<(), dashu_base::ParseError>(())
 ```
 

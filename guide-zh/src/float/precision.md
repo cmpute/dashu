@@ -102,16 +102,24 @@ assert_eq!(a.clone().with_precision(5), Exact(DBig::from_str("2.345")?));
 
 `Context::new(0)`（等价地 `with_precision(0)`）设置**无限制**精度：有效数字没有上限，因此只要真实
 结果在基数是有限可表示的，`+`、`-` 和 `*` 就是精确的——例如在十进制下 `0.1 + 0.2` 保持全部精度，
-乘积也绝不丢位：
+乘积也绝不丢位。解析得到的值本身**并不是**无限制精度（其精度等于所写的数字位数，见上表），
+因此需要先用 `with_precision(0)` 取消上限：
 
 ```rust
 # use core::str::FromStr;
 # use dashu_float::DBig;
-let a = DBig::from_str("0.1")?;
-let b = DBig::from_str("0.2")?;
+let a = DBig::from_str("0.1")?.with_precision(0).value();
+let b = DBig::from_str("0.2")?.with_precision(0).value();
 let c = a + b;                   // 精确：0.3
 assert_eq!(c, DBig::from_str("0.3")?);
 assert_eq!(c.precision(), 0);    // 仍然无限制
+
+// 精确乘积：9 × 2 = 18 ……
+let nine = DBig::from_str("9")?.with_precision(0).value();
+let two = DBig::from_str("2")?.with_precision(0).value();
+assert_eq!(nine * two, DBig::from_str("18")?);
+// …… 而直接解析得到的 1 位操作数会把结果舍入到 1 位
+assert_eq!(DBig::from_str("9")? * DBig::from_str("2")?, DBig::from_str("2e1")?);
 # Ok::<(), dashu_base::ParseError>(())
 ```
 
@@ -120,15 +128,18 @@ assert_eq!(c.precision(), 0);    // 仍然无限制
 - **并非所有运算都支持无限制精度。** 除法（`/`、`inv`）和超越函数（`exp`、`ln`、`sin`、……、开方）
   需要有限的舍入目标，对无限制精度的操作数会 **panic**——没有任何舍入模式能产生无限长的有效数字。
   `ulp()` / `ulp_lb()` 同样会 panic（没有可报告的固定单位）。
-- 常见的做法是：在无限制精度下持有某个值（例如解析得到的常量），在可能损失的运算之前调用
-  `with_precision(p)`：
+- 常见的做法是：在无限制精度下持有某个值（例如常量，或经过 `with_precision(0)` 的解析值），
+  在可能损失的运算之前调用 `with_precision(p)`：
 
 ```rust
 # use core::str::FromStr;
 # use dashu_float::DBig;
-let x = DBig::from_str("3.1415926535897932384626433832795028841971")?; // 无限制
-let r = x.with_precision(20).unwrap();   // 舍入到 20 位有效数字
+let x = DBig::from_str("3.1415926535897932384626433832795028841971")?
+    .with_precision(0)
+    .value();                            // 无限制
+let r = x.with_precision(20).value();    // 舍入到 20 位有效数字
 let y = r / DBig::from(2u8);             // 现在允许除法了
+assert_eq!(y.precision(), 20);
 # Ok::<(), dashu_base::ParseError>(())
 ```
 
