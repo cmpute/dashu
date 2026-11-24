@@ -165,3 +165,18 @@ fn test_static_ibig() {
         IBig::from_str("-123456789012345678901234567890123456789012345678901234567890").unwrap()
     );
 }
+
+#[test]
+#[rustfmt::skip::macros(ibig, static_ibig)]
+fn test_ibig_single_sign() {
+    use dashu_macros::static_ibig;
+
+    // one optional sign in front of the digits (repeated signs such as `ibig!(--5)` are
+    // rejected at compile time, see the docs of `ibig!` and the unit tests of the parser)
+    assert_eq!(ibig!(-5), IBig::from(-5));
+    assert_eq!(ibig!(- 5), IBig::from(-5));
+    assert_eq!(ibig!(+5), IBig::from(5));
+    assert_eq!(ibig!(-a base 16), IBig::from(-10));
+    assert_eq!(*static_ibig!(-5), IBig::from(-5));
+    assert_eq!(*static_ibig!(+5), IBig::from(5));
+}

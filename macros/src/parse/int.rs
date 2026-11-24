@@ -56,7 +56,7 @@ pub fn parse_integer(
 
 fn parse_integer_with_error(signed: bool, input: TokenStream) -> Result<(Sign, UBig), ParseError> {
     let mut val: Option<_> = None;
-    let mut neg = false;
+    let mut sign: Option<Sign> = None;
     let mut base_marked = false;
     let mut base: Option<_> = None;
 
@@ -82,26 +82,22 @@ fn parse_integer_with_error(signed: bool, input: TokenStream) -> Result<(Sign, U
                 }
             }
             TokenTree::Punct(punct) => {
-                if val.is_none() && punct.as_char() == '-' {
-                    if signed {
-                        neg = true;
-                    } else {
-                        return Err(ParseError::InvalidDigit);
-                    }
-                } else if val.is_none() && punct.as_char() == '+' {
-                    if !signed {
-                        return Err(ParseError::InvalidDigit);
-                    }
-                } else {
+                // at most one sign, in front of the digits and only for signed integers
+                if !signed || val.is_some() || sign.is_some() {
                     return Err(ParseError::InvalidDigit);
                 }
+                sign = Some(match punct.as_char() {
+                    '-' => Sign::Negative,
+                    '+' => Sign::Positive,
+                    _ => return Err(ParseError::InvalidDigit),
+                });
             }
             _ => return Err(ParseError::InvalidDigit),
         }
     }
 
     // forward the literal to proper format
-    let val = val.unwrap();
+    let val = val.ok_or(ParseError::NoDigits)?;
     let big = match base {
         Some(b) => {
             let b = b.parse::<u32>().or(Err(ParseError::UnsupportedRadix))?;
@@ -116,7 +112,7 @@ fn parse_integer_with_error(signed: bool, input: TokenStream) -> Result<(Sign, U
         }
     };
 
-    Ok((Sign::from(neg), big))
+    Ok((sign.unwrap_or(Sign::Positive), big))
 }
 
 /// Generate tokens for creating a [UBig] instance (non-const)
@@ -150,4 +146,29 @@ pub fn quote_ibig(embedded: bool, int: IBig) -> TokenStream {
         quote!(::dashu_int)
     };
     quote! { #ns::IBig::from_parts(#sign, #mag_tt) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(signed: bool, text: &str) -> Result<(Sign, UBig), ParseError> {
+        parse_integer_with_error(signed, text.parse().unwrap())
+    }
+
+    #[test]
+    fn test_single_sign_only() {
+        assert_eq!(parse(true, "-5"), Ok((Sign::Negative, UBig::from(5u8))));
+        assert_eq!(parse(true, "+5"), Ok((Sign::Positive, UBig::from(5u8))));
+        assert_eq!(parse(true, "- a base 16"), Ok((Sign::Negative, UBig::from(10u8))));
+
+        // repeated or mixed signs are rejected, as by the runtime parsers
+        for text in ["--5", "- - 5", "+-5", "-+5", "++5", "---5", "5-", "-"] {
+            assert!(parse(true, text).is_err(), "{:?} was accepted", text);
+        }
+        // unsigned literals take no sign at all
+        for text in ["-5", "+5", ""] {
+            assert!(parse(false, text).is_err(), "{:?} was accepted", text);
+        }
+    }
 }

@@ -14,6 +14,12 @@ let e = ibig!(314159265358979323846264338327950288419716939937);
 let f = ibig!(-0x5a4653ca_67376856_5b41f775_d6947d55_cf3813d1);
 ```
 
+At most one sign (`-` or `+`) is accepted, as in [`IBig::from_str`][core::str::FromStr]:
+```compile_fail
+# use dashu_macros::ibig;
+let _ = ibig!(--5);
+```
+
 For an arbitrary base, add `base N`:
 ```rust
 # use dashu_macros::ibig;
