@@ -62,3 +62,44 @@ fn floored_division_with_zero_quotient() {
         assert_eq!(Integer::div_ceil(&n, &d), expected.0 + 1u8, "{n} / {d}");
     }
 }
+
+#[test]
+fn ibig_lcm_is_non_negative() {
+    for a in -12i64..=12 {
+        for b in -12i64..=12 {
+            let (x, y) = (IBig::from(a), IBig::from(b));
+            let expected = IBig::from(Integer::lcm(&a, &b));
+            assert_eq!(x.lcm(&y), expected, "lcm({}, {})", a, b);
+            assert_eq!(x.gcd_lcm(&y), (IBig::from(Integer::gcd(&a, &b)), expected));
+        }
+    }
+    let big = IBig::ONE << 200;
+    assert_eq!((-&big).lcm(&IBig::from(3)), &big * 3);
+    assert_eq!(big.lcm(&IBig::from(-6)), &big * 3);
+}
+
+#[test]
+fn gcd_of_two_zeros_is_zero() {
+    // The inherent gcd of dashu rejects gcd(0, 0), but the trait from num-integer
+    // defines it as zero (as the identity of gcd, e.g. for folding over a sequence).
+    assert_eq!(Integer::gcd(&UBig::ZERO, &UBig::ZERO), UBig::ZERO);
+    assert_eq!(Integer::gcd(&IBig::ZERO, &IBig::ZERO), IBig::ZERO);
+    assert_eq!(Integer::gcd_lcm(&UBig::ZERO, &UBig::ZERO), (UBig::ZERO, UBig::ZERO));
+    assert_eq!(Integer::gcd_lcm(&IBig::ZERO, &IBig::ZERO), (IBig::ZERO, IBig::ZERO));
+    assert_eq!(Integer::lcm(&IBig::ZERO, &IBig::ZERO), IBig::ZERO);
+
+    let ext = Integer::extended_gcd(&IBig::ZERO, &IBig::ZERO);
+    assert_eq!(ext.gcd, IBig::ZERO);
+    assert_eq!(Integer::extended_gcd(&UBig::ZERO, &UBig::ZERO).gcd, UBig::ZERO);
+    let (ext, lcm) = Integer::extended_gcd_lcm(&IBig::ZERO, &IBig::ZERO);
+    assert_eq!((ext.gcd, lcm), (IBig::ZERO, IBig::ZERO));
+
+    // a single zero operand
+    assert_eq!(Integer::gcd(&IBig::ZERO, &IBig::from(-5)), IBig::from(5));
+    assert_eq!(Integer::gcd(&UBig::from(5u8), &UBig::ZERO), UBig::from(5u8));
+    assert_eq!(Integer::gcd_lcm(&IBig::ZERO, &IBig::from(5)), (IBig::from(5), IBig::ZERO));
+    let folded = [0i32, 12, 0, -18]
+        .iter()
+        .fold(IBig::ZERO, |g, &x| Integer::gcd(&g, &IBig::from(x)));
+    assert_eq!(folded, IBig::from(6));
+}
