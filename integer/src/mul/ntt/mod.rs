@@ -416,7 +416,7 @@ pub fn do_crt<A: CrtAccum>(
         let crt_val = garner_combine::<A>(&coeff_residues[..g.k_eff], crt_inv, primes);
         let mut crt_buf = [Word::default(); 6];
         let crt_n = crt_val.write_words(&mut crt_buf);
-        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], crt_n, k, g.b_pack);
+        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], k, g.b_pack);
     }
 }
 
@@ -545,48 +545,51 @@ fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
 
 /// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
 /// `k * b_pack` bits.
-pub fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
-    let shift_bits = (k as u32).wrapping_mul(b_pack);
-    let word_bits = Word::BITS;
-    let start_idx = (shift_bits / word_bits) as usize;
-    let bit_shift = shift_bits % word_bits;
-
-    let mut carry: Word = 0;
-
-    for (vi, &word) in words.iter().enumerate().take(count as usize) {
-        let limb = word.wrapping_add(carry);
-        let idx = start_idx + vi;
-        if idx >= prod.len() {
-            return;
-        }
-
-        if bit_shift == 0 {
-            let (r, c) = prod[idx].overflowing_add(limb);
-            prod[idx] = r;
-            carry = Word::from(c);
-        } else {
-            let val = (limb as u128) << bit_shift;
-            let lo = val as Word;
-            let hi = (val >> word_bits) as Word;
-
-            let (r, c1) = prod[idx].overflowing_add(lo);
-            prod[idx] = r;
-            carry = Word::from(c1).wrapping_add(hi);
-
-            if idx + 1 < prod.len() && carry != 0 {
-                let (r2, c2) = prod[idx + 1].overflowing_add(carry);
-                prod[idx + 1] = r2;
-                carry = Word::from(c2);
-            }
-        }
+///
+/// Words of the shifted value that lie beyond the end of `prod` are dropped (they are zero
+/// whenever the full product fits in `prod`).
+pub fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], k: usize, b_pack: u32) {
+    let shift_bits = k as u64 * b_pack as u64;
+    let start_idx = (shift_bits / Word::BITS as u64) as usize;
+    let bit_shift = (shift_bits % Word::BITS as u64) as u32;
+    if start_idx >= prod.len() {
+        return;
     }
 
-    let mut idx = start_idx + count as usize;
-    while carry != 0 && idx < prod.len() {
-        let (r, c) = prod[idx].overflowing_add(carry);
-        prod[idx] = r;
-        carry = Word::from(c);
-        idx += 1;
+    // Add the shifted value limb by limb. `spill` holds the bits of the previous word that were
+    // shifted across the word boundary, and `carry` is the carry of the previous limb addition:
+    // both belong to the current position.
+    let mut spill: Word = 0;
+    let mut carry = false;
+    let mut dest = prod[start_idx..].iter_mut();
+    for &word in words {
+        let limb = (word << bit_shift) | spill;
+        spill = if bit_shift == 0 {
+            0
+        } else {
+            word >> (Word::BITS - bit_shift)
+        };
+        let slot = match dest.next() {
+            Some(slot) => slot,
+            None => return,
+        };
+        let (sum, c1) = slot.overflowing_add(limb);
+        let (sum, c2) = sum.overflowing_add(Word::from(carry));
+        *slot = sum;
+        carry = c1 | c2;
+    }
+
+    // The spilled top bits and the carry, then the carry alone, ripple through the higher words.
+    let mut pending = spill;
+    for slot in dest {
+        if pending == 0 && !carry {
+            break;
+        }
+        let (sum, c1) = slot.overflowing_add(pending);
+        let (sum, c2) = sum.overflowing_add(Word::from(carry));
+        *slot = sum;
+        carry = c1 | c2;
+        pending = 0;
     }
 }
 
@@ -688,6 +691,59 @@ mod tests {
             seen[pos] = true;
         }
         assert!(seen.iter().all(|&s| s), "some packing width is never selected");
+    }
+
+    #[test]
+    fn test_add_shifted_to_prod_carries() {
+        // Reference: add `value << shift` bit by bit.
+        fn reference(prod: &mut [Word], words: &[Word], shift: usize) {
+            for (i, &w) in words.iter().enumerate() {
+                for bit in 0..Word::BITS as usize {
+                    if w >> bit & 1 == 0 {
+                        continue;
+                    }
+                    let pos = shift + i * Word::BITS as usize + bit;
+                    let mut idx = pos / Word::BITS as usize;
+                    let mut add: Word = 1 << (pos % Word::BITS as usize);
+                    while add != 0 && idx < prod.len() {
+                        let (sum, c) = prod[idx].overflowing_add(add);
+                        prod[idx] = sum;
+                        add = Word::from(c);
+                        idx += 1;
+                    }
+                }
+            }
+        }
+
+        let values: [&[Word]; 6] = [
+            &[1],
+            &[Word::MAX],
+            &[Word::MAX, Word::MAX],
+            &[Word::MAX, Word::MAX, Word::MAX],
+            &[0, Word::MAX, 1],
+            &[1 << (Word::BITS - 1), 0, Word::MAX],
+        ];
+        let fills: [Word; 3] = [0, Word::MAX, Word::MAX - 1];
+        for b_pack in [Word::BITS, Word::BITS - 8, Word::BITS - 12, B_PACK_MIN] {
+            for k in 0..6 {
+                for words in values {
+                    for fill in fills {
+                        for low in [0, 1, Word::MAX] {
+                            let mut prod = [fill; 12];
+                            prod[0] = low;
+                            prod[11] = 0;
+                            let mut expected = prod;
+                            reference(&mut expected, words, k * b_pack as usize);
+                            add_shifted_to_prod(&mut prod, words, k, b_pack);
+                            assert_eq!(
+                                prod, expected,
+                                "b_pack = {b_pack}, k = {k}, words = {words:?}, fill = {fill}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
