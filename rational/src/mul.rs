@@ -26,6 +26,15 @@ impl Repr {
         }
     }
 
+    /// `self^n` for a non-negative exponent of any size.
+    #[inline]
+    pub(crate) fn pow_unsigned(&self, n: usize) -> Self {
+        Self {
+            numerator: self.numerator.pow(n),
+            denominator: self.denominator.pow(n),
+        }
+    }
+
     /// `self^n` for any `n` in `isize`.
     ///
     /// For a negative exponent the value is reciprocated first: `x.pow(-n) ==
@@ -34,10 +43,7 @@ impl Repr {
     #[inline]
     fn pow(&self, n: isize) -> Self {
         if n >= 0 {
-            Self {
-                numerator: self.numerator.pow(n as usize),
-                denominator: self.denominator.pow(n as usize),
-            }
+            self.pow_unsigned(n as usize)
         } else {
             // self^n = (denominator / numerator)^|n|. Strip the numerator's
             // sign onto the new numerator so the denominator stays a positive
