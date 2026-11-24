@@ -5,7 +5,7 @@ use core::str::FromStr;
 
 use dashu_base::Sign;
 use dashu_float::ops::Abs;
-use dashu_float::{round::mode, Context, DBig, Repr};
+use dashu_float::{round::mode, Context, DBig, FBig, Repr};
 use dashu_int::IBig;
 
 #[test]
@@ -63,6 +63,33 @@ fn test_signed_zeros() {
             .value(),
         DBig::from_str("1").unwrap()
     );
+}
+
+/// Exact results at zero do not need a precision to round to: a zero carrying unlimited
+/// precision (`FBig::ZERO`, `try_from(0.0)`) used to panic with "precision cannot be 0".
+#[test]
+fn test_exact_results_at_unlimited_precision_zero() {
+    type F = FBig<mode::HalfEven, 2>;
+    for zero in [F::ZERO, F::try_from(0.0f64).unwrap()] {
+        assert_eq!(zero.precision(), 0);
+        assert_eq!(zero.sinh(), F::ZERO);
+        assert_eq!(zero.cosh(), F::ONE);
+        assert_eq!(zero.sinh_cosh(), (F::ZERO, F::ONE));
+        assert_eq!(zero.sinh_pi(), F::ZERO);
+        assert_eq!(zero.cosh_pi(), F::ONE);
+        assert_eq!(zero.sinh_cosh_pi(), (F::ZERO, F::ONE));
+        assert_eq!(zero.tanh(), F::ZERO);
+        assert_eq!(zero.asinh(), F::ZERO);
+        assert_eq!(zero.atanh(), F::ZERO);
+    }
+    let neg_zero = F::try_from(-0.0f64).unwrap();
+    assert!(neg_zero.sinh().repr().is_neg_zero());
+    assert!(neg_zero.sinh_pi().repr().is_neg_zero());
+    assert!(neg_zero.tanh().repr().is_neg_zero());
+    assert!(neg_zero.asinh().repr().is_neg_zero());
+    assert!(neg_zero.atanh().repr().is_neg_zero());
+    // acosh(1) = 0 is exact as well
+    assert_eq!(F::ONE.acosh(), F::ZERO);
 }
 
 #[test]

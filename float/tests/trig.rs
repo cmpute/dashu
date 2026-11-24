@@ -194,15 +194,21 @@ fn test_atan_atan2_pi_multiples_correctly_rounded() {
             (&one, &zero, 1, 1),
             (&mone, &zero, -1, 1),
         ] {
-            assert_eq!(
-                ctx.atan2(y, x, None),
-                Ok(want(num, shift)),
-                "atan2({y:?}, {x:?}), p = {p}"
-            );
+            assert_eq!(ctx.atan2(y, x, None), Ok(want(num, shift)), "atan2({y:?}, {x:?}), p = {p}");
         }
         // atan2(±finite, +inf) = ±0, exactly
-        assert!(ctx.atan2(&one, &inf, None).unwrap().value().repr().is_pos_zero());
-        assert!(ctx.atan2(&mone, &inf, None).unwrap().value().repr().is_neg_zero());
+        assert!(ctx
+            .atan2(&one, &inf, None)
+            .unwrap()
+            .value()
+            .repr()
+            .is_pos_zero());
+        assert!(ctx
+            .atan2(&mone, &inf, None)
+            .unwrap()
+            .value()
+            .repr()
+            .is_neg_zero());
     }
     for p in [1usize, 2, 4, 20, 50, 100, 500] {
         check::<Zero>(p);
@@ -212,6 +218,41 @@ fn test_atan_atan2_pi_multiples_correctly_rounded() {
         check::<HalfEven>(p);
         check::<HalfAway>(p);
     }
+}
+
+/// Exact results at zero do not need a precision to round to: a zero carrying unlimited
+/// precision (`FBig::ZERO`, `try_from(0.0)`) used to panic with "precision cannot be 0".
+#[test]
+fn test_exact_results_at_unlimited_precision_zero() {
+    type F = FBig<HalfEven, 2>;
+    for zero in [F::ZERO, F::try_from(0.0f64).unwrap()] {
+        assert_eq!(zero.precision(), 0);
+        assert_eq!(zero.sin(), F::ZERO);
+        assert_eq!(zero.cos(), F::ONE);
+        assert_eq!(zero.sin_cos(), (F::ZERO, F::ONE));
+        assert_eq!(zero.tan(), F::ZERO);
+        assert_eq!(zero.asin(), F::ZERO);
+        assert_eq!(zero.atan(), F::ZERO);
+        assert_eq!(zero.sin_pi(), F::ZERO);
+        assert_eq!(zero.cos_pi(), F::ONE);
+        assert_eq!(zero.sin_cos_pi(), (F::ZERO, F::ONE));
+        assert_eq!(zero.tan_pi(), F::ZERO);
+        assert_eq!(zero.sin_unit(360), F::ZERO);
+        assert_eq!(zero.cos_unit(360), F::ONE);
+        assert_eq!(zero.tan_unit(360), F::ZERO);
+        assert_eq!(zero.asin_unit(360), F::ZERO);
+        assert_eq!(zero.atan_unit(360), F::ZERO);
+    }
+    // the sign of zero survives through the odd functions
+    let neg_zero = F::try_from(-0.0f64).unwrap();
+    assert!(neg_zero.sin().repr().is_neg_zero());
+    assert!(neg_zero.tan().repr().is_neg_zero());
+    assert!(neg_zero.asin().repr().is_neg_zero());
+    assert!(neg_zero.atan().repr().is_neg_zero());
+    assert!(neg_zero.sin_pi().repr().is_neg_zero());
+    assert!(neg_zero.tan_unit(8).repr().is_neg_zero());
+    // acos(1) = 0 is the one exact row of acos
+    assert_eq!(F::ONE.acos(), F::ZERO);
 }
 
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`

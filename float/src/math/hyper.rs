@@ -38,11 +38,13 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
+        // Exact results first: a zero carrying unlimited precision (`FBig::ZERO`,
+        // `try_from(0.0)`) must not trip the limited-precision assertion.
         if x.significand.is_zero() {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
+        assert_limited_precision(self.precision);
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). Both `exp_m1` come from the
         // Ball-based `exp_compute`; the subtraction/division roundings, the `exp_m1` errors *and
         // the input's own rounding* are tracked mechanically by the Ball propagation (the raw `x`
@@ -82,11 +84,11 @@ impl<R: ErrorBounds> Context<R> {
             // cosh(±inf) = +inf
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // cosh(±0) = 1
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). Both
         // `exp_m1` come from the Ball-based `exp_compute`; the sum/divide/+1 roundings and the
@@ -132,13 +134,13 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(Exact(FBig::new(Repr::infinity(), *self))),
             );
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             return (
                 Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
                 Ok(Exact(FBig::new(Repr::one(), *self))),
             );
         }
+        assert_limited_precision(self.precision);
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
         // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
@@ -190,11 +192,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // sinh(±π·huge) = ±∞, so the sign follows x.
@@ -235,11 +237,11 @@ impl<R: ErrorBounds> Context<R> {
             // cosh(±inf) = +inf
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // cosh(±0) = 1
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // cosh(±π·huge) = +∞ (always positive).
@@ -284,13 +286,13 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(Exact(FBig::new(Repr::infinity(), *self))),
             );
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             return (
                 Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
                 Ok(Exact(FBig::new(Repr::one(), *self))),
             );
         }
+        assert_limited_precision(self.precision);
 
         // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
@@ -378,11 +380,11 @@ impl<R: ErrorBounds> Context<R> {
             let one = FBig::new(Repr::one(), *self);
             return Ok(Exact(one * x.sign()));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // tanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // For sufficiently large |x|, tanh(x) = sign(x)·(1 − δ) with 0 < δ = 2/(e^{2|x|}+1) below
         // half an ulp of ±1, so its rounding is fully determined (Up/Zero just above −1 and
@@ -440,11 +442,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
         // `sqrt(x²+1) − 1` cancellation near 0. The composition is tracked as a [`Ball`] from the
@@ -505,7 +507,6 @@ impl<R: ErrorBounds> Context<R> {
             }
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         // Domain x ≥ 1, compared *exactly* (no precision argument) because `1` is a vertical
         // tangent of `acosh`: `1 + 10⁻¹⁵⁵` at 100 digits rounds onto `1`, but its true value is
         // `√2·10⁻⁷⁸`, not `0`.
@@ -517,6 +518,8 @@ impl<R: ErrorBounds> Context<R> {
             core::cmp::Ordering::Equal => return Ok(Exact(FBig::new(Repr::zero(), *self))),
             core::cmp::Ordering::Greater => {}
         }
+        // after the exact `acosh(1) = 0` row, which needs no precision to round to
+        assert_limited_precision(self.precision);
 
         // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))) — the (x-1)(x+1) form avoids the `x²−1`
         // cancellation near x = 1. The composition is tracked as a [`Ball`] from the rounded input
@@ -565,11 +568,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::OutOfDomain);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // atanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
+        assert_limited_precision(self.precision);
         // Domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error. The boundary is compared
         // *exactly* (no precision argument) because `±1` is a pole of `atanh`: `1 − 10⁻¹⁵⁵`
         // at 100 digits rounds onto `1` but is the finite `(p+155)·ln(10)/2`, not `∞`.

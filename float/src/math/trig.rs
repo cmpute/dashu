@@ -375,11 +375,13 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
+        // Exact results first: a zero carrying unlimited precision (`FBig::ZERO`,
+        // `try_from(0.0)`) must not trip the limited-precision assertion.
         if x.significand.is_zero() {
             // sin(±0) = ±0
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
 
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series. The reduction error is
@@ -437,12 +439,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // cos(±0) = 1
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
+        assert_limited_precision(self.precision);
 
         self.ziv(50, |guard| {
             let (work, r, quadrant) =
@@ -496,14 +497,13 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return (Err(FpError::InfiniteInput), Err(FpError::InfiniteInput));
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // sin(±0) = ±0, cos(±0) = 1
             let s = signed_zero_normal(self, x);
             let c = Ok(FBig::<R, B>::ONE.with_precision(self.precision));
             return (s, c);
         }
+        assert_limited_precision(self.precision);
 
         let (s, c) = self.ziv_pair(50, |guard| {
             let (work, r, quadrant) =
@@ -575,12 +575,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // tan(±0) = ±0
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
 
         // tan = sin/cos, correctly rounded via the Ziv loop; the sin/cos error propagation into the
         // quotient is tracked by the Ball division. The closure's `significand.is_zero()` guard
@@ -641,6 +640,10 @@ impl<R: ErrorBounds> Context<R> {
         }
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
+        }
+        if x.significand.is_zero() {
+            // sin(±0) = ±0 — ahead of the assertion, like the radian `sin`
+            return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
         }
         assert_limited_precision(self.precision);
 
@@ -716,6 +719,10 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
+        if x.significand.is_zero() {
+            // cos(±0) = 1 — ahead of the assertion, like the radian `cos`
+            return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
+        }
         assert_limited_precision(self.precision);
 
         // Exact cases — outside the Ziv loop, whose containment test cannot certify exact
@@ -784,6 +791,13 @@ impl<R: ErrorBounds> Context<R> {
         }
         if x.is_infinite() {
             return (Err(FpError::InfiniteInput), Err(FpError::InfiniteInput));
+        }
+        if x.significand.is_zero() {
+            // sin(±0) = ±0, cos(±0) = 1 — ahead of the assertion, like the radian `sin_cos`
+            return (
+                Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self))),
+                Ok(FBig::<R, B>::ONE.with_precision(self.precision)),
+            );
         }
         assert_limited_precision(self.precision);
 
@@ -882,6 +896,10 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
+        if x.significand.is_zero() {
+            // tan(±0) = ±0 — ahead of the assertion, like the radian `tan`
+            return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
+        }
         assert_limited_precision(self.precision);
 
         // tan hits an exact value at every eighth-of-turn argument (`8x/u` an integer) — the
@@ -946,11 +964,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
 
         // Domain check |x| ≤ 1 and the `±u/4` row, compared *exactly* (no precision
         // argument) — `±1` is a vertical tangent of `asin`, and the ×u inverse family's exact
@@ -1091,7 +1109,6 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
-        assert_limited_precision(self.precision);
         if u == 0 {
             return signed_zero_normal(self, x);
         }
@@ -1099,6 +1116,7 @@ impl<R: ErrorBounds> Context<R> {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
         // atan(±1) = ±u/8 — outside the Ziv loop. Compared *exactly*, like the other `±1` rows;
         // `atan` has no pole there, so a rounded `1 ± ulp` argument would only be a fraction of an
         // ulp out, but the exact form makes the whole family's `±1` rows mean "the argument *is*
@@ -1233,11 +1251,11 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
 
         // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
         // a vertical tangent of `asin`, so an argument that merely rounds onto it
@@ -1308,7 +1326,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
 
         // Domain |x| ≤ 1 and the `±1` rows, compared *exactly* (no precision argument):
         // `acos(1 − δ)` is `√(2δ)`, which the endpoint's `0` misses entirely once `δ` is far
@@ -1316,6 +1333,10 @@ impl<R: ErrorBounds> Context<R> {
         let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
         if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
+        }
+        if !(cmp_one.is_eq() && x.sign() == Sign::Positive) {
+            // every row but the exact `acos(1) = 0` needs a precision to round to
+            assert_limited_precision(self.precision);
         }
         if cmp_one.is_eq() {
             // |x| = 1: the composition π/2 − asin(±1) cancels onto an exact value. acos(1) = 0 is
@@ -1383,12 +1404,11 @@ impl<R: ErrorBounds> Context<R> {
             return self.pi_fraction(x.sign(), 1, 2, cache);
         }
 
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
