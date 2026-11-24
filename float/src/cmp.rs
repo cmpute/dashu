@@ -225,13 +225,22 @@ pub(crate) fn repr_cmp_ubig<const B: Word, const ABS: bool>(lhs: &Repr<B>, rhs: 
         return Ordering::Less;
     }
 
-    // case 4: compare the exact values
+    // case 4: compare the exact values (their magnitudes if ABS: the left side may be negative)
     let mut rhs: IBig = rhs.clone().into();
     if lhs.exponent < 0 {
         shl_digits_in_place::<B>(&mut rhs, (-lhs.exponent) as usize);
-        lhs.significand.cmp(&rhs)
+        if ABS {
+            lhs.significand.abs_cmp(&rhs)
+        } else {
+            lhs.significand.cmp(&rhs)
+        }
     } else {
-        shl_digits::<B>(&lhs.significand, lhs.exponent as usize).cmp(&rhs)
+        let lhs = shl_digits::<B>(&lhs.significand, lhs.exponent as usize);
+        if ABS {
+            lhs.abs_cmp(&rhs)
+        } else {
+            lhs.cmp(&rhs)
+        }
     }
 }
 
@@ -267,12 +276,21 @@ pub(crate) fn repr_cmp_ibig<const B: Word, const ABS: bool>(lhs: &Repr<B>, rhs: 
         return sign * Ordering::Less;
     }
 
-    // case 4: compare the exact values
+    // case 4: compare the exact values (their magnitudes if ABS: either side may be negative)
     if lhs.exponent < 0 {
-        lhs.significand
-            .cmp(&shl_digits::<B>(rhs, (-lhs.exponent) as usize))
+        let rhs = shl_digits::<B>(rhs, (-lhs.exponent) as usize);
+        if ABS {
+            lhs.significand.abs_cmp(&rhs)
+        } else {
+            lhs.significand.cmp(&rhs)
+        }
     } else {
-        shl_digits::<B>(&lhs.significand, lhs.exponent as usize).cmp(rhs)
+        let lhs = shl_digits::<B>(&lhs.significand, lhs.exponent as usize);
+        if ABS {
+            lhs.abs_cmp(rhs)
+        } else {
+            lhs.cmp(rhs)
+        }
     }
 }
 

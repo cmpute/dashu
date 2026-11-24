@@ -162,3 +162,82 @@ fn test_abs_ord() {
     assert_eq!(dbig!(1234e4).abs_cmp(&dbig!(12345678)), Ordering::Less);
     assert_eq!(dbig!(-1234e-4).abs_cmp(&dbig!(-12345678e-8)), Ordering::Less);
 }
+
+// `abs_cmp` against an integer fell back to a *signed* comparison whenever the magnitudes were
+// too close for the logarithm estimate to separate them, so `1` vs `-1` was `Greater`.
+#[test]
+fn test_abs_cmp_with_integers() {
+    use dashu_float::{Context, Repr};
+    use dashu_int::{IBig, UBig};
+
+    fn check<const B: dashu_int::Word>(sig: i64, exp: isize, int: i64, expected: Ordering) {
+        // every combination of signs has the same magnitude ordering
+        for (fs, is) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+            let f = dashu_float::FBig::<dashu_float::round::mode::HalfEven, B>::from_parts(
+                IBig::from(fs * sig),
+                exp,
+            );
+            let i = IBig::from(is * int);
+            assert_eq!(f.abs_cmp(&i), expected, "{fs}*{sig}*{B}^{exp} vs {is}*{int}");
+            assert_eq!(i.abs_cmp(&f), expected.reverse());
+            assert_eq!(f.repr().abs_cmp(&i), expected);
+            assert_eq!(i.abs_cmp(f.repr()), expected.reverse());
+            let u = UBig::from(int.unsigned_abs());
+            assert_eq!(f.abs_cmp(&u), expected, "{fs}*{sig}*{B}^{exp} vs {int}u");
+            assert_eq!(u.abs_cmp(&f), expected.reverse());
+            assert_eq!(f.repr().abs_cmp(&u), expected);
+            assert_eq!(u.abs_cmp(f.repr()), expected.reverse());
+        }
+    }
+    for (sig, exp, int, expected) in [
+        (1, 0, 1, Ordering::Equal),
+        (2, 0, 2, Ordering::Equal),
+        (1, 3, 1000, Ordering::Equal),
+        (1000001, 0, 1000000, Ordering::Greater),
+        (1000000, 0, 1000001, Ordering::Less),
+        (999996, -1, 100000, Ordering::Less),
+        (1000004, -1, 100000, Ordering::Greater),
+        (1000000, -1, 100000, Ordering::Equal),
+        (100, 0, 2, Ordering::Greater),
+        (1, 0, 1000, Ordering::Less),
+        (5, -1, 1, Ordering::Less),
+        (5, -1, 0, Ordering::Greater),
+    ] {
+        check::<10>(sig, exp, int, expected);
+    }
+    for (sig, exp, int, expected) in [
+        (1, 0, 1, Ordering::Equal),
+        (1, 20, 1 << 20, Ordering::Equal),
+        (0xfffff, 0, 0x100000, Ordering::Less),
+        (0x100001, 0, 0x100000, Ordering::Greater),
+        (0x1fffff, -1, 0x100000, Ordering::Less),
+        (0x200001, -1, 0x100000, Ordering::Greater),
+        (3, -1, 1, Ordering::Greater),
+        (3, -1, 2, Ordering::Less),
+    ] {
+        check::<2>(sig, exp, int, expected);
+    }
+
+    // values near a power of two across the four standard precisions: 2^p - 1 < 2^p < 2^p + 1
+    for precision in [20usize, 50, 100, 500] {
+        let pow = IBig::ONE << precision;
+        for sign in [1, -1] {
+            let below = FBig::from_parts((&pow - IBig::ONE) * sign, 0);
+            let above = FBig::from_parts((&pow + IBig::ONE) * sign, 0);
+            for int in [pow.clone(), -pow.clone()] {
+                assert_eq!(below.abs_cmp(&int), Ordering::Less);
+                assert_eq!(above.abs_cmp(&int), Ordering::Greater);
+                assert_eq!(int.abs_cmp(&below), Ordering::Greater);
+                assert_eq!(int.abs_cmp(&above), Ordering::Less);
+            }
+        }
+    }
+
+    // zeros and infinities
+    let neg_zero = DBig::from_repr(Repr::neg_zero(), Context::new(4));
+    assert_eq!(neg_zero.abs_cmp(&IBig::ZERO), Ordering::Equal);
+    assert_eq!(neg_zero.abs_cmp(&UBig::ZERO), Ordering::Equal);
+    assert_eq!(neg_zero.abs_cmp(&IBig::NEG_ONE), Ordering::Less);
+    assert_eq!(DBig::NEG_INFINITY.abs_cmp(&IBig::from(-5)), Ordering::Greater);
+    assert_eq!(UBig::from(5u8).abs_cmp(&DBig::NEG_INFINITY), Ordering::Less);
+}
