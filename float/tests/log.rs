@@ -255,3 +255,67 @@ fn test_log2_fbig() {
         assert!(ub >= log2 && (ub - log2) / log2 < ERR_BOUND);
     }
 }
+
+// The exponent used to be converted to f32 before it was multiplied by log2(base). Above 2^24
+// that conversion is itself off by whole units, so the "upper bound" could land below the
+// true logarithm (971397245e16777285 got 55732964 for a log2 of 55732964.25).
+#[test]
+fn test_log2_bounds_large_exponent() {
+    use dashu_base::BitTest;
+    use dashu_int::{IBig, UBig};
+
+    // the reported case: floor(log2(971397245 * 10^16777285)) = 55732964 (the fraction is
+    // about 0.2529), and its neighbor, whose floor is 55732960 (fraction about 0.9310)
+    for (exp, floor_log2) in [(16_777_285isize, 55732964f64), (16_777_284, 55732960f64)] {
+        for sig in [971397245, -971397245] {
+            let (lb, ub) = DBig::from_parts(IBig::from(sig), exp).log2_bounds();
+            assert!((lb as f64) < floor_log2 + 1.0, "exponent {exp}: lower {lb}");
+            assert!((ub as f64) > floor_log2, "exponent {exp}: upper {ub}");
+            assert!(ub - lb <= 64.0);
+        }
+    }
+    // a moderately large exponent, against the exact bit length of the integer
+    for exp in [99_999usize, 100_000, 1_000_000] {
+        let floor_log2 = (UBig::from(971397245u32) * UBig::from(10u8).pow(exp)).bit_len() - 1;
+        let (lb, ub) = DBig::from_parts(IBig::from(971397245), exp as isize).log2_bounds();
+        assert!((lb as f64) < (floor_log2 + 1) as f64, "exponent {exp}: lower {lb}");
+        assert!((ub as f64) > floor_log2 as f64, "exponent {exp}: upper {ub}");
+    }
+
+    // any exponent: check against log2(sig) + exp * log2(base) evaluated in f64, whose error
+    // (about 1e-15 relative) is far below the resolution of the f32 bounds
+    fn check<const B: dashu_int::Word>(sig: i64, exp: isize) {
+        let x = dashu_float::FBig::<dashu_float::round::mode::Zero, B>::from_parts(sig.into(), exp);
+        let (lb, ub) = x.log2_bounds();
+        let log2 = (sig.unsigned_abs() as f64).log2() + exp as f64 * (B as f64).log2();
+        let slack = log2.abs() * 1e-14;
+        assert!(lb as f64 <= log2 + slack, "{sig} * {B}^{exp}: lower {lb} > {log2}");
+        assert!(ub as f64 >= log2 - slack, "{sig} * {B}^{exp}: upper {ub} < {log2}");
+        // tight: within a few f32 ulps of the true value
+        assert!((ub as f64 - lb as f64) <= 1e-2 + log2.abs() * 1e-6, "{sig} * {B}^{exp}");
+    }
+    for exp in [
+        0isize,
+        1,
+        1000,
+        16_777_217,
+        16_777_285,
+        (1 << 25) + 1,
+        (1 << 31) + 12345,
+        (1 << 40) + 1,
+        (1 << 53) + 1,
+        (1 << 60) + 12345,
+        isize::MAX - 1,
+    ] {
+        for sign in [1, -1] {
+            for sig in [1, 3, 971397245, i64::MAX] {
+                check::<10>(sig, sign * exp);
+                check::<2>(sig, sign * exp);
+                check::<3>(sig, sign * exp);
+                check::<16>(sig, sign * exp);
+                check::<36>(sig, sign * exp);
+            }
+        }
+    }
+    assert_eq!(DBig::ZERO.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+}
