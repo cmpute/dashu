@@ -121,18 +121,19 @@ impl<R: Round, const B: Word> Serialize for FBig<R, B> {
             // Serialize to a literal with exactly as many digits as the context precision.
             // The deserializer re-infers the precision from that digit count, so this lets
             // the precision round-trip through the human-readable format.
-            match self.to_literal_with_precision() {
-                Some(s) => serializer.serialize_str(&s),
-                None => serializer.collect_str(self),
+            if let Some(s) = self.to_literal_with_precision() {
+                return serializer.serialize_str(&s);
             }
-        } else {
-            // otherwise serialize as a (significand, exponent, precision) struct
-            let mut se = serializer.serialize_struct("FBig", 3)?;
-            se.serialize_field(KEY_SIGNIF, &self.repr.significand)?;
-            se.serialize_field(KEY_EXPONENT, &self.repr.exponent)?;
-            se.serialize_field(KEY_PREC, &self.context.precision)?;
-            se.end()
         }
+
+        // Otherwise serialize as a (significand, exponent, precision) struct. This is the only
+        // form of the non-human-readable formats, and the fallback of the human-readable ones
+        // for the numbers whose precision no literal can express.
+        let mut se = serializer.serialize_struct("FBig", 3)?;
+        se.serialize_field(KEY_SIGNIF, &self.repr.significand)?;
+        se.serialize_field(KEY_EXPONENT, &self.repr.exponent)?;
+        se.serialize_field(KEY_PREC, &self.context.precision)?;
+        se.end()
     }
 }
 
@@ -345,7 +346,9 @@ impl<'de, R: Round, const B: Word> Deserialize<'de> for FBig<R, B> {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(FBigVisitor(PhantomData))
+            // a literal string, or the struct form for the numbers that no literal can express
+            // together with their precision (see `Serialize`)
+            deserializer.deserialize_any(FBigVisitor(PhantomData))
         } else {
             deserializer.deserialize_struct("FBig", FBIG_FIELDS, FBigVisitor(PhantomData))
         }

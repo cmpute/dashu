@@ -210,6 +210,56 @@ fn test_serde_preserves_precision_exactly() {
 }
 
 #[test]
+fn test_serde_precision_without_literal() {
+    use core::str::FromStr;
+
+    // No literal has zero digits, so an unlimited precision is carried by the struct form.
+    let unlimited = [
+        DBig::ZERO,
+        DBig::ONE,
+        DBig::NEG_ONE,
+        DBig::from_parts(123.into(), 0).with_precision(0).value(),
+        DBig::from_parts((-5).into(), -3).with_precision(0).value(),
+        DBig::from_str("-0").unwrap().with_precision(0).value(),
+    ];
+    for value in &unlimited {
+        assert_eq!(value.precision(), 0);
+        check_roundtrip(value);
+    }
+    assert_eq!(
+        to_string(&DBig::ONE).unwrap(),
+        r#"{"significand":"1","exponent":0,"precision":0}"#
+    );
+    for value in [
+        FBig::ZERO,
+        FBig::ONE,
+        FBig::from_parts(5.into(), -1).with_precision(0).value(),
+    ] {
+        assert_eq!(value.precision(), 0);
+        check_roundtrip(&value);
+    }
+
+    // downstream arithmetic is unchanged by the round trip
+    let y = DBig::from_parts(123.into(), 0).with_precision(0).value();
+    let back: DBig = from_str(&to_string(&DBig::ONE).unwrap()).unwrap();
+    assert_eq!(&back + &y, DBig::from_parts(124.into(), 0));
+
+    // an inexact sum can carry a guard digit beyond its precision
+    let guarded = DBig::from_str("0.1").unwrap() - DBig::from_str("11").unwrap();
+    assert_eq!(guarded.precision(), 2);
+    assert_eq!(guarded.repr().digits(), 3);
+    assert_eq!(
+        check_roundtrip(&guarded),
+        r#"{"significand":"-109","exponent":-1,"precision":2}"#
+    );
+
+    // plain literals keep being accepted, with the precision their digits imply
+    let parsed: DBig = from_str("\"1\"").unwrap();
+    assert_eq!(parsed, DBig::ONE);
+    assert_eq!(parsed.precision(), 1);
+}
+
+#[test]
 fn test_serde_infinity() {
     assert_eq!(to_string(&Repr::<10>::infinity()).unwrap(), "\"inf\"");
     assert_eq!(to_string(&Repr::<2>::neg_infinity()).unwrap(), "\"-inf\"");
@@ -301,4 +351,11 @@ fn test_serde_struct_field_names() {
         ],
         "unknown field `precision`, expected `significand` or `exponent`",
     );
+
+    // owned keys also reach the struct form of a human-readable format: a reader cannot
+    // lend out its input
+    let json = r#"{"significand":"5","exponent":-1,"precision":0}"#;
+    let parsed: DBig = serde_json::from_reader(json.as_bytes()).unwrap();
+    assert_eq!(parsed, DBig::from_parts(5.into(), -1));
+    assert_eq!(parsed.precision(), 0);
 }
