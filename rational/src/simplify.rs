@@ -5,18 +5,26 @@
 
 use crate::{error::panic_divide_by_0, rbig::RBig, repr::Repr};
 use core::{cmp::Ordering, mem};
-use dashu_base::{AbsOrd, Approximation, DivRem, UnsignedAbs};
+use dashu_base::{AbsOrd, Approximation, DivRem, FloatEncoding, UnsignedAbs};
 use dashu_int::{IBig, Sign, UBig};
 
 impl Repr {
     /// Find the simplest rational number in the open interval `(lower, upper)`.
     /// See [RBig::simplest_in()] and <https://stackoverflow.com/q/66980340/5960776>.
     pub fn simplest_in(mut lower: Self, mut upper: Self) -> Self {
-        let sign = if lower.numerator.sign() != upper.numerator.sign() {
-            // if lower < 0 < upper, then 0 is the simplest
-            return Self::zero();
-        } else {
-            lower.numerator.sign()
+        // Zero carries a positive sign, but as an endpoint it is not inside the open
+        // interval: the interval then lies on the side of the other endpoint.
+        let sign = match (lower.numerator.is_zero(), upper.numerator.is_zero()) {
+            (true, true) => return Self::zero(),
+            (true, false) => upper.numerator.sign(),
+            (false, true) => lower.numerator.sign(),
+            (false, false) => {
+                if lower.numerator.sign() != upper.numerator.sign() {
+                    // if lower < 0 < upper, then 0 is the simplest
+                    return Self::zero();
+                }
+                lower.numerator.sign()
+            }
         };
         lower = lower.abs();
         upper = upper.abs();
@@ -70,57 +78,98 @@ impl Repr {
 
 /// Implementation of simplest_from_f32, simplest_from_f64
 macro_rules! impl_simplest_from_float {
-    ($f:ident) => {{
+    ($f:ident, $t:ty) => {{
         if $f.is_infinite() || $f.is_nan() {
             return None;
         } else if $f == 0. {
             return Some(Self::ZERO);
         }
 
-        // get the range (f - ulp/2, f + ulp/2)
-        // if f is negative, then range will be flipped by simplest_in()
-        let mut est = Repr::try_from($f).unwrap();
-        est.numerator <<= 1;
-        est.denominator <<= 1;
-        let left = Self(
-            Repr {
-                numerator: &est.numerator + IBig::ONE,
-                denominator: est.denominator.clone(),
-            }
-            .reduce(),
-        );
-        let right = Self(
-            Repr {
-                numerator: est.numerator - IBig::ONE,
-                denominator: est.denominator,
-            }
-            .reduce(),
-        );
+        // |f| = man * 2^exp, the search is done on the magnitude and the sign restored at last
+        let (man, exp) = $f.decode().unwrap();
+        let sign = Sign::from(man < 0);
+        let man = man.unsigned_abs();
 
-        // find the simplest float in the range
-        let mut simplest = Self::simplest_in(left.clone(), right.clone());
-        if $f.to_bits() & 1 == 0 {
-            // consider boundry values when last bit is 0 (because ties to even)
-            if left.is_simpler_than(&simplest) {
-                simplest = left;
+        // The rounding interval ends at the midpoints between f and the adjacent floats.
+        // The next float away from zero is at a distance of 2^exp. So is the next one
+        // towards zero, unless |f| is a power of two (and not the least normal number,
+        // below which the subnormal numbers keep the same spacing): then it is 2^(exp - 1)
+        // away. With all the numbers scaled by 4 * 2^-exp to make them integers:
+        let lowest_bit = 1 << (<$t>::MANTISSA_DIGITS - 1);
+        let narrow = man == lowest_bit && exp as i32 > <$t>::MIN_EXP - <$t>::MANTISSA_DIGITS as i32;
+        let scaled = UBig::from(man) << 2;
+        let lower = &scaled - if narrow { UBig::ONE } else { UBig::from(2u8) };
+        let upper = scaled + UBig::from(2u8);
+
+        let exp = exp as isize - 2;
+        let build = |n: UBig| {
+            let repr = if exp >= 0 {
+                Repr {
+                    numerator: IBig::from(n) << exp as usize,
+                    denominator: UBig::ONE,
+                }
+            } else {
+                Repr {
+                    numerator: IBig::from(n),
+                    denominator: UBig::ONE << exp.unsigned_abs(),
+                }
+            };
+            Self(repr.reduce2())
+        };
+        let (lower, upper) = (build(lower), build(upper));
+
+        // find the simplest rational number in the range
+        let mut simplest = Self::simplest_in(lower.clone(), upper.clone());
+        if man & 1 == 0 {
+            // The midpoints round to f only when its last bit is 0 (because ties to even).
+            // Note that the adjacent float beyond a power of two has an odd mantissa.
+            if lower.is_simpler_than(&simplest) {
+                simplest = lower;
             }
-            if right.is_simpler_than(&simplest) {
-                simplest = right;
+            if upper.is_simpler_than(&simplest) {
+                simplest = upper;
             }
         }
-        Some(simplest)
+        Some(Self(sign * simplest.0))
     }};
 }
 
 impl RBig {
     /// Determine if this rational number is simpler than the other number.
     ///
+    /// The numbers are ordered by their denominators first, then by the magnitudes of their
+    /// numerators, and at last a positive number is simpler than its negation. See
+    /// [RBig::simplest_in] for the definition of `simplicity`.
+    ///
     /// This method only make sense for canonicalized ratios.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use dashu_ratio::RBig;
+    /// let half = RBig::from_parts(1.into(), 2u8.into());
+    /// let three_halves = RBig::from_parts(3.into(), 2u8.into());
+    /// assert!(RBig::ONE.is_simpler_than(&three_halves)); // smaller denominator
+    /// assert!(half.is_simpler_than(&three_halves)); // smaller numerator
+    /// assert!(RBig::ONE.is_simpler_than(&RBig::NEG_ONE)); // positive
+    /// assert!(!half.is_simpler_than(&half));
+    /// ```
     #[inline]
     pub fn is_simpler_than(&self, other: &Self) -> bool {
-        (self.denominator() < other.denominator()) // first compare denominator
-            && self.numerator().abs_cmp(other.numerator()).is_le() // then compare numerator
-            && self.sign() > other.sign() // then compare sign
+        // first compare denominator
+        match self.denominator().cmp(other.denominator()) {
+            Ordering::Less => return true,
+            Ordering::Greater => return false,
+            Ordering::Equal => {}
+        }
+        // then compare numerator
+        match self.numerator().abs_cmp(other.numerator()) {
+            Ordering::Less => return true,
+            Ordering::Greater => return false,
+            Ordering::Equal => {}
+        }
+        // then compare sign
+        self.sign() == Sign::Positive && other.sign() == Sign::Negative
     }
 
     /// Find the simplest rational number in the rounding interval of the [f32] number.
@@ -132,8 +181,8 @@ impl RBig {
     ///
     /// The rounding interval of a [f32] value is an interval such that all numbers in this
     /// range will rounded to this [f32] value. For example the rounding interval for `1f32`
-    /// is `[1. - f32::EPSILON / 2, 1. + f32::EPSILON / 2]`. That is, the error of result value will
-    /// be less than 1/2 ULP.
+    /// is `[1. - f32::EPSILON / 4, 1. + f32::EPSILON / 2]` (the floats below one are twice as
+    /// dense as those above it). That is, the error of result value will be at most 1/2 ULP.
     ///
     /// This method can be used to recover the original fraction represented as a division of [f32].
     /// See the examples below.
@@ -152,7 +201,7 @@ impl RBig {
     /// );
     /// ```
     pub fn simplest_from_f32(f: f32) -> Option<Self> {
-        impl_simplest_from_float!(f)
+        impl_simplest_from_float!(f, f32)
     }
 
     /// Find the simplest rational number in the rounding interval of the [f64] number.
@@ -164,8 +213,8 @@ impl RBig {
     ///
     /// The rounding interval of a [f64] value is an interval such that all numbers in this
     /// range will rounded to this [f64] value. For example the rounding interval for `1f64`
-    /// is `[1. - f64::EPSILON / 2, 1. + f64::EPSILON / 2]`. That is, the error of result value will
-    /// be less than 1/2 ULP.
+    /// is `[1. - f64::EPSILON / 4, 1. + f64::EPSILON / 2]` (the floats below one are twice as
+    /// dense as those above it). That is, the error of result value will be at most 1/2 ULP.
     ///
     /// This method can be used to recover the original fraction represented as a division of [f64].
     /// See the examples below.
@@ -183,18 +232,19 @@ impl RBig {
     ///     RBig::from_parts(22.into(), 7u8.into())
     /// );
     pub fn simplest_from_f64(f: f64) -> Option<Self> {
-        impl_simplest_from_float!(f)
+        impl_simplest_from_float!(f, f64)
     }
 
     /// Find the simplest rational number in the open interval `(lower, upper)`.
     ///
     /// A rational `n₁/d₁` is simpler than another rational number `n₂/d₂` if:
     /// * `d₁ < d₂` (compare denominator)
-    /// * or `|n₁| < |n₂|` (then compare the magnitude of numerator)
-    /// * or `n₂ < 0 < n₁` (then compare the sign)
+    /// * or `d₁ = d₂` and `|n₁| < |n₂|` (then compare the magnitude of numerator)
+    /// * or `d₁ = d₂`, `|n₁| = |n₂|` and `n₂ < 0 < n₁` (then compare the sign)
     ///
     /// `lower` and `upper` will be swapped if necessary. If `lower` and `upper` are
-    /// the same number, then this number will be directly returned.
+    /// the same number, then this number will be directly returned. The endpoints are
+    /// otherwise not part of the interval, even when one of them is zero.
     ///
     /// # Examples
     ///
@@ -212,52 +262,83 @@ impl RBig {
         Self(Repr::simplest_in(lower.0, upper.0).reduce())
     }
 
-    /// Find the previous and next value in farey sequence (from 0 to 1) with `limit` as the order.
-    ///
-    /// This function requires `-1 < x < 1` and `x.denominator` > `limit`
-    fn farey_neighbors(x: &Self, limit: &UBig) -> (Self, Self) {
-        debug_assert!(x.denominator() > limit);
-        debug_assert!(!x.numerator().is_zero());
-        debug_assert!(x.numerator().abs_cmp(x.denominator()).is_le());
+    /// Find the bounds of `x` in the Farey sequence of order `limit` extended to all the
+    /// rational numbers (the fractions with a denominator of at most `limit`): the greatest
+    /// element that is less than or equal to `x`, and the least element that is greater
+    /// than `x`.
+    fn farey_bounds(x: &Self, limit: &UBig) -> (Self, Self) {
+        debug_assert!(!limit.is_zero());
+        let (n, m) = (x.numerator(), x.denominator());
 
-        let (mut left, mut right) = match x.sign() {
-            Sign::Positive => (Repr::zero(), Repr::one()),
-            Sign::Negative => (Repr::neg_one(), Repr::zero()),
-        };
+        // Start from the integers around x, then walk down the Stern-Brocot tree: the
+        // mediant of the bounds replaces the left bound if it's not greater than x, and the
+        // right bound otherwise, until its denominator exceeds the limit. With x = n/m and
+        // the bounds a/b <= x < c/d, the walk is driven by
+        //   p = n*b - a*m >= 0 (the distance to the left bound, times m*b) and
+        //   q = c*m - n*d >  0 (the distance to the right bound, times m*d).
+        // A run of k steps on the same side maps (p, q) to (p - k*q, q) or (p, q - k*p),
+        // so each run is taken at once. This is the Euclidean algorithm on (p, q) and the
+        // number of runs is logarithmic, whereas the number of single steps can be as
+        // large as the limit (e.g. for x close to an integer).
+        let floor = x.0.floor();
+        let mut p = (n - &floor * m).unsigned_abs();
+        let mut q = m - &p;
+        let (mut a, mut b) = (floor.clone(), UBig::ONE);
+        let (mut c, mut d) = (floor + IBig::ONE, UBig::ONE);
 
-        // the Farey neighbors can be found directly by adding the
-        // numerator and denominator together, see <https://en.wikipedia.org/wiki/Farey_sequence#Farey_neighbours>.
         loop {
-            let mut next = Repr {
-                numerator: &left.numerator + &right.numerator,
-                denominator: &left.denominator + &right.denominator,
-            };
-
-            // test if the denominator has exceeded the limit
-            if &next.denominator > limit {
-                next = next.reduce();
-                if &next.denominator > limit {
-                    return (Self(left), Self(right));
-                }
+            // move the left bound while the mediant is not greater than x
+            let k_left = ((limit - &b) / &d).min(&p / &q);
+            if !k_left.is_zero() {
+                a += &c * &k_left;
+                b += &d * &k_left;
+                p -= &q * k_left.clone();
             }
 
-            // tighten the bounds
-            if next > x.0 {
-                right = next;
-            } else {
-                left = next;
+            // move the right bound while the mediant is greater than x; once the left
+            // bound is x itself (p = 0) only the denominator limits the run
+            let mut k_right = (limit - &d) / &b;
+            if !p.is_zero() {
+                k_right = k_right.min((&q - UBig::ONE) / &p);
+            }
+            if !k_right.is_zero() {
+                c += &a * &k_right;
+                d += &b * &k_right;
+                q -= &p * k_right.clone();
+            }
+
+            if k_left.is_zero() && k_right.is_zero() {
+                break;
             }
         }
+
+        // adjacent fractions in the tree are always in the lowest terms
+        let left = Repr {
+            numerator: a,
+            denominator: b,
+        };
+        let right = Repr {
+            numerator: c,
+            denominator: d,
+        };
+        (Self(left), Self(right))
     }
 
     /// Find the closest rational number to this number with a limit of the denominator.
     ///
     /// If the denominator of this number is larger than the limit, then it returns the closest one
-    /// between `self.next_up()` and `self.next_down()` to `self`. If the denominator of this number
-    /// is already less than or equal to the limit, then `Exact(self)` will be returned.
+    /// between `self.next_up()` and `self.next_down()` to `self` (the lesser one if they are equally
+    /// close). If the denominator of this number is already less than or equal to the limit, then
+    /// `Exact(self)` will be returned.
     ///
-    /// The error `|self - self.nearest()|` will be less than `1/(2*limit)`, and the sign of
-    /// the error `self - self.nearest()` will be returned if the result is not [Exact][Approximation::Exact].
+    /// The error `|self - self.nearest()|` will be at most `1/(2*limit)` (this bound is reached when
+    /// `self` is right in the middle of two fractions with the denominator `limit`). The sign
+    /// of `self.nearest() - self` will be returned if the result is not [Exact][Approximation::Exact],
+    /// that is [Sign::Positive] if the result is greater than `self`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` is zero.
     ///
     /// # Examples
     ///
@@ -280,23 +361,27 @@ impl RBig {
             return Approximation::Exact(self.clone());
         }
 
-        let (trunc, r) = self.clone().split_at_point();
-        let (left, right) = Self::farey_neighbors(&r, limit);
-
-        // find the closest one (compare r - left and right - r)
+        // find the closest one (compare self - left and right - self)
+        let (left, right) = Self::farey_bounds(self, limit);
         let mut mid = (&left + &right).0;
         mid.denominator <<= 1;
-        if r.0 > mid {
-            Approximation::Inexact(trunc + right, Sign::Positive)
+        if self.0 > mid {
+            Approximation::Inexact(right, Sign::Positive)
         } else {
-            Approximation::Inexact(trunc + left, Sign::Negative)
+            Approximation::Inexact(left, Sign::Negative)
         }
     }
 
-    /// Find the closest rational number that is greater than this number and has a denominator less than `limit`.
+    /// Find the closest rational number that is greater than this number and has a denominator
+    /// of at most `limit`.
     ///
     /// It's equivalent to finding the next element in Farey sequence of order `limit`. The error
-    /// `|self - self.next_up()|` will be less than `1/limit`.
+    /// `|self - self.next_up()|` will be at most `1/limit` (this bound is reached when `self` is an
+    /// integer).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` is zero.
     ///
     /// # Examples
     ///
@@ -304,34 +389,26 @@ impl RBig {
     /// # use dashu_ratio::RBig;
     /// let a: RBig = 3.141592653.try_into().unwrap();
     /// assert_eq!(a.next_up(&10u8.into()), RBig::from_parts(22.into(), 7u8.into()));
+    /// assert_eq!(RBig::ONE.next_up(&10u8.into()), RBig::from_parts(11.into(), 10u8.into()));
     /// ```
     pub fn next_up(&self, limit: &UBig) -> Self {
         if limit.is_zero() {
             panic_divide_by_0()
         }
 
-        let (trunc, fract) = self.clone().split_at_point();
-        let up = if self.denominator() <= limit {
-            // If the denominator of the number is already small enough, increase the number a little
-            // bit before finding the farey neighbors. Note that the distance between two adjacent
-            // numbers in a farey sequence is at least limit^-2, so we just increase limit^-2
-            let target = fract
-                + Self(Repr {
-                    numerator: IBig::ONE,
-                    denominator: limit.sqr(),
-                });
-            Self::farey_neighbors(&target, limit).1
-        } else {
-            // otherwise we can directly find the next value by finding farey bounds
-            Self::farey_neighbors(&fract, limit).1
-        };
-        trunc + up
+        Self::farey_bounds(self, limit).1
     }
 
-    /// Find the closest rational number that is less than this number and has a denominator less than `limit`.
+    /// Find the closest rational number that is less than this number and has a denominator
+    /// of at most `limit`.
     ///
     /// It's equivalent to finding the previous element in Farey sequence of order `limit`. The error
-    /// `|self - self.next_down()|` will be less than `1/limit`.
+    /// `|self - self.next_down()|` will be at most `1/limit` (this bound is reached when `self` is an
+    /// integer).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` is zero.
     ///
     /// # Examples
     ///
@@ -339,24 +416,14 @@ impl RBig {
     /// # use dashu_ratio::RBig;
     /// let a: RBig = 3.141592653.try_into().unwrap();
     /// assert_eq!(a.next_down(&10u8.into()), RBig::from_parts(25.into(), 8u8.into()));
+    /// assert_eq!(RBig::ONE.next_down(&10u8.into()), RBig::from_parts(9.into(), 10u8.into()));
     /// ```
     pub fn next_down(&self, limit: &UBig) -> Self {
         if limit.is_zero() {
             panic_divide_by_0()
         }
 
-        // similar to next_up()
-        let (trunc, fract) = self.clone().split_at_point();
-        let down = if self.denominator() <= limit {
-            let target = fract
-                - Self(Repr {
-                    numerator: IBig::ONE,
-                    denominator: limit.sqr(),
-                });
-            Self::farey_neighbors(&target, limit).0
-        } else {
-            Self::farey_neighbors(&fract, limit).0
-        };
-        trunc + down
+        // the mirror image of next_up()
+        -Self::farey_bounds(&-self, limit).1
     }
 }
