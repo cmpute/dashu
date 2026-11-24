@@ -709,3 +709,44 @@ fn test_hypot_toward_zero_does_not_round_up() {
     let expected = F10::from_parts(IBig::from(10u8).pow(36) + IBig::ONE, -36);
     assert_eq!(a.hypot(&b).repr(), expected.repr());
 }
+
+/// The root of a zero is exactly zero, so it needs no precision: `cbrt`, `nth_root` and
+/// `hypot(0, 0)` on an unlimited-precision zero (`FBig::try_from(0.0)`, `DBig::ZERO`) used to
+/// panic with "precision cannot be 0", while `sqrt` returned 0.
+#[test]
+fn test_roots_of_unlimited_precision_zero() {
+    let zero: FBig = FBig::try_from(0.0f64).unwrap();
+    assert_eq!(zero.precision(), 0);
+    assert_eq!(zero.sqrt(), <FBig>::ZERO);
+    assert_eq!(zero.cbrt(), <FBig>::ZERO);
+    assert_eq!(zero.nth_root(5), <FBig>::ZERO);
+    assert_eq!(zero.nth_root(2), <FBig>::ZERO);
+    assert_eq!(zero.hypot(&zero), <FBig>::ZERO);
+    assert!((-zero.clone()).cbrt().repr().is_neg_zero());
+    assert!((-zero.clone()).hypot(&zero).repr().is_pos_zero());
+
+    assert_eq!(DBig::ZERO.cbrt(), DBig::ZERO);
+    assert_eq!(DBig::ZERO.nth_root(1), DBig::ZERO);
+    assert_eq!(DBig::ZERO.hypot(&DBig::ZERO), DBig::ZERO);
+    // the first root is the value itself, exact at any precision
+    assert_eq!(DBig::ONE.nth_root(1), DBig::ONE);
+
+    // a limited-precision operand still decides the precision of the result
+    let three = dbig!(3).with_precision(10).value();
+    assert_eq!(three.hypot(&DBig::ZERO), three);
+    assert_eq!(three.hypot(&DBig::ZERO).precision(), 10);
+}
+
+/// A non-trivial root still needs a precision.
+#[test]
+#[should_panic]
+fn test_nth_root_unlimited_precision() {
+    let _ = dbig!(2).with_precision(0).value().nth_root(5);
+}
+
+#[test]
+#[should_panic]
+fn test_hypot_unlimited_precision() {
+    let one = DBig::ONE;
+    let _ = one.hypot(&one);
+}

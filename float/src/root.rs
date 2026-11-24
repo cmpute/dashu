@@ -80,7 +80,7 @@ impl<R: Round> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless `x` is zero).
     #[inline]
     pub fn cbrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
         self.nth_root(3, x)
@@ -105,12 +105,12 @@ impl<R: Round> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if `n` is zero, if the precision is unlimited, or if `n` is even and `x` is negative.
+    /// Panics if `n` is zero, or if the precision is unlimited (unless the root is trivially
+    /// exact: `x` is zero, or `n` is one).
     pub fn nth_root<const B: Word>(&self, n: usize, x: &Repr<B>) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if n == 0 {
             panic_root_zeroth()
         }
@@ -128,6 +128,9 @@ impl<R: Round> Context<R> {
             // preserved: odd root of ±0 is ±0.
             return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
         }
+        // (after the exact shortcuts: a precision-0 zero such as `FBig::try_from(0.0)` or
+        // `DBig::ZERO` has an exact root, as it does for `sqrt`)
+        assert_limited_precision(self.precision);
 
         // operate on the magnitude so that shifting/splitting keep a clean sign;
         // the original sign is re-applied to the result at the end.
@@ -307,10 +310,12 @@ impl<R: ErrorBounds> Context<R> {
         if a.is_infinite() || b.is_infinite() {
             return Ok(Approximation::Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if a.significand.is_zero() && b.significand.is_zero() {
+            // exact, so resolved before the limited-precision assertion (like `sqrt(0)`): a
+            // precision-0 zero such as `FBig::try_from(0.0)` or `DBig::ZERO` is a valid operand
             return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
         let a_mag = if a.sign() == Sign::Negative {
