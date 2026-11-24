@@ -264,6 +264,66 @@ impl<R: Round> Context<R> {
         }
     }
 
+    /// The sticky threshold of `x` (finite, nonzero) under this context: an exponent `t` such
+    /// that every value `x + δ` with `0 < |δ| <= B^t` and a fixed sign of `δ` rounds to the
+    /// same result (with the same rounding flag) at this context's precision.
+    ///
+    /// With `e` the exponent of `x` and `top = e + digits(x)`, take `g = min(e, top − p − 2)`.
+    /// `x` is a multiple of `B^g`, and so is every `p`-digit float near `x` (the floats in
+    /// `[B^(k−1), B^k)` are the multiples of `B^(k−p)`, and `x ± B^g` stays within
+    /// `(B^(top−2), B^(top+1))`). The rounding boundaries are those floats and, for the
+    /// nearest modes, the midpoints between them: multiples of `B^g` again for an even base,
+    /// and half-way between two multiples of `B^g` for an odd one. Either way no boundary
+    /// lies within `B^(g−1)` of `x` on either side, hence `t = g − 1`.
+    ///
+    /// Returns `None` at unlimited precision (every digit of `δ` is significant) or when the
+    /// threshold falls out of the exponent range.
+    pub(crate) fn sticky_threshold<const B: Word>(&self, x: &Repr<B>) -> Option<isize> {
+        debug_assert!(x.is_finite() && !x.significand.is_zero());
+        if !self.is_limited() {
+            return None;
+        }
+        let top = x.exponent as i128 + x.digits() as i128;
+        let g = (x.exponent as i128).min(top - self.precision as i128 - 2);
+        isize::try_from(g - 1)
+            .ok()
+            .filter(|&t| t > isize::MIN && t < isize::MAX)
+    }
+
+    /// Round `x + δ` for an unknown nonzero `δ` of sign `sign` with `|δ| <= B^t`, where `t`
+    /// comes from [`Self::sticky_threshold`]: `δ` is replaced by `±B^t`, which rounds the
+    /// same way and keeps the significand within a few digits of the precision.
+    pub(crate) fn repr_round_sticky<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        t: isize,
+        sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        let stand_in = Repr {
+            significand: IBig::from_parts(sign, UBig::ONE),
+            exponent: t,
+        };
+        self.repr_round(x + &stand_in)
+    }
+
+    /// Round the exact sum `big + small` once to this context's precision (no guard digit),
+    /// for nonzero operands with `|small| < |big|`. The sum is formed exactly, unless `small`
+    /// lies entirely below the sticky threshold of `big` — then only its sign matters and
+    /// the aligned sum (as wide as the exponent gap) is never materialized.
+    pub(crate) fn repr_round_sum_exact<const B: Word>(
+        &self,
+        big: Repr<B>,
+        small: Repr<B>,
+    ) -> Rounded<Repr<B>> {
+        if let Some(t) = self.sticky_threshold(&big) {
+            let small_top = small.exponent as i128 + small.digits() as i128;
+            if small_top <= t as i128 {
+                return self.repr_round_sticky(&big, t, small.sign());
+            }
+        }
+        self.repr_round(big + small)
+    }
+
     // lhs + rhs_sign * rhs, assuming lhs.exponent >= rhs.exponent
     pub(crate) fn repr_add_large_small<const B: Word>(
         &self,

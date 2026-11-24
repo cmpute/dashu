@@ -6,6 +6,8 @@ use dashu_base::{Approximation::*, DivEuclid, DivRemEuclid, RemEuclid};
 use dashu_float::{round::Rounding::*, Context};
 
 mod helper_macros;
+#[allow(dead_code)]
+mod helpers;
 
 fn test_div<'a, T>(a: &'a T, b: &'a T, c: &'a T)
 where
@@ -402,5 +404,316 @@ fn test_div_rem_euclid_decimal() {
         let (quotient, remainder) = n.div_rem_euclid(d);
         assert_eq!(quotient, *q);
         assert_eq!(remainder, *r);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Regressions for the division / remainder reports of the Hegel triage
+// (see triage/float-arith.md).
+// ---------------------------------------------------------------------------
+
+mod triage {
+    use super::helpers::quotient_oracle;
+    use core::cmp::Ordering;
+    use dashu_base::{
+        Approximation, DivEuclid, DivRem, DivRemEuclid, RemEuclid, Sign, UnsignedAbs,
+    };
+    use dashu_float::{
+        round::{mode, Round},
+        Context, DBig, FBig, Repr, Word,
+    };
+    use dashu_int::IBig;
+    use proptest::prelude::*;
+
+    fn fbig<R: Round, const B: Word>(sig: i64, exp: isize, precision: usize) -> FBig<R, B> {
+        FBig::from_repr(Repr::new(sig.into(), exp), Context::new(0))
+            .with_precision(precision)
+            .value()
+    }
+
+    /// `/` with an operand of unlimited precision (or simply one wider than the result
+    /// precision) is the correctly rounded quotient at the larger precision. The operator used
+    /// to feed the unbounded dividend straight into the bounded kernel: a debug assertion in
+    /// debug builds, an unrounded or wrongly rounded quotient in release builds.
+    #[test]
+    fn test_div_unlimited_dividend() {
+        fn check<R: Round, const B: Word>() {
+            let dividends = [1i64, 5, 11, 1000003, -1000003, 987654321987654321];
+            let divisors = [1i64, 3, -7, 1023];
+            for precision in [1usize, 4, 20, 50, 100, 500] {
+                for a_sig in dividends {
+                    for b_sig in divisors {
+                        // unlimited dividend, limited divisor
+                        let a = fbig::<R, B>(a_sig, 0, 0);
+                        let b = fbig::<R, B>(b_sig, 0, 0).with_precision(precision).value();
+                        let expected = quotient_oracle::<R, B>(precision, a.repr(), b.repr());
+                        let via_context = Context::<R>::new(precision)
+                            .div(a.repr(), b.repr())
+                            .unwrap();
+                        assert_eq!(via_context.value_ref().repr(), expected.value_ref());
+                        for got in [&a / &b, a.clone() / &b, &a / b.clone(), a.clone() / b.clone()]
+                        {
+                            assert_eq!(got.precision(), precision);
+                            assert!(got.repr().digits() <= precision);
+                            assert_eq!(
+                                got.repr(),
+                                expected.value_ref(),
+                                "{a_sig} / {b_sig} at precision {precision}, base {B}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 2>();
+        check::<mode::Up, 10>();
+        check::<mode::HalfAway, 10>();
+    }
+
+    /// A zero remainder takes the sign of the dividend (IEEE 754 §5.3.1), whether the
+    /// dividend is itself a zero or an exact multiple of the divisor.
+    #[test]
+    fn test_rem_zero_takes_dividend_sign() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [0usize, 20, 50, 100, 500] {
+                // (dividend, divisor) pairs that divide exactly, at assorted exponent gaps
+                for (a, a_exp, b, b_exp) in
+                    [(6, 0, 3, 0), (25, -1, 5, -1), (3, 4, 3, 0), (3, 4, 1, 2), (12, -2, 3, -3)]
+                {
+                    for (a_sign, b_sign) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                        let x = fbig::<R, B>(a_sign * a, a_exp, precision);
+                        let y = fbig::<R, B>(b_sign * b, b_exp, precision);
+                        let r = &x % &y;
+                        assert!(r.repr().significand().is_zero());
+                        assert_eq!(r.repr().is_neg_zero(), a_sign < 0, "{x:?} % {y:?}");
+                        let r = Context::<R>::new(precision)
+                            .rem(x.repr(), y.repr())
+                            .unwrap();
+                        assert!(matches!(r, Approximation::Exact(_)));
+                        assert_eq!(r.value().repr().is_neg_zero(), a_sign < 0);
+                        // the Euclidean remainder is non-negative: its zero is +0
+                        assert!((&x).rem_euclid(&y).repr().is_pos_zero());
+                    }
+                }
+                let three = fbig::<R, B>(3, 0, precision);
+                assert!((-fbig::<R, B>(0, 0, precision) % &three).repr().is_neg_zero());
+                assert!((fbig::<R, B>(0, 0, precision) % &three).repr().is_pos_zero());
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::Zero, 10>();
+        check::<mode::HalfEven, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Up, 2>();
+        check::<mode::Down, 10>();
+        check::<mode::Away, 2>();
+
+        // the reported inputs
+        use core::str::FromStr;
+        let r = DBig::from_str("-2.5").unwrap() % DBig::from_str("0.5").unwrap();
+        assert!(r.repr().is_neg_zero());
+        let r = FBig::<mode::Zero>::from(6) % FBig::<mode::Zero>::from(-3);
+        assert!(r.repr().is_pos_zero());
+        // the nonzero remainder still keeps the dividend's sign under truncation
+        assert_eq!(
+            FBig::<mode::Zero>::from(-7) % FBig::<mode::Zero>::from(3),
+            FBig::<mode::Zero>::from(-1)
+        );
+    }
+
+    /// The remainder is computed without materializing the operands aligned across their
+    /// exponent gap, in either direction and in every base: `2^(2^40) % 3` used to run out of
+    /// memory (base 2 built the shifted dividend), and `rem_euclid` took minutes and
+    /// gigabytes for a gap of 10^9.
+    #[test]
+    fn test_rem_huge_exponent_gap() {
+        fn check<R: Round, const B: Word>() {
+            // B^e mod 7 by plain modular exponentiation
+            let pow_mod = |mut e: u64| {
+                let (mut base, mut acc) = (B as u64 % 7, 1u64);
+                while e > 0 {
+                    if e & 1 == 1 {
+                        acc = acc * base % 7;
+                    }
+                    base = base * base % 7;
+                    e >>= 1;
+                }
+                acc
+            };
+            for precision in [0usize, 20, 50, 100, 500] {
+                let seven = fbig::<R, B>(7, 0, precision);
+                for e in [1u64 << 20, (1 << 40) + 1, 1_000_000_000, 100_000_000_003] {
+                    // dividend far above the divisor
+                    let x = fbig::<R, B>(1, e as isize, precision);
+                    let residue = pow_mod(e) as i64; // in 1..=6
+                    assert_eq!((&x).rem_euclid(&seven), fbig::<R, B>(residue, 0, precision));
+                    assert_eq!((-&x).rem_euclid(&seven), fbig::<R, B>(7 - residue, 0, precision));
+                    let r = &x % &seven;
+                    assert!(
+                        r == fbig::<R, B>(residue, 0, precision)
+                            || r == fbig::<R, B>(residue - 7, 0, precision),
+                        "{r:?}"
+                    );
+
+                    // divisor far above the dividend: the dividend is its own remainder,
+                    // unless the quotient is stepped away from zero
+                    let small = fbig::<R, B>(5, 0, precision);
+                    let big = fbig::<R, B>(3, e as isize, precision);
+                    assert_eq!((&small).rem_euclid(&big), small);
+                    assert_eq!((&small).div_euclid(&big), IBig::ZERO);
+                    assert_eq!((-&small).div_euclid(&big), IBig::from(-1));
+                    assert_eq!((-&small).div_euclid(-&big), IBig::from(1));
+                    if precision != 0 {
+                        // 3·B^e − 5 rounded to the precision: only the sign of the 5 matters
+                        let complement = (-&small).rem_euclid(&big);
+                        // (3·B^(p+3) − 1)·B^(e−p−3) lies on the same side of every rounding
+                        // boundary as the exact 3·B^e − 5
+                        let stand_in = IBig::from(3) * IBig::from(B).pow(precision + 3) - IBig::ONE;
+                        let stand_in = Repr::new(stand_in, e as isize - precision as isize - 3);
+                        let reference = FBig::<R, B>::from_repr(stand_in, Context::new(0))
+                            .with_precision(precision)
+                            .value();
+                        assert_eq!(complement, reference);
+                        assert!(complement <= big);
+                        let r = &small % &big;
+                        assert!(
+                            r == small || (r.sign() == Sign::Negative && -r.clone() <= big),
+                            "{r:?}"
+                        );
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::Down, 2>();
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 10>();
+        check::<mode::Up, 10>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Away, 3>();
+
+        // the reported inputs
+        let x = FBig::<mode::Down, 2>::from_parts(IBig::ONE, 1 << 40);
+        let y = FBig::<mode::Down, 2>::from_parts(IBig::from(3), 0);
+        assert_eq!(x % y, FBig::<mode::Down, 2>::from_parts(IBig::ONE, 0));
+        let x = DBig::from_parts(IBig::ONE, 1_000_000_000);
+        assert_eq!((&x).rem_euclid(&DBig::from(3u8)), DBig::ONE);
+        assert_eq!(&x % &DBig::from(3u8), DBig::ONE);
+    }
+
+    /// Like every operation, the Euclidean remainder is rounded to the operands' precision.
+    /// When the exact remainder does not fit (the divisor's exponent is above the dividend's)
+    /// the rounded value can reach `|rhs|` — the same documented limitation as
+    /// `f64::rem_euclid`. With enough precision the remainder is exact.
+    #[test]
+    fn test_rem_euclid_rounds_to_precision() {
+        use core::str::FromStr;
+        let x = DBig::from_str("-1").unwrap(); // precision 1
+        let d_short = DBig::from_parts(IBig::ONE, 2); // 1e2, precision 1
+        let d_long = DBig::from_str("100").unwrap(); // 1e2, precision 3
+
+        assert_eq!((&x).rem_euclid(&d_long), DBig::from(99u8));
+        assert_eq!((&x).div_rem_euclid(&d_long), (IBig::from(-1), DBig::from(99u8)));
+        // 99 rounded half away from zero to one digit
+        assert_eq!((&x).rem_euclid(&d_short), DBig::from_parts(IBig::ONE, 2));
+        assert_eq!((&x).div_rem_euclid(&d_short), (IBig::from(-1), DBig::from_parts(IBig::ONE, 2)));
+        assert_eq!((&x).div_euclid(&d_short), IBig::from(-1));
+        // ... and toward zero under that mode
+        type Z = FBig<mode::Zero, 10>;
+        let (x, d) = (Z::from_parts((-1).into(), 0), Z::from_parts(1.into(), 2));
+        assert_eq!(x.rem_euclid(d), Z::from_parts(9.into(), 1));
+    }
+
+    /// The remainder of the exact integers `num / den` under the quotient rule of the mode
+    /// named by `rule` (0 = Zero, 1 = Away, 2 = Up, 3 = Down, 4 = HalfAway, 5 = HalfEven,
+    /// 6 = Euclidean).
+    fn int_rem(num: &IBig, den: &IBig, rule: u8) -> IBig {
+        let (q, r) = num.div_rem(den);
+        if r.is_zero() {
+            return r;
+        }
+        let quotient_positive = num.sign() == den.sign();
+        let twice: IBig = &r << 1;
+        let half = twice.unsigned_abs().cmp(&den.clone().unsigned_abs());
+        let odd = (&q % IBig::from(2)) != IBig::ZERO;
+        let step = match rule {
+            0 => false,
+            1 => true,
+            2 => quotient_positive,
+            3 => !quotient_positive,
+            4 => half != Ordering::Less,
+            5 => half == Ordering::Greater || (half == Ordering::Equal && odd),
+            _ => num.sign() == Sign::Negative,
+        };
+        if step {
+            // the quotient moves away from zero by one: r − sign(q)·den
+            if quotient_positive {
+                r - den
+            } else {
+                r + den
+            }
+        } else {
+            r
+        }
+    }
+
+    fn check_rem_against_integers<R: Round, const B: Word>(
+        rule: u8,
+        (a, a_exp): (i64, isize),
+        (b, b_exp): (i64, isize),
+        precision: usize,
+    ) {
+        let min_exp = a_exp.min(b_exp);
+        let base = IBig::from(B);
+        let num = IBig::from(a) * base.pow((a_exp - min_exp) as usize);
+        let den = IBig::from(b) * base.pow((b_exp - min_exp) as usize);
+        let exact = |r: IBig| -> FBig<R, B> {
+            FBig::from_repr(Repr::new(r, min_exp), Context::new(0))
+                .with_precision(precision)
+                .value()
+        };
+        let (x, y) = (fbig::<R, B>(a, a_exp, 0), fbig::<R, B>(b, b_exp, 0));
+        let (x, y) = (x.with_precision(precision).value(), y.with_precision(precision).value());
+        // the operands themselves must be exact at this precision
+        if x.repr() != &Repr::new(a.into(), a_exp) || y.repr() != &Repr::new(b.into(), b_exp) {
+            return;
+        }
+
+        let r = &x % &y;
+        let expected = exact(int_rem(&num, &den, rule));
+        assert_eq!(r, expected, "{x:?} % {y:?}");
+        if expected.repr().significand().is_zero() {
+            assert_eq!(r.sign(), x.sign());
+        }
+        assert_eq!((&x).rem_euclid(&y), exact(int_rem(&num, &den, 6)), "{x:?} rem_euclid {y:?}");
+        let (q, r) = (&x).div_rem_euclid(&y);
+        assert_eq!(r, (&x).rem_euclid(&y));
+        assert_eq!(q, (&x).div_euclid(&y));
+        assert_eq!(q, (&num).div_euclid(&den));
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 256, ..Default::default() })]
+
+        /// `%`, `rem_euclid`, `div_euclid` and `div_rem_euclid` against exact integer
+        /// arithmetic on the aligned operands, across the exponent-gap branches of the
+        /// kernel, every quotient rule, and the standard precisions (0 = unlimited).
+        #[test]
+        fn prop_rem_matches_integer_arithmetic(
+            a in -5000i64..5000,
+            b in prop_oneof![1i64..5000, -5000i64..-1],
+            a_exp in -40isize..40,
+            b_exp in -40isize..40,
+            precision in prop_oneof![Just(0usize), Just(20), Just(50), Just(100), Just(500)],
+        ) {
+            check_rem_against_integers::<mode::Zero, 2>(0, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::Away, 2>(1, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::Up, 10>(2, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::Down, 10>(3, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::HalfAway, 10>(4, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::HalfEven, 2>(5, (a, a_exp), (b, b_exp), precision);
+            check_rem_against_integers::<mode::HalfEven, 3>(5, (a, a_exp), (b, b_exp), precision);
+        }
     }
 }
