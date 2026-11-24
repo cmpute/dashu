@@ -250,6 +250,7 @@ mod tests {
         ];
         for v in &values {
             let bytes = to_bytes::<rkyv_v08::rancor::Error>(v).unwrap();
+            // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
             let v2 =
                 unsafe { from_bytes_unchecked::<DBig, rkyv_v08::rancor::Error>(&bytes) }.unwrap();
             assert_eq!(v2, *v, "DBig round-trip failed for {v}");
