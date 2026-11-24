@@ -100,6 +100,10 @@ name = "postgres"
 required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]
 
 [[test]]
+name = "postgres_types"
+required-features = ["postgres-types"]
+
+[[test]]
 name = "rkyv"
 required-features = ["rkyv"]
 
