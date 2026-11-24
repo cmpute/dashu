@@ -252,7 +252,14 @@ macro_rules! impl_log2_bounds_for_uint {
 
             #[inline]
             fn log2_est(&self) -> f32 {
-                (*self as f32).log2()
+                let f = *self as f32;
+                if f.is_infinite() {
+                    // the conversion of an integer close to 2^128 rounds up to
+                    // 2^128, which is out of the range of f32
+                    Self::BITS as f32
+                } else {
+                    f.log2()
+                }
             }
         }
     )*}
@@ -286,7 +293,14 @@ macro_rules! impl_log2_bounds_for_float {
                     match self.decode() {
                         Ok((man, exp)) => {
                             let (est_lb, est_ub) = man.log2_bounds();
-                            (est_lb + exp as f32, est_ub + exp as f32)
+                            if est_lb == est_ub {
+                                // the mantissa is a power of two, the result is an exact integer
+                                (est_lb + exp as f32, est_ub + exp as f32)
+                            } else {
+                                // adding the exponent is rounded to the nearest, so the
+                                // bounds have to be widened to remain valid
+                                (next_down(est_lb + exp as f32), next_up(est_ub + exp as f32))
+                            }
                         },
                         Err(Nan) => panic!("calling log2 on nans is forbidden!"),
                         Err(Infinite) => (f32::INFINITY, f32::INFINITY),
