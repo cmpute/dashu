@@ -17,9 +17,18 @@ use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
 /// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
+///
+/// The zero is built explicitly rather than through `Repr::new(sig, exp)`: the operands'
+/// shared exponent can coincide with a special-value sentinel (`-1` for `-0`, `isize::MAX` /
+/// `isize::MIN` for the infinities), and a zero significand at such an exponent would be read
+/// back as that special value (`0.5 - 0.5` came out as `-0`).
 pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
-    if sig.is_zero() && R::IS_ROUND_TOWARD_NEGATIVE {
-        Repr::neg_zero()
+    if sig.is_zero() {
+        if R::IS_ROUND_TOWARD_NEGATIVE {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
     } else {
         Repr::new(sig, exp)
     }
