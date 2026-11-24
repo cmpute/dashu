@@ -1,8 +1,8 @@
 use core::str::FromStr;
 
 use dashu_float::ops::Abs;
-use dashu_float::round::mode::{Down, HalfAway, HalfEven};
-use dashu_float::{round, DBig, FBig, Repr, Word};
+use dashu_float::round::mode::{Away, Down, HalfAway, HalfEven, Up, Zero};
+use dashu_float::{round, Context, DBig, FBig, Repr, Word};
 use dashu_int::IBig;
 
 #[test]
@@ -143,6 +143,75 @@ fn test_atan2_infinities() {
     let res: DBig = ctx.atan2(&neg_inf, &neg_inf, None).unwrap().value();
     let diff: DBig = res + &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
+}
+
+/// The fixed π-multiples `atan` / `atan2` return at infinite arguments and on the y axis are
+/// rounded once, from a wider π — not derived from an already rounded π (which rounds twice:
+/// `atan2(+inf, +inf)` at 10 digits used to be 0.7853981635, `atan(-inf)` under `Up` used to
+/// round away from +∞).
+#[test]
+fn test_atan_atan2_pi_multiples_correctly_rounded() {
+    // the reported cases
+    let inf = DBig::from_repr(Repr::infinity(), Context::new(10));
+    assert_eq!(inf.atan2(&inf).to_string(), "0.7853981634");
+    let one = DBig::from_repr(Repr::one(), Context::new(10));
+    assert_eq!(inf.atan2(&inf), one.atan2(&one));
+    let ninf = FBig::<Up, 2>::from_repr(Repr::neg_infinity(), Context::new(4));
+    assert_eq!(ninf.atan(), FBig::<Up, 2>::try_from(-1.5f64).unwrap());
+    let pinf = FBig::<Up, 2>::from_repr(Repr::infinity(), Context::new(4));
+    assert_eq!(pinf.atan(), FBig::<Up, 2>::try_from(1.625f64).unwrap());
+    let inf2 = FBig::<HalfEven, 2>::from_repr(Repr::infinity(), Context::new(1));
+    let ninf2 = FBig::<HalfEven, 2>::from_repr(Repr::neg_infinity(), Context::new(1));
+    assert_eq!(inf2.atan2(&ninf2), FBig::<HalfEven, 2>::from(2u8));
+
+    // Every special row against k·π/2^s formed exactly from a π that is 64 bits wider, then
+    // rounded once under the mode (π is irrational: 64 spare bits settle these fixed cases).
+    fn check<R: round::ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let pi = Context::<HalfEven>::new(p + 64).pi::<2>(None).value();
+        let want = |num: i32, shift: isize| {
+            let exact = Repr::<2>::new(
+                pi.repr().significand() * IBig::from(num),
+                pi.repr().exponent() - shift,
+            );
+            FBig::<R, 2>::from_repr(exact, Context::new(0)).with_precision(p)
+        };
+        let (inf, ninf) = (Repr::<2>::infinity(), Repr::<2>::neg_infinity());
+        let (one, mone) = (Repr::<2>::one(), Repr::<2>::neg_one());
+        let zero = Repr::<2>::zero();
+
+        assert_eq!(ctx.atan(&inf, None), Ok(want(1, 1)), "atan(+inf), p = {p}");
+        assert_eq!(ctx.atan(&ninf, None), Ok(want(-1, 1)), "atan(-inf), p = {p}");
+        for (y, x, num, shift) in [
+            (&inf, &inf, 1, 2),
+            (&inf, &ninf, 3, 2),
+            (&ninf, &inf, -1, 2),
+            (&ninf, &ninf, -3, 2),
+            (&inf, &one, 1, 1),
+            (&ninf, &mone, -1, 1),
+            (&one, &ninf, 1, 0),
+            (&mone, &ninf, -1, 0),
+            (&one, &zero, 1, 1),
+            (&mone, &zero, -1, 1),
+        ] {
+            assert_eq!(
+                ctx.atan2(y, x, None),
+                Ok(want(num, shift)),
+                "atan2({y:?}, {x:?}), p = {p}"
+            );
+        }
+        // atan2(±finite, +inf) = ±0, exactly
+        assert!(ctx.atan2(&one, &inf, None).unwrap().value().repr().is_pos_zero());
+        assert!(ctx.atan2(&mone, &inf, None).unwrap().value().repr().is_neg_zero());
+    }
+    for p in [1usize, 2, 4, 20, 50, 100, 500] {
+        check::<Zero>(p);
+        check::<Away>(p);
+        check::<Up>(p);
+        check::<Down>(p);
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+    }
 }
 
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`

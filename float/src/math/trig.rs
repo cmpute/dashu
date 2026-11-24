@@ -1342,6 +1342,36 @@ impl<R: ErrorBounds> Context<R> {
         })
     }
 
+    /// `sign·(num/den)·π`, correctly rounded — the fixed π-multiples `atan` / `atan2` return at
+    /// infinite arguments and on the axes. π is irrational, so no such multiple is ever a
+    /// rounding boundary and the Ziv loop certifies it from a slightly wider π.
+    fn pi_fraction<const B: Word>(
+        &self,
+        sign: Sign,
+        num: u8,
+        den: u8,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        assert_limited_precision(self.precision);
+        self.ziv(10, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+            // π as a ball: the cached constant is correctly rounded to the work precision; 8 is
+            // a conservative sound radius (as for the ln(2) constant).
+            let rad = ulps::<B>(&pi.repr, wp, 8);
+            let mut v = Ball::with_error(pi.into_repr(), rad);
+            if num != 1 {
+                v = v.scale_int(&IBig::from(num), wp)?;
+            }
+            if den != 1 {
+                v = v.div_int(den as usize, wp)?;
+            }
+            let v = if sign == Sign::Negative { -v } else { v };
+            Ok(v.to_value_radius::<R>(&Context::<R>::new(wp)))
+        })
+    }
+
     /// Calculate the arctangent of the floating point representation.
     pub fn atan<const B: Word>(
         &self,
@@ -1350,10 +1380,7 @@ impl<R: ErrorBounds> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
             // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
-            let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let half_pi: FBig<R, B> = pi / 2;
-            let res: FBig<R, B> = half_pi * x.sign();
-            return Ok(res.with_precision(self.precision));
+            return self.pi_fraction(x.sign(), 1, 2, cache);
         }
 
         assert_limited_precision(self.precision);
@@ -1449,37 +1476,27 @@ impl<R: ErrorBounds> Context<R> {
 
         assert_limited_precision(self.precision);
 
-        // Handle Infinities according to IEEE 754 (computed at the target precision).
+        // Handle Infinities according to IEEE 754. Each result is a fixed rational multiple of π,
+        // rounded once from a higher-precision π (see `pi_fraction`) — scaling an already
+        // rounded π would round twice.
         if y.is_infinite() || x.is_infinite() {
-            let (sy, sx) = (y.sign() == Sign::Positive, x.sign() == Sign::Positive);
-            let pi_val = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let res: FBig<R, B> = match (y.is_infinite(), x.is_infinite(), sy, sx) {
-                (true, true, true, true) => pi_val.clone() / 4u8,
-                (true, true, true, false) => pi_val.clone() * 3u8 / 4u8,
-                (true, true, false, true) => -(pi_val.clone() / 4u8),
-                (true, true, false, false) => -(pi_val.clone() * 3u8 / 4u8),
-                (true, false, true, _) => pi_val.clone() / 2u8,
-                (true, false, false, _) => -(pi_val.clone() / 2u8),
-                (false, true, _, true) => {
+            let sy = y.sign();
+            return match (y.is_infinite(), x.is_infinite(), x.sign() == Sign::Positive) {
+                (true, true, true) => self.pi_fraction(sy, 1, 4, cache), // ±π/4
+                (true, true, false) => self.pi_fraction(sy, 3, 4, cache), // ±3π/4
+                (true, false, _) => self.pi_fraction(sy, 1, 2, cache),   // ±π/2
+                (false, true, true) => {
                     // atan2(±finite, +inf) = ±0 (signed zero of y)
-                    if sy {
-                        FBig::<R, B>::ZERO
-                    } else {
-                        FBig::<R, B>::new(Repr::neg_zero(), *self)
-                    }
+                    Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(sy), *self)))
                 }
-                (false, true, true, false) => pi_val.clone(),
-                (false, true, false, false) => -pi_val,
-                _ => unreachable!(),
+                (false, true, false) => self.pi_fraction(sy, 1, 1, cache), // ±π
+                (false, false, _) => unreachable!(),
             };
-            return Ok(res.with_precision(self.precision));
         }
 
         // x == 0, y finite nonzero: atan2 = ±π/2.
         if x.significand.is_zero() {
-            let half_pi = self.pi::<B>(reborrow_cache(&mut cache)).value() / 2u8;
-            let res = half_pi * y.sign();
-            return Ok(res.with_precision(self.precision));
+            return self.pi_fraction(y.sign(), 1, 2, cache);
         }
 
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π), all as Ball composition.
