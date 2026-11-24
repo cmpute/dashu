@@ -2,7 +2,7 @@
 //!
 //! Most traits are only implemented for unsigned integers yet.
 
-use core::num::FpCategory;
+use core::{cmp::Ordering, num::FpCategory};
 
 use crate::{
     Approximation::{self, *},
@@ -163,11 +163,84 @@ pub trait FloatEncoding {
         Self: Sized;
 }
 
-/// Round to even floating point adjustment, based on the bottom
-/// bit of mantissa and additional 2 bits (i.e. 3 bits in units of ULP/4).
-#[inline]
-fn round_to_even_adjustment(bits: u8) -> bool {
-    bits >= 0b110 || bits == 0b011
+/// Shared implementation of [FloatEncoding::encode] for the primitive floats.
+///
+/// The magnitude is rounded once, directly at the position of the unit in the last place
+/// of the result (which is clamped at the smallest subnormal), so that every discarded bit
+/// takes part in the rounding decision.
+macro_rules! encode_float {
+    ($float:ty, $uint:ty, $mantissa:ident, $exponent:ident) => {{
+        if $mantissa == 0 {
+            return Exact(0.0);
+        }
+
+        const BITS: i32 = <$uint>::BITS as i32;
+        const DIGITS: i32 = <$float>::MANTISSA_DIGITS as i32;
+        // exponent of the least significant bit of subnormal numbers
+        const MIN_ULP_EXP: i32 = <$float>::MIN_EXP - DIGITS;
+
+        let sign = Sign::from($mantissa < 0);
+        let sign_bit = (($mantissa < 0) as $uint) << (BITS - 1);
+        let man = $mantissa.unsigned_abs();
+
+        // the magnitude lies in the range [2^(top_bit - 1), 2^top_bit)
+        let top_bit = BITS - man.leading_zeros() as i32 + $exponent as i32;
+        if top_bit > <$float>::MAX_EXP {
+            return match sign {
+                Positive => Inexact(<$float>::INFINITY, Positive),
+                Negative => Inexact(<$float>::NEG_INFINITY, Negative),
+            };
+        }
+
+        // the exponent of the unit in the last place of the result, and the number
+        // of low bits of the mantissa that fall below it
+        let ulp_exp = if top_bit - DIGITS > MIN_ULP_EXP {
+            top_bit - DIGITS
+        } else {
+            MIN_ULP_EXP
+        };
+        let shift = ulp_exp - $exponent as i32;
+
+        // split the mantissa into the kept part and the discarded part, the
+        // latter is compared with half of the unit in the last place.
+        let (kept, discarded) = if shift <= 0 {
+            // at most DIGITS bits are kept, so the shift never overflows
+            (man << (-shift) as u32, None)
+        } else if shift > BITS {
+            (0, Some(Ordering::Less))
+        } else if shift == BITS {
+            (0, Some(man.cmp(&(1 << (BITS - 1)))))
+        } else {
+            let low = man & ((1 << shift) - 1);
+            let cmp = if low == 0 {
+                None
+            } else {
+                Some(low.cmp(&(1 << (shift - 1))))
+            };
+            (man >> shift, cmp)
+        };
+
+        // The kept part has at most DIGITS bits. It is added to (rather than or-ed with) the
+        // exponent field, so that the implicit top bit of a normal number increases the
+        // exponent field from `ulp_exp - MIN_ULP_EXP` to its final value. For the same reason,
+        // a carry from rounding up correctly moves to the next binade (or to infinity).
+        let bits = sign_bit | ((((ulp_exp - MIN_ULP_EXP) as $uint) << (DIGITS - 1)) + kept);
+        match discarded {
+            None => Exact(<$float>::from_bits(bits)),
+            Some(cmp) => {
+                let round_up = match cmp {
+                    Ordering::Less => false,
+                    Ordering::Equal => kept & 1 == 1,
+                    Ordering::Greater => true,
+                };
+                if round_up {
+                    Inexact(<$float>::from_bits(bits + 1), Positive * sign)
+                } else {
+                    Inexact(<$float>::from_bits(bits), Negative * sign)
+                }
+            }
+        }
+    }};
 }
 
 impl FloatEncoding for f32 {
@@ -207,84 +280,7 @@ impl FloatEncoding for f32 {
 
     #[inline]
     fn encode(mantissa: i32, exponent: i16) -> Approximation<Self, Sign> {
-        if mantissa == 0 {
-            return Exact(0f32);
-        }
-
-        // clear sign
-        let sign = (mantissa < 0) as u32;
-        let mut mantissa = mantissa.unsigned_abs();
-
-        let zeros = mantissa.leading_zeros();
-        let top_bit = (u32::BITS - zeros) as i32 + exponent as i32;
-
-        if top_bit > 128 {
-            // overflow
-            return if sign == 0 {
-                Inexact(f32::INFINITY, Sign::Positive)
-            } else {
-                Inexact(f32::NEG_INFINITY, Sign::Negative)
-            };
-        } else if top_bit < -125 - 23 {
-            // underflow
-            return if sign == 0 {
-                Inexact(0f32, Sign::Negative)
-            } else {
-                Inexact(-0f32, Sign::Positive)
-            };
-        };
-
-        let bits; // bit representation
-        let round_bits; // for rounding
-        if top_bit <= -125 {
-            // subnormal float
-            // (this branch includes 1e-125, the smallest positive normal f32)
-
-            // first remove the exponent
-            let shift = exponent + 126 + 23;
-            if shift >= 0 {
-                round_bits = 0; // not rounding is required
-                mantissa <<= shift as u32;
-            } else {
-                let shifted = mantissa << (30 + shift) as u32;
-                round_bits = (shifted >> 28 & 0b110) as u8 | ((shifted & 0xfffffff) != 0) as u8;
-                mantissa >>= (-shift) as u32;
-            }
-
-            // then compose the bit representation of f32
-            bits = (sign << 31) | mantissa;
-        } else {
-            // normal float
-            // first normalize the mantissa (and remove the top bit)
-            if mantissa == 1 {
-                mantissa = 0; // shl will overflow
-            } else {
-                mantissa <<= zeros + 1;
-            }
-
-            // then calculate the exponent (bias is 127)
-            let exponent = (exponent + 127 + u32::BITS as i16) as u32 - zeros - 1;
-
-            // then compose the bit representation of f32
-            bits = (sign << 31) | (exponent << 23) | (mantissa >> 9);
-
-            // get the low bit of mantissa and two extra bits, and adding round-to-even adjustment
-            round_bits = ((mantissa >> 7) & 0b110) as u8 | ((mantissa & 0x7f) != 0) as u8;
-        };
-
-        if round_bits & 0b11 == 0 {
-            // If two extra bits are all zeros, then the float is exact
-            Exact(f32::from_bits(bits))
-        } else {
-            let sign = Sign::from(sign > 0);
-            if round_to_even_adjustment(round_bits) {
-                // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
-                // If the exponent overflows, we correctly get the representation of infinity.
-                Inexact(f32::from_bits(bits + 1), Positive * sign)
-            } else {
-                Inexact(f32::from_bits(bits), Negative * sign)
-            }
-        }
+        encode_float!(f32, u32, mantissa, exponent)
     }
 }
 
@@ -328,85 +324,7 @@ impl FloatEncoding for f64 {
 
     #[inline]
     fn encode(mantissa: i64, exponent: i16) -> Approximation<Self, Sign> {
-        if mantissa == 0 {
-            return Exact(0f64);
-        }
-
-        // clear sign
-        let sign = (mantissa < 0) as u64;
-        let mut mantissa = mantissa.unsigned_abs();
-
-        let zeros = mantissa.leading_zeros();
-        let top_bit = (u64::BITS - zeros) as i32 + exponent as i32;
-
-        if top_bit > 1024 {
-            // overflow
-            return if sign == 0 {
-                Inexact(f64::INFINITY, Sign::Positive)
-            } else {
-                Inexact(f64::NEG_INFINITY, Sign::Negative)
-            };
-        } else if top_bit < -1022 - 52 {
-            // underflow
-            return if sign == 0 {
-                Inexact(0f64, Sign::Negative)
-            } else {
-                Inexact(-0f64, Sign::Positive)
-            };
-        };
-
-        let bits; // bit representation
-        let round_bits; // for rounding
-        if top_bit <= -1022 {
-            // subnormal float
-            // (this branch includes 1e-1022, the smallest positive normal f32)
-
-            // first remove the exponent
-            let shift = exponent + 1022 + 52;
-            if shift >= 0 {
-                round_bits = 0; // not rounding is required
-                mantissa <<= shift as u32;
-            } else {
-                let shifted = mantissa << (62 + shift) as u64;
-                round_bits =
-                    (shifted >> 60 & 0b110) as u8 | ((shifted & 0xfffffffffffffff) != 0) as u8;
-                mantissa >>= (-shift) as u32;
-            }
-
-            // then compose the bit representation of f64
-            bits = (sign << 63) | mantissa;
-        } else {
-            // normal float
-            // first normalize the mantissa (and remove the top bit)
-            if mantissa == 1 {
-                mantissa = 0; // shl will overflow
-            } else {
-                mantissa <<= zeros + 1;
-            }
-
-            // then calculate the exponent (bias is 1023)
-            let exponent = (exponent + 1023 + u64::BITS as i16) as u64 - zeros as u64 - 1;
-
-            // then compose the bit representation of f64
-            bits = (sign << 63) | (exponent << 52) | (mantissa >> 12);
-
-            // get the low bit of mantissa and two extra bits, and adding round-to-even adjustment
-            round_bits = ((mantissa >> 10) & 0b110) as u8 | ((mantissa & 0x3ff) != 0) as u8;
-        };
-
-        if round_bits & 0b11 == 0 {
-            // If two extra bits are all zeros, then the float is exact
-            Exact(f64::from_bits(bits))
-        } else {
-            let sign = Sign::from(sign > 0);
-            if round_to_even_adjustment(round_bits) {
-                // If the mantissa overflows, this correctly increases the exponent and sets the mantissa to 0.
-                // If the exponent overflows, we correctly get the representation of infinity.
-                Inexact(f64::from_bits(bits + 1), Positive * sign)
-            } else {
-                Inexact(f64::from_bits(bits), Negative * sign)
-            }
-        }
+        encode_float!(f64, u64, mantissa, exponent)
     }
 }
 
