@@ -544,7 +544,8 @@ impl<R: Round, const B: Word> Inverse for CachedFBig<R, B> {
 //
 // The value computation is delegated to FBig's impls — so `Sum` inherits the
 // correctly-rounded `precise_sum` (exact accumulate, round once). The result
-// keeps the first element's cache handle (empty iterator → `Default`).
+// keeps the first element's cache handle. An empty iterator has no handle to keep, so it gets
+// a fresh cache around the identity: `0` for `Sum`, `1` for `Product`.
 // ---------------------------------------------------------------------------
 
 impl<R: Round, const B: Word> Sum for CachedFBig<R, B> {
@@ -587,7 +588,7 @@ impl<R: Round, const B: Word> Product for CachedFBig<R, B> {
                     .product();
                 CachedFBig::from_fbig(fbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(FBig::ONE),
         }
     }
 }
@@ -602,7 +603,7 @@ impl<'a, R: Round, const B: Word> Product<&'a CachedFBig<R, B>> for CachedFBig<R
                     .product();
                 CachedFBig::from_fbig(fbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(FBig::ONE),
         }
     }
 }
