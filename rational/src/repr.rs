@@ -1,4 +1,7 @@
-use dashu_base::{EstimatedLog2, Gcd};
+use dashu_base::{
+    utils::{next_down, next_up},
+    EstimatedLog2, Gcd,
+};
 use dashu_int::{IBig, UBig};
 
 #[cfg_attr(
@@ -141,6 +144,28 @@ impl EstimatedLog2 for Repr {
     fn log2_bounds(&self) -> (f32, f32) {
         let (n_lb, n_ub) = self.numerator.log2_bounds();
         let (d_lb, d_ub) = self.denominator.log2_bounds();
-        (n_lb - d_ub, n_ub - d_lb)
+        // The differences of the bounds are rounded to the nearest float, which can
+        // land on the wrong side. Step outwards whenever the subtraction is inexact.
+        let (lb, lb_err) = sub_with_error(n_lb, d_ub);
+        let (ub, ub_err) = sub_with_error(n_ub, d_lb);
+        (
+            if lb_err < 0. { next_down(lb) } else { lb },
+            if ub_err > 0. { next_up(ub) } else { ub },
+        )
     }
+}
+
+/// Compute `a - b` rounded to the nearest float, together with the rounding error
+/// `(a - b) - result` (which is exactly representable, see the error-free transformation
+/// of a sum by Knuth and Møller).
+///
+/// The error is NaN (and compares false with everything) when the result is not finite.
+#[inline]
+fn sub_with_error(a: f32, b: f32) -> (f32, f32) {
+    let b = -b;
+    let sum = a + b;
+    let a_virtual = sum - b;
+    let b_virtual = sum - a_virtual;
+    let error = (a - a_virtual) + (b - b_virtual);
+    (sum, error)
 }
