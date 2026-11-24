@@ -355,6 +355,27 @@ fn test_div_by_noninvertible() {
 
 #[test]
 fn test_pow() {
+    // in the ring of integers modulo 1 every power is zero (which is also the identity)
+    let ring = ConstDivisor::new(ubig!(1));
+    for exp in [
+        ubig!(0),
+        ubig!(1),
+        ubig!(2),
+        ubig!(5),
+        ubig!(1) << 70,
+        ubig!(1) << 200,
+    ] {
+        let p = ring.reduce(0).pow(&exp);
+        assert_eq!(p, ring.reduce(1));
+        assert_eq!(p, ring.reduce(0));
+        assert_eq!(p.residue(), ubig!(0));
+    }
+    for m in [ubig!(2), ubig!(3)] {
+        let ring = ConstDivisor::new(m);
+        assert_eq!(ring.reduce(0).pow(&ubig!(0)), ring.reduce(1));
+        assert_eq!(ring.reduce(0).pow(&ubig!(0)).residue(), ubig!(1));
+    }
+
     let ring = ConstDivisor::new(ubig!(100));
     assert_eq!(ring.reduce(0).pow(&ubig!(0)), ring.reduce(1));
     assert_eq!(ring.reduce(13).pow(&ubig!(0)), ring.reduce(1));

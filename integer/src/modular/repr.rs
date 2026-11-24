@@ -108,8 +108,14 @@ impl<'a> Reduced<'a> {
 }
 
 impl ReducedWord {
+    /// The multiplicative identity of the ring (which is zero when the modulus is 1).
     pub const fn one(ring: &ConstSingleDivisor) -> Self {
-        Self(1 << ring.shift())
+        let one = 1 << ring.shift();
+        if one == ring.normalized_divisor() {
+            Self(0)
+        } else {
+            Self(one)
+        }
     }
 
     #[inline]
@@ -141,7 +147,7 @@ impl ReducedLarge {
     #[inline]
     pub(crate) fn is_valid(&self, ring: &ConstLargeDivisor) -> bool {
         self.0.len() == ring.normalized_divisor.len()
-            && cmp::cmp_same_len(&self.0, &ring.normalized_divisor).is_le()
+            && cmp::cmp_same_len(&self.0, &ring.normalized_divisor).is_lt()
             && self.0[0] & math::ones_word(ring.shift) == 0
     }
 }
