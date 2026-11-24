@@ -295,15 +295,26 @@ Files touched outside the trig/hyperbolic/`Ball` sources (`float/src/math/{trig,
   - Two existing unit tests (`ziv_retries_until_contained`, `ziv_pair_retries_until_both_contained`)
     modelled a value of exactly 1 with a shrinking radius; they now use `1 + 2^-10`.
 - `float/src/round.rs` (`error_bounds`; float-convert has E59/E166 there): `Away`, `Up`, `Down`,
-  `HalfAway`, `HalfEven` take the zero-facing bound from new `inner_ulp` / `half_ulps` helpers.
-  The `(B+1)/2` half-ulp and the `precision == 0` handling of `Up`/`Down` are untouched, so a
-  fix for E59/E166 should merge by keeping both changes (apply their half-ulp fix inside
-  `half_ulps`).
+  `HalfAway`, `HalfEven` take the zero-facing bound from new `inner_ulp` / `half_ulps` helpers
+  (commit "Narrow error_bounds on the zero-facing side of a power of the base").
+  **This duplicates part of float-convert's `f2b0479`, which is already on master** and makes
+  the same change (its `toward_zero`) together with the odd-base half-ulp, tie parity and
+  unlimited-precision fixes. The two conflict textually in `float/src/round.rs`; resolve by
+  taking master's file and dropping this branch's `inner_ulp` / `half_ulps`. `float/tests/round.rs`
+  also conflicts (both sides append tests): keep both — this branch's
+  `test_error_bounds_at_power_of_base` passes against master's implementation.
+  Verified by a trial `git merge --no-commit master` (master at `d92c119`, 91 commits ahead of
+  this branch's base) resolved that way: `cargo test -p dashu-float -p dashu-cmplx -p dashu-ratio
+  --all-features` passed in full; the merge was then aborted, so this branch is unmerged.
 - `complex/src/math/trig.rs`: only the expected flags in the test
   `tan_tanh_large_imaginary_saturation` (see the tanh cluster).
 - `float/tests/round.rs`: new `test_error_bounds_at_power_of_base`.
 
 Observed but not this group's (not fixed here):
+
+- `fuzz/tests/cmplx_transcendental.rs::cbig_tan_fuzz` fails against MPC (`zre = 2.0,
+  zim = 18.384`) — identically at this branch's base commit and on current master, so it is
+  not caused by the `near_one_endpoint` change. The other 21 tests of that file pass.
 
 - Directed-mode `powf` with an exactly representable result does not terminate
   (`Context::<Down>::new(20).powf(4, 0.5)`); the nearest modes return `Inexact(2, NoOp)`.

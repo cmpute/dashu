@@ -529,6 +529,19 @@ fn test_inverse_unit_next_to_quarter_turn() {
         assert_eq!(d(huge).atan_unit(360), below_90);
         assert_eq!(d(&format!("-{huge}")).atan_unit(360), d("-90"));
     }
+    // cos_unit next to a whole turn: 1 − tiny, whatever the argument's own width
+    let near_turn = FBig::<Down, 10>::from_str("360.0000000000000000000000000001").unwrap();
+    let ctx = Context::<Down>::new(10);
+    let nines = d("0.9999999999");
+    assert_eq!(ctx.cos_unit(near_turn.repr(), 360, None), Ok(Inexact(nines.clone(), NoOp)));
+    let (s, c) = ctx.sin_cos_unit(near_turn.repr(), 360, None);
+    assert_eq!(c, Ok(Inexact(nines, NoOp)));
+    assert_eq!(s, ctx.sin_unit(near_turn.repr(), 360, None));
+    assert_eq!(
+        Context::<Up>::new(10).cos_unit(near_turn.repr(), 360, None),
+        Ok(Inexact(FBig::ONE, AddOne))
+    );
+
     // in an odd base a quarter turn of 2 has no finite expansion: nothing to hug, the Ziv
     // loop settles it — and the result is the plain rounding of 1/2
     let x = FBig::<HalfEven, 3>::from_parts(1.into(), -40)
