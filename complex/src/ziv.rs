@@ -15,8 +15,12 @@
 //! cuts, integer and dyadic powers) through exact operations or exact shortcuts. The same rule
 //! settles the inexactness *flag*: a part is reported `Exact`, or rounded in a given direction,
 //! only when that is proven — with a nonzero radius the candidate must lie strictly outside the
-//! error interval, otherwise the driver retries. The loop terminates for every such input; a
-//! large retry cap remains as a backstop.
+//! error interval, otherwise the driver retries. That proof is pursued up to a generous budget
+//! of extra digits (several times the precision plus a couple of thousand); a value still
+//! indistinguishable from a representable number there is returned — correctly rounded under
+//! the nearest modes — with the flag of its approximation. The directed modes have no such
+//! exit (the value sits on the boundary of a one-sided preimage), so an exactly-representable
+//! result that no closure can prove exact runs to the retry cap there.
 //!
 //! The driver is generic in the part count `N`: most functions compute one complex result (`N = 2`
 //! parts), while `sin_cos` computes two (`N = 4`, sharing one evaluation of the real `sin_cos` and
@@ -54,6 +58,12 @@ use crate::repr::{reborrow_cache, Context};
 /// radius can never produce an infinite loop.
 pub(crate) const MAX_ZIV_RETRIES: usize = 32;
 
+/// The driver keeps refining to *prove* each part's inexactness flag until the guard exceeds
+/// `FLAG_PROOF_FACTOR · (precision + initial guard) + FLAG_PROOF_SLACK` digits; see
+/// `Context::contained`.
+const FLAG_PROOF_FACTOR: usize = 8;
+const FLAG_PROOF_SLACK: usize = 2048;
+
 /// Guard digits (base-B) for re-rounding a single real kernel result or constant.
 const KERNEL_GUARD: usize = 8;
 
@@ -87,6 +97,13 @@ impl<R: ErrorBounds> Context<R> {
         self.assert_limited();
         let p = self.precision();
         let mut guard = initial_guard;
+        // How far the driver refines to *prove* an inexactness flag (see `contained`): beyond
+        // this many guard digits a candidate that fits its preimage is accepted with the
+        // flag of the approximation.
+        let flag_budget = p
+            .saturating_add(initial_guard)
+            .saturating_mul(FLAG_PROOF_FACTOR)
+            .saturating_add(FLAG_PROOF_SLACK);
         #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
@@ -94,10 +111,11 @@ impl<R: ErrorBounds> Context<R> {
             // Round each part to the target precision. `with_precision` consumes the value, but the
             // containment test still needs the working-precision original, so round clones.
             let candidates = parts.clone().map(|(v, _)| v.with_precision(p));
+            let prove_flag = guard <= flag_budget;
             if parts
                 .iter()
                 .zip(candidates.iter())
-                .all(|((v, e), c)| Self::contained::<B>(v, e, c.value_ref()))
+                .all(|((v, e), c)| Self::contained::<B>(v, e, c.value_ref(), prove_flag))
             {
                 return Ok(candidates);
             }
@@ -187,6 +205,7 @@ impl<R: ErrorBounds> Context<R> {
         value: &FBig<R, B>,
         radius: &FBig<R, B>,
         target: &FBig<R, B>,
+        prove_flag: bool,
     ) -> bool {
         // The zero-candidate guard, same as `dashu-float`'s driver: no nonzero real rounds to
         // exactly zero (significant-digit rounding with unbounded exponents keeps every nonzero
@@ -258,9 +277,17 @@ impl<R: ErrorBounds> Context<R> {
         // `[value − radius, value + radius]`. Otherwise the true value may sit on the other
         // side of `target` — and a rounded part would be tagged `Exact`, or an exact one
         // `Inexact`, or with the wrong direction — so retry at a higher guard. (A part that is
-        // exactly representable must come with a zero radius: that is the closures' duty, as
+        // exactly representable should come with a zero radius: that is the closures' duty, as
         // for the structural zeros above.)
-        radius.repr().significand().is_zero()
+        //
+        // The proof is only demanded while `prove_flag` (the driver's refinement budget): a
+        // true value that agrees with a representable number to thousands of digits beyond
+        // the precision is either exactly that number through a route the closure cannot see
+        // (`32^0.2 = 2` in base 10) or an extreme argument (`exp(2⁻¹⁰⁰⁰⁰⁰⁰)`); refining without
+        // bound would turn the former into a hang and the latter into seconds of work, so past
+        // the budget the correctly rounded *value* is returned with the approximation's flag.
+        !prove_flag
+            || radius.repr().significand().is_zero()
             || value.repr().cmp(target_hi.repr()) == Ordering::Greater
             || target.repr().cmp(value_hi.repr()) == Ordering::Greater
     }
@@ -420,6 +447,23 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         // one part carries radius 10 >> 1 ulp at any working precision, so containment always fails.
         let r = ctx.ziv(2, |_| Ok([(F::ONE, F::ZERO), (F::ONE, F::from(10u8))]));
+        assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
+    }
+    // A value that sits exactly on a representable number while its radius never reaches zero
+    // (an exact result the closure cannot prove exact) is refined up to the flag-proof budget
+    // and then returned under a nearest mode — not retried to the cap.
+    #[test]
+    fn ziv_accepts_unprovable_flag_past_the_budget() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let r = ctx.ziv(2, |guard| Ok([(F::ONE, F::ONE >> guard as isize)]));
+        let [part] = r.unwrap();
+        assert_eq!(part.value_ref().repr(), F::ONE.repr());
+        let retries = LAST_ZIV_RETRIES.with(|c| c.get());
+        assert!(retries >= 5, "the flag proof must be attempted first ({retries} retries)");
+        // under a directed mode the same value is on the boundary of a one-sided preimage
+        let ctx: Context<mode::Down> = Context::new(4);
+        type FD = FBig<mode::Down>;
+        let r = ctx.ziv(2, |guard| Ok([(FD::ONE, FD::ONE >> guard as isize)]));
         assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
     }
 }

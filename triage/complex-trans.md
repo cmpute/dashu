@@ -35,8 +35,11 @@ Test: `complex/tests/root.rs::sqrt_of_perfect_square_is_exact`,
 `complex/tests/trig.rs::tan_pi_on_the_real_axis_keeps_the_inexact_flag`.
 Fix: `combine_parts` is `Exact` iff both parts are `Approximation::Exact`. The driver now
 accepts a part only if its radius is zero or the candidate lies strictly outside
-`[value − radius, value + radius]` (otherwise it retries), so a flag is only ever reported
-when proven. `tan_pi` keeps the kernel's flag via `combine_parts`.
+`[value − radius, value + radius]` (otherwise it retries), so the flag is proven. That proof
+is pursued up to a budget of `8·(precision + guard) + 2048` extra digits; a value still
+indistinguishable from a representable number there is returned (nearest modes) with the
+flag of its approximation, as before — see the notes. `tan_pi` keeps the kernel's flag via
+`combine_parts`.
 Notes: an in-tree unit test (`tan_tanh_large_imaginary_saturation`) asserted the old
 collapsing behaviour, with a comment calling it intended ("the flag channel carries the
 adjustment, not exactness"). That contradicts the documented contract of `CRounded`
@@ -241,8 +244,10 @@ Fix: `0^w = 0` for `Re w > 0`, `Err(Indeterminate)` for a zero base otherwise (a
 e.g. decimal `0.5`) is evaluated as `(z^(1/2ᵏ))^m` — `powi` for `k = 0`, otherwise `k` ball
 square roots plus the integer chain — which is exact whenever the result is.
 Notes: a result that is exact for a *non-dyadic* real exponent (only possible in a non-binary
-base, e.g. `32^0.2 = 2` in base 10) is still not recognized and will not return. Not reported;
-the real `powf` has the same limitation (float-exp D23/E48 family).
+base, e.g. `32^0.2 = 2` in base 10) is not recognized as exact: under the nearest modes it is
+returned correctly after the driver's flag-proof budget (pinned by
+`complex/tests/exp.rs::powf_exact_non_dyadic_result_returns`), under the directed modes it
+still does not return — as before, and as for the real `powf` (float-exp D23/E48 family).
 
 ### 15. `tan_pi` slow for a large imaginary part under directed modes
 
@@ -355,8 +360,9 @@ Not touched, but relevant to the float-* groups:
   only under the directed modes, float-exp D23/E48), and `exp(2⁻ⁿ)`-style tiny arguments need
   ~n working bits under the nearest modes as they already do under the directed ones
   (float-trig E86). So that rule needs the exactness detection of E48/E82/E75 and the
-  tiny-argument shortcuts of E86 to land with it. I reverted it and made the complex layer
-  independent of the float flags instead (cluster 3).
+  tiny-argument shortcuts of E86 to land with it — or a bounded proof like the one the
+  complex driver ended up with. I reverted it and made the complex layer independent of the
+  float flags instead (cluster 3).
 - The complex axis shortcuts return float kernel results directly (`asin x`, `acos x`,
   `asinh y`, `atanh y`, `atan x`, real-axis `tan_pi`), so a wrong *flag* from those kernels
   shows through unchanged (the value is unaffected).
@@ -368,7 +374,7 @@ Shared with complex-arith:
   because E172/E157/E228 need it; expect the same or a conflicting edit from that group.
 - `complex/src/ziv.rs` and `complex/src/ball.rs` are shared infrastructure. `CBall::from_parts`
   no longer rounds its input (cluster 9); the complex Ziv driver's acceptance rule is
-  stricter (cluster 1b). Arithmetic ops that go through the driver should be re-run after the
+  stricter (cluster 1b, bounded by the flag-proof budget). Arithmetic ops that go through the driver should be re-run after the
   merge (the complex suite, including `arith_prop`, passes here).
 
 Reports in this group that are another group's root cause surfacing: E238, E232, E117 (float
@@ -378,25 +384,24 @@ the same *shape* as float-exp D17/E61/E221 but separate code.
 
 ## Unsure
 
-- Flag strictness has a cost for tiny arguments: a part that agrees with a representable
-  value to n bits needs ~n working bits before its direction is known. Under the nearest
-  modes `exp(2⁻¹⁰⁰⁰⁰·(1+i))` at 53 bits went from 15 µs (returning a wrong `Exact`) to 2 ms,
-  `2⁻¹⁰⁰⁰⁰⁰` takes 0.2 s and `2⁻¹⁰⁶` 4.6 s (release build); under the directed modes this cost
-  already existed. A typical mix (`exp`, `asin`, `tan`, `sqrt`, `log`, `powf` at 53 bits) is
-  unchanged (307 ms vs 339 ms per 1000 rounds before). Tiny-argument shortcuts would remove
-  the cliff; none was reported, so none was added.
-- `asin`/`acos` of a tiny off-axis argument still go through the log form, which needs
-  ~2·|log₂|z|| extra bits (correct, but `|z| = 2⁻¹⁰⁶` takes minutes; `2⁻¹⁰⁰⁰⁰` takes 2 ms,
-  down from 230 ms).
+- Flag proof budget. A part that agrees with a representable value to n digits needs ~n
+  working digits before its rounding direction is known. Proving that without bound made
+  `powf(32, 0.2)` (base 10, exact, non-dyadic) hang under `HalfEven` and tiny arguments take
+  seconds (`exp(2⁻¹⁰⁶·(1+i))`: 4.6 s), where the old code returned at once — so the driver
+  stops proving after `8·(precision + guard) + 2048` extra digits and returns the (correctly
+  rounded) value with the approximation's flag. Consequence: the flag is proven for every
+  case in the reports and for arguments down to about `2⁻²⁰⁰⁰` at 53 bits, but
+  `exp(2⁻¹⁰⁰⁰⁰·(1+i))` is still tagged `Exact` (as before), and `asin` of `|z| < ~2⁻⁸⁰⁰` can
+  carry an unproven direction. Release-build timings at 53 bits, `HalfEven`:
+  `exp(2⁻¹⁰⁰⁰⁰·(1+i))` 0.6 ms (15 µs before), `asin(2⁻¹⁰⁰⁰⁰·(1+i))` 0.17 ms (230 ms before);
+  a typical mix (`exp`, `asin`, `tan`, `sqrt`, `log`, `powf`) 288 ms per 1000 rounds (339 ms
+  before). Under the directed modes there is no such exit (unchanged behaviour): tiny
+  arguments and unprovable exact results cost ~n digits / run to the retry cap.
 - `combine_parts`: I followed the documented `CRounded` contract over an in-tree test comment
   that called the collapsing intentional.
 - `powf(0, w)` for `Re w < 0` returns `Err(Indeterminate)` (consistent with complex
   `powi(0, −1)`), whereas the real `FBig::powf(0, −1)` returns `+∞`. The report only asked for
   `Re w > 0`.
-- `powf` with a non-dyadic real exponent whose result is exactly representable (only
-  possible in a non-binary base, e.g. `32^0.2 = 2` in base 10) is not recognized and does not
-  return (as before under the directed modes; now also under the nearest modes, where it used
-  to return the right value with an unproven flag).
 - Not run: the `fuzz/` MPC differentials (no MPFR/MPC here). Correct rounding was checked
   against exact expectations from the reports, the real kernels on the axes, and
   higher-precision self-evaluation in all quadrants under `Down`/`Up`/`Zero`/`HalfEven`.

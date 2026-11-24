@@ -420,3 +420,24 @@ fn powf_general_matches_oracle() {
     check!(Down);
     check!(Up);
 }
+
+/// A power that is exactly representable through a route `powf` cannot see (a fifth root in
+/// base 10: `32^0.2 = 2`, `(−38 + 41i)^0.2 = 2 + i`) still returns, correctly rounded, under
+/// the nearest modes.
+#[test]
+fn powf_exact_non_dyadic_result_returns() {
+    let ctx = Context::<HalfEven>::new(16);
+    let fifth: CBig<HalfEven, 10> = cb((2, -1), (0, 0));
+    let r = ctx
+        .powf(&cb((32, 0), (0, 0)), &fifth, None)
+        .unwrap()
+        .value();
+    assert!(r == cb::<HalfEven, 10>((2, 0), (0, 0)));
+    assert_eq!(r.precision(), 16);
+    // (2 + i)⁵ = −38 + 41i, and arg(2 + i) < π/5, so the principal fifth root is 2 + i
+    let r = ctx
+        .powf(&cb((-38, 0), (41, 0)), &fifth, None)
+        .unwrap()
+        .value();
+    assert!(r == cb::<HalfEven, 10>((2, 0), (1, 0)));
+}
