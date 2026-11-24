@@ -1,6 +1,8 @@
 use core::str::FromStr;
 
+use dashu_base::Approximation::Inexact;
 use dashu_float::ops::Abs;
+use dashu_float::round::Rounding::NoOp;
 use dashu_float::round::mode::{Away, Down, HalfAway, HalfEven, Up, Zero};
 use dashu_float::{round, Context, DBig, FBig, Repr, Word};
 use dashu_int::IBig;
@@ -253,6 +255,50 @@ fn test_exact_results_at_unlimited_precision_zero() {
     assert!(neg_zero.tan_unit(8).repr().is_neg_zero());
     // acos(1) = 0 is the one exact row of acos
     assert_eq!(F::ONE.acos(), F::ZERO);
+}
+
+/// An argument within ~1e-24 of a multiple of π that carries more digits than the context:
+/// the reduced argument cancels onto a zero midpoint at the first working precision, and its
+/// radius used to be dropped — `sin` returned an exact `0` (π to 77 bits at 26 bits, 10π to 79
+/// digits at 28 digits).
+#[test]
+fn test_sin_next_to_multiple_of_pi_is_not_zero() {
+    // x = π rounded to 77 bits; sin(x) = sin(π − x) = (π − x)·(1 − O(1e-47))
+    let m: IBig = "118686014801135580649625".parse().unwrap();
+    let x = Repr::<2>::new(m, -75);
+    let up = Context::<Up>::new(26).sin(&x, None).unwrap();
+    assert_eq!(up, Inexact(FBig::from_parts(IBig::from(-27096191), -102), NoOp));
+
+    fn check<R: round::ErrorBounds>(x: &Repr<2>, p: usize) {
+        // oracle: π − x from a 400-bit π, exact subtraction, one rounding under the mode
+        let pi = Context::<HalfEven>::new(400).pi::<2>(None).value();
+        let exact = pi.with_precision(0).value() - FBig::from_repr(x.clone(), Context::new(0));
+        let want = FBig::<R, 2>::from_repr(exact.into_repr(), Context::new(0)).with_precision(p);
+        assert_eq!(Context::<R>::new(p).sin(x, None), Ok(want), "sin, p = {p}");
+        // the other entry points share the reduction
+        let (s, c) = Context::<R>::new(p).sin_cos(x, None);
+        assert_eq!(s.unwrap().value(), Context::<R>::new(p).sin(x, None).unwrap().value());
+        assert_eq!(c.unwrap().value(), Context::<R>::new(p).cos(x, None).unwrap().value());
+        let t = Context::<R>::new(p).tan(x, None).unwrap().value();
+        assert!(!t.repr().significand().is_zero(), "tan, p = {p}");
+    }
+    for p in [20usize, 26, 50, 53, 100] {
+        check::<Up>(&x, p);
+        check::<Down>(&x, p);
+        check::<HalfEven>(&x, p);
+        check::<Zero>(&x, p);
+    }
+
+    // base 10: 10π rounded to 79 digits
+    let xd = DBig::from_str(
+        "31.41592653589793238462643383279502884197169399375105820974944592307816406286209",
+    )
+    .unwrap();
+    let r28 = Context::<Up>::new(28).sin(xd.repr(), None).unwrap().value();
+    let r40 = Context::<Up>::new(40).sin(xd.repr(), None).unwrap().value();
+    assert!(!r28.repr().significand().is_zero());
+    // the 28-digit result is the 40-digit one rounded up once more
+    assert_eq!(r28, r40.with_precision(28).value());
 }
 
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`

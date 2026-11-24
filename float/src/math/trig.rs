@@ -287,6 +287,21 @@ fn scale_unit<const B: Word>(
     v.scale_int(&IBig::from(u), wp)?.div(&two_pi, wp)
 }
 
+/// `sin` of a ball centred on zero. Only a zero *radius* makes the argument exactly zero; a
+/// reduced argument that merely cancelled onto a zero midpoint (`x − k·π/2` for an `x` next to
+/// a multiple of π/2) still spans `[−rad, rad]`, and `|sin t| ≤ |t|` keeps that radius. Dropping
+/// it would certify an exact `0` for a nonzero sine.
+fn sin_zero_mid<const B: Word>(x: &Ball<B>) -> Ball<B> {
+    Ball::with_error(x.mid.clone(), x.rad)
+}
+
+/// `cos` of a ball centred on zero: `0 ≤ 1 − cos t ≤ t²/2 ≤ rad²` (see [`sin_zero_mid`]).
+fn cos_zero_mid<const B: Word>(x: &Ball<B>, wp: usize) -> Ball<B> {
+    let mut one = Ball::exact_int(IBig::ONE, wp);
+    one.add_error(x.rad.mul(&x.rad));
+    one
+}
+
 /// `|x| = 1/2`, decided exactly: `2|x| = 1`. (Never true in an odd base, where `1/2` is not
 /// representable; the doubling is on the significand, so no precision is involved.)
 fn is_abs_half<const B: Word>(x: &Repr<B>) -> bool {
@@ -403,7 +418,7 @@ impl<R: ErrorBounds> Context<R> {
     /// [`Ball`] whose radius is tracked mechanically (each term's rounding plus the truncated tail).
     fn sin_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         if x.mid.significand.is_zero() {
-            return Ok(Ball::exact(x.mid.clone()));
+            return Ok(sin_zero_mid(x));
         }
         let wp = self.precision;
         let x2 = x.mul(x, wp)?;
@@ -463,7 +478,7 @@ impl<R: ErrorBounds> Context<R> {
     fn cos_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
-            return Ok(Ball::exact_int(IBig::ONE, wp));
+            return Ok(cos_zero_mid(x, wp));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
@@ -529,7 +544,7 @@ impl<R: ErrorBounds> Context<R> {
     ) -> Result<(Ball<B>, Ball<B>), FpError> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
-            return Ok((Ball::exact(x.mid.clone()), Ball::exact_int(IBig::ONE, wp)));
+            return Ok((sin_zero_mid(x), cos_zero_mid(x, wp)));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
