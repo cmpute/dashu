@@ -90,11 +90,8 @@ macro_rules! impl_abs_ops_prim {
             type Output = $signed;
             #[inline]
             fn abs(self) -> Self::Output {
-                if self.is_nan() || self >= 0. {
-                    self
-                } else {
-                    -self
-                }
+                // clear the sign bit, so that the negative zero is also mapped to the positive zero
+                <$signed>::from_bits(self.to_bits() & !(-0.0 as $signed).to_bits())
             }
         }
     )*};
@@ -292,7 +289,8 @@ macro_rules! impl_signed_for_int {
         impl AbsOrd for $t {
             #[inline]
             fn abs_cmp(&self, rhs: &Self) -> Ordering {
-                self.abs().cmp(&rhs.abs())
+                // the magnitude of the minimum value is not representable by the signed type
+                self.unsigned_abs().cmp(&rhs.unsigned_abs())
             }
         }
     )*};
