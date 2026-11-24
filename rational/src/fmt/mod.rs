@@ -9,21 +9,56 @@ use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
+use alloc::string::ToString;
 use core::fmt::{self, Write};
+use dashu_base::Sign;
 
-// Generate Binary, Octal, LowerHex, UpperHex impls for Repr, RBig, and Relaxed.
+/// Write a fraction whose numerator and denominator have been rendered into `body`
+/// (including the `-` of a negative numerator) as a single item: the `+` flag adds one sign
+/// in front of the fraction, and the width, fill and alignment apply to the whole of it.
+fn fmt_fraction(
+    f: &mut fmt::Formatter<'_>,
+    is_negative: bool,
+    body: fmt::Arguments<'_>,
+) -> fmt::Result {
+    if f.width().is_none() {
+        // no padding: write the parts directly, without an intermediate buffer
+        if f.sign_plus() && !is_negative {
+            f.write_char('+')?;
+        }
+        f.write_fmt(body)
+    } else {
+        let body = body.to_string();
+        let magnitude = body.strip_prefix('-').unwrap_or(&body);
+        f.pad_integral(!is_negative, "", magnitude)
+    }
+}
+
+// Generate Display, Binary, Octal, LowerHex, UpperHex impls for Repr, RBig, and Relaxed.
 // Pattern: if denominator is 1, print only the numerator; otherwise print
-// "numerator/denominator" with each component in the target radix.
+// "numerator/denominator" with each component in the target radix. The alternate flag
+// (radix prefix) applies to both components, every other flag to the fraction as a whole.
 macro_rules! impl_radix_fmt {
-    ($trait:ident) => {
+    ($trait:ident, $plain:literal, $alternate:literal) => {
         impl fmt::$trait for Repr {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 if self.denominator.is_one() {
                     fmt::$trait::fmt(&self.numerator, f)
                 } else {
-                    fmt::$trait::fmt(&self.numerator, f)?;
-                    f.write_char('/')?;
-                    fmt::$trait::fmt(&self.denominator, f)
+                    let is_negative = self.numerator.sign() == Sign::Negative;
+                    if f.alternate() {
+                        fmt_fraction(
+                            f,
+                            is_negative,
+                            format_args!($alternate, self.numerator, self.denominator),
+                        )
+                    } else {
+                        fmt_fraction(
+                            f,
+                            is_negative,
+                            format_args!($plain, self.numerator, self.denominator),
+                        )
+                    }
                 }
             }
         }
@@ -44,10 +79,11 @@ macro_rules! impl_radix_fmt {
     };
 }
 
-impl_radix_fmt!(Binary);
-impl_radix_fmt!(Octal);
-impl_radix_fmt!(LowerHex);
-impl_radix_fmt!(UpperHex);
+impl_radix_fmt!(Display, "{}/{}", "{:#}/{:#}");
+impl_radix_fmt!(Binary, "{:b}/{:b}", "{:#b}/{:#b}");
+impl_radix_fmt!(Octal, "{:o}/{:o}", "{:#o}/{:#o}");
+impl_radix_fmt!(LowerHex, "{:x}/{:x}", "{:#x}/{:#x}");
+impl_radix_fmt!(UpperHex, "{:X}/{:X}", "{:#X}/{:#X}");
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,19 +94,6 @@ impl fmt::Debug for Repr {
                 .finish()
         } else {
             f.write_fmt(format_args!("{:?} / {:?}", self.numerator, self.denominator))
-        }
-    }
-}
-
-impl fmt::Display for Repr {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.denominator.is_one() {
-            fmt::Display::fmt(&self.numerator, f)
-        } else {
-            fmt::Display::fmt(&self.numerator, f)?;
-            f.write_char('/')?;
-            fmt::Display::fmt(&self.denominator, f)
         }
     }
 }
@@ -88,13 +111,6 @@ impl fmt::Debug for RBig {
     }
 }
 
-impl fmt::Display for RBig {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
 impl fmt::Debug for Relaxed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
@@ -105,13 +121,6 @@ impl fmt::Debug for Relaxed {
         } else {
             f.write_fmt(format_args!("{:?} / {:?}", self.numerator(), self.denominator()))
         }
-    }
-}
-
-impl fmt::Display for Relaxed {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
     }
 }
 
@@ -133,17 +142,14 @@ impl fmt::Display for InRadix<'_> {
         let r = self.radix;
         let num = self.numerator.in_radix(r);
         if self.denominator.is_one() {
-            if f.alternate() {
-                write!(f, "{:#}", num)
-            } else {
-                write!(f, "{}", num)
-            }
+            fmt::Display::fmt(&num, f)
         } else {
             let den = self.denominator.in_radix(r);
+            let is_negative = self.numerator.sign() == Sign::Negative;
             if f.alternate() {
-                write!(f, "{:#}/{:#}", num, den)
+                fmt_fraction(f, is_negative, format_args!("{:#}/{:#}", num, den))
             } else {
-                write!(f, "{}/{}", num, den)
+                fmt_fraction(f, is_negative, format_args!("{}/{}", num, den))
             }
         }
     }

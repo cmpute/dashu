@@ -267,6 +267,36 @@ fn test_rbig_in_expanded_scientific_zero_leading() {
 }
 
 #[test]
+fn test_format_flags_apply_to_whole_fraction() {
+    // sign flag: one sign in front of the fraction
+    assert_eq!(format!("{:+}", rbig!(1 / 2)), "+1/2");
+    assert_eq!(format!("{:+}", rbig!(-1 / 2)), "-1/2");
+    assert_eq!(format!("{:+}", rbig!(~3/9)), "+3/9");
+    assert_eq!(format!("{:+}", rbig!(2)), "+2");
+    assert_eq!(format!("{:+}", rbig!(0)), "+0");
+    assert_eq!(format!("{:+b}", rbig!(5 / 3)), "+101/11");
+    assert_eq!(format!("{:+#x}", rbig!(-255 / 16)), "-0xff/0x10");
+    assert_eq!(format!("{:+#X}", rbig!(~255/16)), "+0xFF/0x10");
+    assert_eq!(format!("{:+}", rbig!(83 / 16).in_radix(16)), "+53/10");
+    assert_eq!(format!("{:+}", rbig!(83).in_radix(16)), "+53");
+
+    // width, fill and alignment: the fraction is padded as one item
+    assert_eq!(format!("{:>6}", rbig!(1 / 2)), "   1/2");
+    assert_eq!(format!("{:<6}|", rbig!(1 / 2)), "1/2   |");
+    assert_eq!(format!("{:^7}", rbig!(-1 / 2)), " -1/2  ");
+    assert_eq!(format!("{:*>+7}", rbig!(~1/2)), "***+1/2");
+    assert_eq!(format!("{:>2}", rbig!(1 / 2)), "1/2");
+    assert_eq!(format!("{:6}", rbig!(1 / 2)), "   1/2"); // numbers are right-aligned by default
+    assert_eq!(format!("{:>3}", rbig!(2)), "  2");
+    assert_eq!(format!("{:>8b}", rbig!(5 / 3)), "  101/11");
+    assert_eq!(format!("{:>12o}", rbig!(-9 / 8)), "      -11/10");
+    assert_eq!(format!("{:<8x}|", rbig!(255 / 16)), "ff/10   |");
+    assert_eq!(format!("{:>12}", rbig!(-83 / 16).in_radix(16)), "      -53/10");
+    assert_eq!(format!("{:>6}", rbig!(83).in_radix(16)), "    53");
+    assert_eq!(format!("{:>#8}", rbig!(~171/16).in_radix(16)), "   AB/10");
+}
+
+#[test]
 fn test_rbig_in_expanded_rounding_odd_radix() {
     // In an odd radix the half-way point has no finite expansion, so a single guard digit
     // cannot decide the rounding: (radix-1)/2 followed by anything larger is above half.
