@@ -1,7 +1,10 @@
 //! Implement serde traits.
 //!
 //! Mirrors `dashu-float`'s serde: the human-readable form is a string, the binary form is a
-//! struct. The rounding mode `R` is a type parameter and is not serialized (same as `FBig`).
+//! struct. The string implies the precision through its digit counts; a value whose precision it
+//! cannot express that way (unlimited precision, or a part holding more digits than the
+//! precision) is written in the struct form in human-readable formats too, so every finite value
+//! round-trips with its precision. The rounding mode `R` is a type parameter and is not serialized (same as `FBig`).
 
 use core::fmt::{self, Display, Formatter};
 use core::marker::PhantomData;
@@ -26,22 +29,37 @@ impl<R: Round, const B: Word> Serialize for CBig<R, B> {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.collect_str(&CBigHuman(self))
-        } else {
-            // `re`/`im` delegate to the float `Repr` serde (a (significand, exponent) struct);
-            // the shared precision is stored explicitly so it round-trips.
-            let mut se = serializer.serialize_struct("CBig", 3)?;
-            se.serialize_field(KEY_RE, &self.re)?;
-            se.serialize_field(KEY_IM, &self.im)?;
-            se.serialize_field(KEY_PREC, &self.context.precision())?;
-            se.end()
+            // The single `a+bi` string is used whenever it reads back as the same value at the
+            // same precision; the precision is only implied by the coefficients' digit counts,
+            // so an unlimited precision (or a part holding more digits than the precision) has
+            // no such string and falls through to the explicit struct form.
+            let literal = alloc::format!("{}", CBigHuman(self));
+            let faithful = self.re.is_infinite()
+                || self.im.is_infinite()
+                || matches!(
+                    CBig::<R, B>::from_str(&literal),
+                    Ok(back) if back.context.precision() == self.context.precision()
+                        && back.re == self.re
+                        && back.im == self.im
+                );
+            if faithful {
+                return serializer.serialize_str(&literal);
+            }
         }
+        // `re`/`im` delegate to the float `Repr` serde; the shared precision is stored
+        // explicitly so it round-trips.
+        let mut se = serializer.serialize_struct("CBig", 3)?;
+        se.serialize_field(KEY_RE, &self.re)?;
+        se.serialize_field(KEY_IM, &self.im)?;
+        se.serialize_field(KEY_PREC, &self.context.precision())?;
+        se.end()
     }
 }
 
 /// Human-readable form: the algebraic `a+bi` with each finite coefficient padded to the context
 /// precision's digit count, so `CBig::from_str` recovers the precision from the digit count —
-/// exactly how `FBig`'s human-readable serde round-trips its precision.
+/// exactly how `FBig`'s human-readable serde round-trips its precision. (When that is not
+/// possible the serializer uses the struct form instead, see above.)
 struct CBigHuman<'a, R: Round, const B: Word>(&'a CBig<R, B>);
 
 impl<R: Round, const B: Word> Display for CBigHuman<'_, R, B> {
@@ -61,20 +79,24 @@ impl<R: Round, const B: Word> Display for CBigHuman<'_, R, B> {
         write_fbig_padded(f, &re, p)?;
         f.write_str(if im_neg { "-" } else { "+" })?;
         write_fbig_padded(f, &im_abs, p)?;
-        f.write_str("i")
+        f.write_str(if crate::fmt::i_is_digit::<B>() {
+            "*i"
+        } else {
+            "i"
+        })
     }
 }
 
 /// Write a float's algebraic rendering, padding the digit count up to `precision` (never
-/// truncating — a part carrying a guard digit keeps it, and deserialization then reports the
-/// actual digit count, mirroring `FBig`'s serde).
+/// truncating — a part carrying a guard digit keeps it). Every digit of the base counts (the
+/// letters `a`–`z` are the digits 10–35), as it does when the string is parsed back.
 fn write_fbig_padded<R: Round, const B: Word>(
     f: &mut Formatter<'_>,
     value: &FBig<R, B>,
     precision: usize,
 ) -> fmt::Result {
     let mut s = alloc::format!("{}", value);
-    let digits = s.bytes().filter(|b| b.is_ascii_digit()).count();
+    let digits = s.bytes().filter(|b| b.is_ascii_alphanumeric()).count();
     if digits < precision {
         let need = precision - digits;
         if s.contains('.') {
@@ -205,7 +227,8 @@ impl<'de, R: Round, const B: Word> Deserialize<'de> for CBig<R, B> {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(CBigVisitor(PhantomData))
+            // a `a+bi` string, or the struct form (used when the string cannot carry the precision)
+            deserializer.deserialize_any(CBigVisitor(PhantomData))
         } else {
             deserializer.deserialize_struct("CBig", CBIG_FIELDS, CBigVisitor(PhantomData))
         }
