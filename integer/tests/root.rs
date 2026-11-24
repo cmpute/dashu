@@ -189,3 +189,73 @@ fn test_cbrt_ibig() {
     assert_eq!(big.cbrt(), -IBig::from(3).pow(100));
     assert_eq!((big + ibig!(1)).cbrt(), -IBig::from(3).pow(100) + ibig!(1));
 }
+
+/// Check that `nth_root` is tight: r^n <= x < (r + 1)^n.
+fn check_nth_root(x: &dashu_int::UBig, n: usize) -> dashu_int::UBig {
+    let r = x.nth_root(n);
+    assert!(r.pow(n) <= *x, "root too large: n = {n}, x = {x:?}");
+    assert!((&r + ubig!(1)).pow(n) > *x, "root too small: n = {n}, x = {x:?}");
+    r
+}
+
+#[test]
+fn test_nth_root_large_order() {
+    // Roots of a few bits with a large (prime) order: these must not take a number of
+    // iterations proportional to the order.
+    assert_eq!(check_nth_root(&(ubig!(1) << 2016), 1009), ubig!(3));
+    assert_eq!(check_nth_root(&(ubig!(1) << 2016), 1008), ubig!(4));
+    assert_eq!(check_nth_root(&((ubig!(1) << 421) - ubig!(1)), 211), ubig!(3));
+    assert_eq!(check_nth_root(&((ubig!(1) << 422) + ubig!(1)), 211), ubig!(4));
+    assert_eq!(check_nth_root(&(ubig!(1) << 420), 211), ubig!(3));
+    assert_eq!(check_nth_root(&(ubig!(1) << 3000), 11).pow(11) >> 2990, ubig!(1023));
+    for n in [101usize, 211, 307, 401, 1009, 2003] {
+        assert_eq!(check_nth_root(&((ubig!(1) << (2 * n - 1)) - ubig!(1)), n), ubig!(3));
+        assert_eq!(check_nth_root(&(ubig!(1) << (2 * n - 2)), n), ubig!(3));
+        // a composite order whose cofactor leaves a root of 1 for the prime part
+        assert_eq!(check_nth_root(&((ubig!(1) << (2 * n - 1)) - ubig!(1)), 2 * n), ubig!(1));
+        assert_eq!(check_nth_root(&(ubig!(1) << (6 * n)), 6 * n), ubig!(2));
+        assert_eq!(check_nth_root(&((ubig!(1) << (6 * n)) - ubig!(1)), 6 * n), ubig!(1));
+    }
+    assert_eq!(ibig!(-1).nth_root(1009), ibig!(-1));
+    assert_eq!((-(ibig!(1) << 2016)).nth_root(1009), ibig!(-3));
+}
+
+#[test]
+fn test_nth_root_tight() {
+    // exact powers and their neighbours, for roots from a few bits to a few thousand bits
+    let bases = [
+        ubig!(2),
+        ubig!(3),
+        ubig!(10),
+        ubig!(255),
+        ubig!(256),
+        ubig!(65537),
+        ubig!(0xfedcba9876543210),
+        (ubig!(1) << 100) - ubig!(1),
+        ubig!(3).pow(150),
+        (ubig!(1) << 700) + ubig!(12345),
+        ubig!(7).pow(1100),
+    ];
+    for n in [
+        3usize, 4, 5, 6, 7, 9, 10, 11, 13, 22, 30, 35, 49, 64, 77, 101, 131, 257,
+    ] {
+        for base in &bases {
+            if dashu_base::BitTest::bit_len(base) * n > 40_000 {
+                continue;
+            }
+            let power = base.pow(n);
+            assert_eq!(check_nth_root(&power, n), *base);
+            assert_eq!(check_nth_root(&(&power + ubig!(1)), n), *base);
+            assert_eq!(check_nth_root(&(&power - ubig!(1)), n), base - ubig!(1));
+            // between two consecutive powers
+            check_nth_root(&(&power + (&power >> 3)), n);
+            check_nth_root(&(&power << (n / 2)), n);
+        }
+        for bits in [1usize, 2, 63, 64, 65, 127, 128, 129, 300, 1000] {
+            let x = ubig!(1) << bits;
+            check_nth_root(&x, n);
+            check_nth_root(&(&x - ubig!(1)), n);
+            check_nth_root(&(&x + ubig!(1)), n);
+        }
+    }
+}
