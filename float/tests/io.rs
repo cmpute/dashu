@@ -214,6 +214,129 @@ fn test_from_str_other_bases() {
 }
 
 #[test]
+fn test_from_str_zero_with_scale() {
+    // The scale of a zero is ignored: only a leading '-' makes a negative zero, and no scale
+    // turns a zero into an infinity.
+    let max = isize::MAX;
+    let min = isize::MIN;
+    let positive = [
+        "0e0".to_string(),
+        "0e-1".to_string(),
+        "0e-2".to_string(),
+        "+0e-1".to_string(),
+        "0.0e-1".to_string(),
+        "0@-1".to_string(),
+        "0e5".to_string(),
+        format!("0e{max}"),
+        format!("0e{min}"),
+        format!("0.00e{min}"),
+    ];
+    for s in &positive {
+        let x = DBig::from_str(s).unwrap();
+        assert!(x.repr().is_pos_zero(), "{s:?} parsed to {x:?}");
+    }
+    for s in ["-0", "-0e0", "-0e-1", "-0e-2", "-0.0e7"] {
+        let x = DBig::from_str(s).unwrap();
+        assert!(x.repr().is_neg_zero(), "{s:?} parsed to {x:?}");
+    }
+    assert!(DBig::from_str(&format!("-0e{max}"))
+        .unwrap()
+        .repr()
+        .is_neg_zero());
+
+    for s in ["0b0", "0b-1", "0b-2", "0x0p-1", "0x0p-2", "0x.0p-1", "0@-1"] {
+        let x = FBin::from_str(s).unwrap();
+        assert!(x.repr().is_pos_zero(), "{s:?} parsed to {x:?}");
+    }
+    for s in ["-0b-1", "-0x0p-1", "-0x0p-2"] {
+        let x = FBin::from_str(s).unwrap();
+        assert!(x.repr().is_neg_zero(), "{s:?} parsed to {x:?}");
+    }
+    assert!(FOct::from_str("0o-1").unwrap().repr().is_pos_zero());
+    assert!(FHex::from_str("0h-1").unwrap().repr().is_pos_zero());
+}
+
+#[test]
+fn test_from_str_single_sign() {
+    // the sign is accepted once, in front of the integral part
+    for s in [
+        "0.+1", "-1.+5", "0.-1", "++1", "-+1", "+-1", "--1", "+", "-", ".+5", "1.+5e3",
+    ] {
+        assert!(DBig::from_str(s).is_err(), "{s:?} must be rejected");
+    }
+    for s in ["0x+1", "0x+1.8", "0x1.+8", "+0x+1p3", "1.+1", "+.+1b2"] {
+        assert!(FBin::from_str(s).is_err(), "{s:?} must be rejected");
+    }
+    assert!(FHex::from_str("a.+b").is_err());
+
+    // a single sign on the integral part and on the scale is still fine
+    assert_eq!(DBig::from_str("+1.5e+3").unwrap(), DBig::from_parts(IBig::from(15), 2));
+    assert_eq!(DBig::from_str("-1.5e-3").unwrap(), DBig::from_parts(IBig::from(-15), -4));
+    assert_eq!(DBig::from_str("+.5").unwrap(), DBig::from_parts(IBig::from(5), -1));
+    assert_eq!(FBin::from_str("+0x1.8p+1").unwrap(), FBin::from_parts(IBig::from(3), 0));
+}
+
+#[test]
+fn test_from_str_prefix_without_digits() {
+    for s in [
+        ".", "-.", "0x", "0x.", "-0x.", "+0x.", "0X.", "0x.p5", "0x.@1", "-0X.P-3",
+    ] {
+        assert_eq!(FBin::from_str(s), Err(ParseError::NoDigits), "{s:?}");
+    }
+    // either part alone is enough
+    assert_eq!(FBin::from_str("0x.8").unwrap(), FBin::from_parts(IBig::from(1), -1));
+    assert_eq!(FBin::from_str("0x8.").unwrap(), FBin::from_parts(IBig::from(1), 3));
+    assert!(FBin::from_str("0x0.").unwrap().repr().is_pos_zero());
+}
+
+#[test]
+fn test_from_str_extreme_exponent() {
+    let max = isize::MAX;
+    let min = isize::MIN;
+
+    // A nonzero number never lands on the reserved exponents `isize::MIN` / `isize::MAX`
+    // (whether written directly, reached through the fractional digits, or reached when
+    // trailing zeros are folded into the exponent), and the arithmetic never wraps around.
+    let rejected = [
+        format!("1e{max}"),
+        format!("1e{min}"),
+        format!("-1e{max}"),
+        format!("1.5e{min}"),
+        format!("1.5e{}", min + 1),
+        format!("0.15e{}", min + 2),
+        format!("10e{}", max - 1),
+        format!("1000e{}", max - 3),
+        format!("100e{}", max - 1),
+        format!("1e{max}0"),
+    ];
+    for s in &rejected {
+        assert_eq!(DBig::from_str(s), Err(ParseError::InvalidDigit), "{s:?}");
+    }
+    for s in [
+        format!("1.1@{min}"),
+        format!("1@{max}"),
+        format!("0x1.8p{min}"),
+    ] {
+        assert_eq!(FBin::from_str(&s), Err(ParseError::InvalidDigit), "{s:?}");
+    }
+
+    // the neighbours are ordinary finite values
+    let accepted = [
+        (format!("1e{}", max - 1), 1, max - 1),
+        (format!("1e{}", min + 1), 1, min + 1),
+        (format!("1.5e{}", min + 2), 15, min + 1),
+        (format!("10e{}", max - 2), 1, max - 1),
+    ];
+    for (s, signif, exp) in &accepted {
+        let x = DBig::from_str(s).unwrap();
+        assert_eq!(x.repr().significand(), &IBig::from(*signif), "{s:?}");
+        assert_eq!(x.repr().exponent(), *exp, "{s:?}");
+        assert!(x.repr().is_finite());
+        assert_eq!(&x - &x, DBig::ZERO, "{s:?}");
+    }
+}
+
+#[test]
 fn test_from_parts() {
     assert_eq!(FBin::from_parts(ibig!(0), 2), FBin::ZERO);
     assert_eq!(FBin::from_parts(ibig!(-4), -2), FBin::NEG_ONE);
