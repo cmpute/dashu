@@ -243,6 +243,14 @@ macro_rules! impl_num_ord_with_float {
                 }
 
                 // step 2: compare sign
+                if self.numerator.is_zero() {
+                    // Zero has no magnitude to estimate in the steps below (its bit length
+                    // is not a logarithm), so it's decided by the sign of the float alone.
+                    return match other.sign() {
+                        Sign::Positive => Some(Ordering::Less),
+                        Sign::Negative => Some(Ordering::Greater),
+                    };
+                }
                 let sign = match (self.numerator.sign(), other.sign()) {
                     (Sign::Positive, Sign::Positive) => Sign::Positive,
                     (Sign::Positive, Sign::Negative) => return Some(Ordering::Greater),
