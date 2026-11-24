@@ -2,9 +2,9 @@ use core::cmp::Ordering;
 
 use dashu_base::{
     Approximation::{self, *},
-    BitTest, ConversionError, DivRem, FloatEncoding, PowerOfTwo, Sign, UnsignedAbs,
+    BitTest, ConversionError, DivRem, FloatEncoding, Sign, UnsignedAbs,
 };
-use dashu_int::{IBig, UBig};
+use dashu_int::{IBig, UBig, Word};
 
 use crate::{
     rbig::{RBig, Relaxed},
@@ -60,6 +60,22 @@ impl TryFrom<Repr> for IBig {
     }
 }
 
+impl Repr {
+    /// Convert the value to an integer if it is one, without assuming that the numerator
+    /// and the denominator are coprime (they might not be in a [Relaxed]).
+    fn into_integer(self) -> Result<IBig, ConversionError> {
+        if self.denominator.is_one() {
+            return Ok(self.numerator);
+        }
+        let (q, r) = self.numerator.div_rem(&self.denominator);
+        if r.is_zero() {
+            Ok(q)
+        } else {
+            Err(ConversionError::LossOfPrecision)
+        }
+    }
+}
+
 macro_rules! forward_conversion_to_repr {
     ($from:ty => $t:ident) => {
         impl From<$from> for $t {
@@ -76,11 +92,28 @@ macro_rules! forward_conversion_to_repr {
             }
         }
     };
+    // The fraction is not necessarily in the lowest terms, so the denominator doesn't
+    // tell whether the value is an integer.
+    ($from:ty => $t:ident, unreduced) => {
+        impl From<$from> for $t {
+            #[inline]
+            fn from(v: $from) -> Self {
+                $t(Repr::from(v))
+            }
+        }
+        impl TryFrom<$t> for $from {
+            type Error = ConversionError;
+            #[inline]
+            fn try_from(value: $t) -> Result<Self, Self::Error> {
+                Self::try_from(Repr::from(value.0.into_integer()?))
+            }
+        }
+    };
 }
 forward_conversion_to_repr!(UBig => RBig);
 forward_conversion_to_repr!(IBig => RBig);
-forward_conversion_to_repr!(UBig => Relaxed);
-forward_conversion_to_repr!(IBig => Relaxed);
+forward_conversion_to_repr!(UBig => Relaxed, unreduced);
+forward_conversion_to_repr!(IBig => Relaxed, unreduced);
 
 macro_rules! impl_conversion_for_prim_ints {
     ($($t:ty)*) => {$(
@@ -104,7 +137,7 @@ macro_rules! impl_conversion_for_prim_ints {
         }
 
         forward_conversion_to_repr!($t => RBig);
-        forward_conversion_to_repr!($t => Relaxed);
+        forward_conversion_to_repr!($t => Relaxed, unreduced);
     )*};
 }
 impl_conversion_for_prim_ints!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
@@ -164,59 +197,71 @@ impl_conversion_from_float!(f32);
 impl_conversion_from_float!(f64);
 
 macro_rules! impl_conversion_to_float {
-    ($t:ty [$lb:literal, $ub:literal]) => {
+    ($t:ty, $to_float:ident) => {
         impl TryFrom<RBig> for $t {
             type Error = ConversionError;
 
             /// Convert RBig to primitive floats. It returns [Ok] only if
             /// the conversion can be done losslessly
+            #[inline]
             fn try_from(value: RBig) -> Result<Self, Self::Error> {
-                if value.0.numerator.is_zero() {
-                    Ok(0.)
-                } else if value.0.denominator.is_power_of_two() {
-                    // conversion is exact only if the denominator is a power of two
-                    let num_bits = value.0.numerator.bit_len();
-                    let den_bits = value.0.denominator.trailing_zeros().unwrap();
-                    let top_bit = num_bits as isize - den_bits as isize;
-                    if top_bit > $ub {
-                        // see to_f32::encode for explanation of the bounds
-                        Err(ConversionError::OutOfBounds)
-                    } else if top_bit < $lb {
-                        Err(ConversionError::LossOfPrecision)
-                    } else {
-                        match <$t>::encode(
-                            value.0.numerator.try_into().unwrap(),
-                            -(den_bits as i16),
-                        ) {
-                            Exact(v) => Ok(v),
-                            Inexact(v, _) => {
-                                if v.is_infinite() {
-                                    Err(ConversionError::OutOfBounds)
-                                } else {
-                                    Err(ConversionError::LossOfPrecision)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Err(ConversionError::LossOfPrecision)
-                }
+                <$t>::try_from(value.0)
             }
         }
 
         impl TryFrom<Relaxed> for $t {
             type Error = ConversionError;
 
+            /// Convert Relaxed to primitive floats. It returns [Ok] only if
+            /// the conversion can be done losslessly
             #[inline]
             fn try_from(value: Relaxed) -> Result<Self, Self::Error> {
-                // convert to RBig to eliminate cofactors
-                <$t>::try_from(value.canonicalize())
+                <$t>::try_from(value.0)
+            }
+        }
+
+        impl TryFrom<Repr> for $t {
+            type Error = ConversionError;
+
+            fn try_from(value: Repr) -> Result<Self, Self::Error> {
+                // the correctly rounded conversion tells whether the value is representable
+                match value.$to_float() {
+                    Exact(v) => Ok(v),
+                    Inexact(v, _) => {
+                        if v.is_infinite() {
+                            Err(ConversionError::OutOfBounds)
+                        } else {
+                            Err(ConversionError::LossOfPrecision)
+                        }
+                    }
+                }
             }
         }
     };
 }
-impl_conversion_to_float!(f32 [-149, 128]); // see f32::encode for explanation of the bounds
-impl_conversion_to_float!(f64 [-1074, 1024]); // see f32::encode for explanation of the bounds
+impl_conversion_to_float!(f32, to_f32);
+impl_conversion_to_float!(f64, to_f64);
+
+/// The `n` most significant bits of the nonzero number made of `words` (least significant
+/// word first, `bit_len` bits in total). Lower bits are truncated; a number shorter than `n`
+/// bits is padded with zeros on the right, so the result is always in `[2^(n-1), 2^n)`.
+fn leading_bits(words: &[Word], bit_len: usize, n: u32) -> u128 {
+    debug_assert!(bit_len > 0 && n > 0 && n <= u128::BITS);
+
+    let mut acc: u128 = 0;
+    let mut have: u32 = 0; // number of bits collected so far
+    let mut word_bits = ((bit_len - 1) % Word::BITS as usize) as u32 + 1; // for the top word
+    for &word in words.iter().rev() {
+        let take = word_bits.min(n - have);
+        if take == 0 {
+            break;
+        }
+        acc = (acc << take) | (word >> (word_bits - take)) as u128;
+        have += take;
+        word_bits = Word::BITS;
+    }
+    acc << (n - have)
+}
 
 /// Compute `floor(log2(|numerator/denominator|))`, given the unsigned
 /// numerator magnitude and `exp = numerator.bit_len() - denominator.bit_len()`.
@@ -264,105 +309,66 @@ fn rounded_abs_mantissa(
     }
 }
 
+/// Implement the conversion to a primitive float without guaranteed correct rounding.
+///
+/// The quotient is computed from the `2 * denominator_bits` leading bits of the numerator
+/// and the `denominator_bits` leading bits of the denominator by a single primitive division.
+/// Truncating the operands perturbs the quotient by a relative error below
+/// `2^(2 - denominator_bits)`, which is a small fraction of a unit in the last place of the
+/// float, and the quotient is then rounded once. The result is therefore the correctly
+/// rounded one unless the value is very close to a rounding boundary, in which case it can
+/// be the float on the other side of that boundary (one unit in the last place away).
+macro_rules! impl_to_float_fast {
+    ($method:ident -> $f:ty, mantissa: $m:ty, denominator_bits: $den_bits:literal) => {
+        fn $method(&self) -> $f {
+            // shortcut
+            if self.numerator.is_zero() {
+                return 0.;
+            }
+
+            const MANTISSA_BITS: u32 = <$f>::MANTISSA_DIGITS;
+            const DEN_BITS: u32 = $den_bits;
+            const NUM_BITS: u32 = 2 * DEN_BITS;
+
+            // |value| ~ num / den * 2^exponent
+            let (sign, num_words) = self.numerator.as_sign_words();
+            let num_len = self.numerator.bit_len();
+            let den_len = self.denominator.bit_len();
+            let num = leading_bits(num_words, num_len, NUM_BITS);
+            let den = leading_bits(self.denominator.as_words(), den_len, DEN_BITS);
+            let exponent =
+                (num_len as isize - NUM_BITS as isize) - (den_len as isize - DEN_BITS as isize);
+
+            // the quotient has DEN_BITS or DEN_BITS + 1 bits
+            let (q, r) = (num / den, num % den);
+
+            // round it to the width of the mantissa (to nearest, ties to even)
+            let dropped = (u128::BITS - q.leading_zeros()) - MANTISSA_BITS;
+            let mut man = q >> dropped;
+            let tail = q & ((1u128 << dropped) - 1);
+            let half = 1u128 << (dropped - 1);
+            if tail > half || (tail == half && (r != 0 || man & 1 == 1)) {
+                man += 1;
+            }
+            let exponent = exponent + dropped as isize;
+
+            // now |value| ~ man * 2^exponent with 2^(MANTISSA_BITS - 1) <= man <= 2^MANTISSA_BITS
+            if exponent > <$f>::MAX_EXP as isize - MANTISSA_BITS as isize {
+                // |value| >= 2^MAX_EXP, which is beyond the largest finite float
+                sign * <$f>::INFINITY
+            } else if exponent < <$f>::MIN_EXP as isize - 2 * MANTISSA_BITS as isize - 1 {
+                // |value| < 2^(MIN_EXP - MANTISSA_BITS - 1), half of the smallest subnormal
+                sign * (0 as $f)
+            } else {
+                <$f>::encode(sign * man as $m, exponent as i16).value()
+            }
+        }
+    };
+}
+
 impl Repr {
-    /// Convert the rational number to [f32] without guaranteed correct rounding.
-    fn to_f32_fast(&self) -> f32 {
-        // shortcut
-        if self.numerator.is_zero() {
-            return 0.;
-        }
-
-        // to get enough precision (24 bits), we need to do a 48 by 24 bit division
-        let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
-
-        let num_shift = num_bits as isize - 48;
-        let num48: i64 = if num_shift >= 0 {
-            (&self.numerator) >> num_shift as usize
-        } else {
-            (&self.numerator) << (-num_shift) as usize
-        }
-        .try_into()
-        .unwrap();
-
-        let den_shift = den_bits as isize - 24;
-        let den24: u32 = if den_shift >= 0 {
-            (&self.denominator) >> den_shift as usize
-        } else {
-            (&self.denominator) << (-den_shift) as usize
-        }
-        .try_into()
-        .unwrap();
-
-        // determine the exponent
-        let exponent = num_shift - den_shift;
-        if exponent >= 128 {
-            // max f32 = 2^128 * (1 - 2^-24)
-            sign * f32::INFINITY
-        } else if exponent < -149 - 25 {
-            // min f32 = 2^-149, quotient has at most 25 bits
-            sign * 0f32
-        } else {
-            let (mut man, r) = num48.unsigned_abs().div_rem(den24 as u64);
-
-            // round to nearest, ties to even
-            let half = (r as u32 * 2).cmp(&den24);
-            if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                man += 1;
-            }
-            f32::encode(sign * man as i32, exponent as i16).value()
-        }
-    }
-
-    fn to_f64_fast(&self) -> f64 {
-        // shortcut
-        if self.numerator.is_zero() {
-            return 0.;
-        }
-
-        // to get enough precision (53 bits), we need to do a 106 by 53 bit division
-        let sign = self.numerator.sign();
-        let num_bits = self.numerator.bit_len();
-        let den_bits = self.denominator.bit_len();
-
-        let num_shift = num_bits as isize - 106;
-        let num106: i128 = if num_shift >= 0 {
-            (&self.numerator) >> num_shift as usize
-        } else {
-            (&self.numerator) << (-num_shift) as usize
-        }
-        .try_into()
-        .unwrap();
-
-        let den_shift = den_bits as isize - 53;
-        let den53: u64 = if den_shift >= 0 {
-            (&self.denominator) >> den_shift as usize
-        } else {
-            (&self.denominator) << (-den_shift) as usize
-        }
-        .try_into()
-        .unwrap();
-
-        // determine the exponent
-        let exponent = num_shift - den_shift;
-        if exponent >= 1024 {
-            // max f64 = 2^1024 × (1 − 2^−53)
-            sign * f64::INFINITY
-        } else if exponent < -1074 - 54 {
-            // min f64 = 2^-1074, quotient has at most 54 bits
-            sign * 0f64
-        } else {
-            let (mut man, r) = num106.unsigned_abs().div_rem(den53 as u128);
-
-            // round to nearest, ties to even
-            let half = (r as u64 * 2).cmp(&den53);
-            if half == Ordering::Greater || (half == Ordering::Equal && man & 1 > 0) {
-                man += 1;
-            }
-            f64::encode(sign * man as i64, exponent as i16).value()
-        }
-    }
+    impl_to_float_fast!(to_f32_fast -> f32, mantissa: i32, denominator_bits: 32);
+    impl_to_float_fast!(to_f64_fast -> f64, mantissa: i64, denominator_bits: 64);
 
     /// Convert the rational number to [f32] with guaranteed correct rounding.
     fn to_f32(&self) -> Approximation<f32, Sign> {
@@ -456,9 +462,10 @@ impl RBig {
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
     ///
-    /// The rounding will be correct at most of the time, but in rare cases the
-    /// mantissa can be off by one bit. Use [RBig::to_f32] for ensured correct
-    /// rounding.
+    /// The rounding will be correct at most of the time, but in rare cases (when the
+    /// number is very close to the midpoint of two adjacent floats) the result can be
+    /// the other one of these two floats, that is off by one unit in the last place.
+    /// Use [RBig::to_f32] for ensured correct rounding.
     ///
     /// # Examples
     ///
@@ -479,9 +486,10 @@ impl RBig {
     /// The rounding follows the default IEEE 754 behavior (rounds to nearest,
     /// ties to even).
     ///
-    /// The rounding will be correct at most of the time, but in rare cases the
-    /// mantissa can be off by one bit. Use [RBig::to_f64] for ensured correct
-    /// rounding.
+    /// The rounding will be correct at most of the time, but in rare cases (when the
+    /// number is very close to the midpoint of two adjacent floats) the result can be
+    /// the other one of these two floats, that is off by one unit in the last place.
+    /// Use [RBig::to_f64] for ensured correct rounding.
     ///
     /// # Examples
     ///
