@@ -1,16 +1,53 @@
 //! [`FromStr`] for [`CBig`] — the algebraic `a+bi` grammar that [`Display`](crate::CBig) emits.
 //!
 //! Accepts an optional real term and an optional `"<sign><coeff>i"` imaginary term (at least one
-//! required): `"5"`, `"-7i"`, `"i"`, `"-i"`, `"1+2i"`, `"-3-4i"`. Each coefficient parses via
-//! [`FBig`]'s `FromStr` (so `inf`/`-inf` are accepted). The MPC parenthesized `"(re im)"` form and
-//! anything else malformed yield a [`ParseError`].
+//! required): `"5"`, `"-7i"`, `"i"`, `"-i"`, `"1+2i"`, `"-3-4i"`, `"1+2e-3i"`. Each coefficient
+//! parses via [`FBig`]'s `FromStr` (so signed exponents are fine), and additionally `inf` /
+//! `-inf` are accepted as coefficients, as `Display` writes them. The MPC parenthesized
+//! `"(re im)"` form and anything else malformed yield a [`ParseError`].
+//!
+//! In bases above 18 the letter `i` is a digit, so there the imaginary term is marked by an
+//! explicit `*i` suffix instead (`"1+2i*i"`, `"1*i"`), exactly as `Display` writes it; a string
+//! without that suffix is a real number.
 
 use crate::cbig::CBig;
+use crate::fmt::i_is_digit;
 use core::str::FromStr;
 use dashu_base::ParseError;
 use dashu_float::round::Round;
 use dashu_float::{FBig, Repr};
 use dashu_int::Word;
+
+/// Parse one coefficient: [`FBig`]'s grammar, plus the `inf` / `-inf` that `Display` writes for
+/// an infinite part. (In bases above 23 the letters of `inf` are all digits, so there the string
+/// is a number, as it is for `FBig`.)
+fn parse_coefficient<R: Round, const B: Word>(s: &str) -> Result<FBig<R, B>, ParseError> {
+    if B <= 23 {
+        match s {
+            "inf" | "+inf" => return Ok(FBig::INFINITY),
+            "-inf" => return Ok(FBig::NEG_INFINITY),
+            _ => {}
+        }
+    }
+    FBig::from_str(s)
+}
+
+/// Parse the coefficient of the imaginary term (the text before the imaginary-unit marker): a
+/// bare sign (or nothing) is the unit coefficient `±1`.
+fn parse_imaginary<R: Round, const B: Word>(s: &str) -> Result<FBig<R, B>, ParseError> {
+    match s {
+        "" | "+" => Ok(FBig::ONE),
+        "-" => Ok(FBig::NEG_ONE),
+        _ => {
+            // exactly one sign may lead the coefficient
+            let mut bytes = s.bytes();
+            if let (Some(b'+' | b'-'), Some(b'+' | b'-')) = (bytes.next(), bytes.next()) {
+                return Err(ParseError::InvalidSyntax);
+            }
+            parse_coefficient(s)
+        }
+    }
+}
 
 impl<R: Round, const B: Word> FromStr for CBig<R, B> {
     type Err = ParseError;
@@ -25,48 +62,48 @@ impl<R: Round, const B: Word> FromStr for CBig<R, B> {
             return Err(ParseError::InvalidSyntax);
         }
 
-        // The only valid 'i' is the trailing imaginary-unit marker.
-        let i_count = s.bytes().filter(|&c| c == b'i').count();
-        if i_count > 1 {
+        let marker = if i_is_digit::<B>() { "*i" } else { "i" };
+        let prefix = match s.strip_suffix(marker) {
+            Some(prefix) => prefix,
+            None => {
+                // pure real term
+                if has_stray_i::<B>(s) {
+                    return Err(ParseError::InvalidSyntax); // 'i' not trailing
+                }
+                return Ok(CBig::from(parse_coefficient::<R, B>(s)?));
+            }
+        };
+        // The only valid 'i' is the trailing imaginary-unit marker (besides the one in `inf`).
+        if has_stray_i::<B>(prefix) {
             return Err(ParseError::InvalidSyntax);
         }
 
-        if i_count == 0 {
-            // pure real term
-            let re = FBig::<R, B>::from_str(s)?;
-            return Ok(CBig::from(re));
+        // Split the prefix into the real term and the imaginary coefficient at a '+' / '-' that
+        // is not at the leading position. A sign can also belong to an exponent (`1+2e-3i`,
+        // `1e-5i`), so take the rightmost split at which both sides are well-formed numbers; an
+        // exponent's sign is never such a split, as the text before it ends in the scale marker.
+        for (pos, _) in prefix.rmatch_indices(['+', '-']) {
+            if pos == 0 {
+                continue;
+            }
+            let re = parse_coefficient::<R, B>(&prefix[..pos]);
+            let im = parse_imaginary::<R, B>(&prefix[pos..]);
+            if let (Ok(re), Ok(im)) = (re, im) {
+                return Ok(CBig::from_parts(re, im));
+            }
         }
 
-        // exactly one 'i', and it must be the final character
-        if !s.ends_with('i') {
-            return Err(ParseError::InvalidSyntax);
-        }
-        let prefix = &s[..s.len() - 1];
-
-        // Split prefix into the real term and the imaginary coefficient. The imaginary coefficient
-        // starts at the last '+' / '-' that is *not* at the leading position; if there is none, the
-        // whole prefix (if any) is the imaginary coefficient and the real term is empty.
-        let split = prefix.rfind(['+', '-']).filter(|&pos| pos > 0);
-        let (real_str, imag_str) = match split {
-            Some(pos) => (&prefix[..pos], &prefix[pos..]),
-            None => ("", prefix),
-        };
-
-        let im = match imag_str {
-            "" | "+" => FBig::<R, B>::ONE,
-            "-" => FBig::<R, B>::NEG_ONE,
-            other => FBig::<R, B>::from_str(other)?,
-        };
-
-        let re = if real_str.is_empty() {
-            // implicit real zero carries the imaginary part's precision
-            FBig::from_repr(Repr::zero(), im.context())
-        } else {
-            FBig::<R, B>::from_str(real_str)?
-        };
-
+        // No split: the whole prefix is the imaginary coefficient, and the implicit real zero
+        // carries the imaginary part's precision.
+        let im = parse_imaginary::<R, B>(prefix)?;
+        let re = FBig::from_repr(Repr::zero(), im.context());
         Ok(CBig::from_parts(re, im))
     }
+}
+
+/// Whether `s` contains an `i` that can be neither a digit nor part of an `inf` coefficient.
+fn has_stray_i<const B: Word>(s: &str) -> bool {
+    !i_is_digit::<B>() && s.split("inf").any(|rest| rest.contains('i'))
 }
 
 #[cfg(test)]

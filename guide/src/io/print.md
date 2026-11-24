@@ -62,7 +62,7 @@ assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 
 ## Complex Formatting
 
-`CBig` `Display` uses the algebraic $a+bi$ notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (`i`, not `1i`), and a zero imaginary part is omitted.
+`CBig` `Display` uses the algebraic $a+bi$ notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (`i`, not `1i`), and a zero imaginary part is omitted. In bases above 18 the letter `i` is itself a digit, so there the imaginary term is written with an explicit `*i` suffix and its coefficient is never elided (`1+2i*i`, `1*i`).
 
 ```rust
 use dashu::complex::CBig;

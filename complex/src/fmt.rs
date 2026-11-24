@@ -17,17 +17,33 @@ fn is_unit<const B: Word>(repr: &Repr<B>) -> bool {
     }
 }
 
+/// Whether the letter `i` is a digit in base `B` (it is digit 18, so in every base above 18).
+///
+/// In those bases a trailing `i` cannot mark the imaginary term — `1i` is the real number
+/// `1·B + 18` — so the imaginary term is written (and read) with an explicit `*i` suffix and its
+/// coefficient is never elided: `1+2i*i`, `1*i`, `-1*i`.
+pub(crate) const fn i_is_digit<const B: Word>() -> bool {
+    B > 18
+}
+
 impl<R: Round, const B: Word> Display for CBig<R, B> {
     /// Format in algebraic `a+bi` form: `"1+2i"`, `"-3-4i"`, `"5"` (pure real), `"-7i"` (pure
     /// imaginary), `"i"` (`0+1i`), `"-i"` (`0-1i`). The imaginary term always carries an explicit
-    /// sign, a unit coefficient is elided, and a zero imaginary is omitted. Each coefficient uses
-    /// [`FBig`]'s native `Display` (specials render as `inf` / `-inf`).
+    /// sign after a real term, a unit coefficient is elided, and a zero imaginary is omitted. Each
+    /// coefficient uses [`FBig`]'s native `Display` (specials render as `inf` / `-inf`), and the
+    /// output reads back through [`FromStr`](core::str::FromStr).
+    ///
+    /// The precision (`{:.3}`) and alternate (`{:#}`) flags apply to each coefficient — each is
+    /// rounded as [`FBig`]'s `Display` rounds that signed value. The sign flag (`{:+}`) applies
+    /// once, to the leading term. Width and fill apply to the real coefficient only.
+    ///
+    /// In bases above 18 the letter `i` is a digit, so there the imaginary term is written with
+    /// an explicit `*i` suffix and its coefficient is never elided (`"1+2i*i"`, `"1*i"`).
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let fctx = self.context.float();
         let re_zero = self.re.is_pos_zero() || self.re.is_neg_zero();
         let im_zero = self.im.is_pos_zero() || self.im.is_neg_zero();
         let im_neg = self.im.sign() == dashu_base::Sign::Negative;
-        let im_unit = is_unit(&self.im);
 
         if im_zero {
             // pure real (incl. 0+0i → "0")
@@ -39,20 +55,31 @@ impl<R: Round, const B: Word> Display for CBig<R, B> {
         if !re_zero {
             let re = FBig::from_repr(self.re.clone(), fctx);
             Display::fmt(&re, f)?;
-            f.write_char(if im_neg { '-' } else { '+' })?;
-        } else if im_neg {
-            f.write_char('-')?;
         }
-        if !im_unit {
-            let im_abs_repr = if im_neg {
-                -self.im.clone()
-            } else {
-                self.im.clone()
-            };
-            let im_abs = FBig::from_repr(im_abs_repr, fctx);
-            Display::fmt(&im_abs, f)?;
+        // The term's sign: a negative coefficient brings its own `-`; a positive one needs a `+`
+        // after a real term, or as the leading sign when the `+` flag is set.
+        let explicit_plus = !im_neg && (!re_zero || f.sign_plus());
+        if is_unit(&self.im) && !i_is_digit::<B>() {
+            if im_neg {
+                f.write_char('-')?;
+            } else if explicit_plus {
+                f.write_char('+')?;
+            }
+            return f.write_char('i');
         }
-        f.write_char('i')
+        if explicit_plus {
+            f.write_char('+')?;
+        }
+        // The coefficient is formatted with its own sign, so that a precision rounds the signed
+        // value (the direction matters under the directed modes).
+        let im = FBig::from_repr(self.im.clone(), fctx);
+        match (f.precision(), f.alternate()) {
+            (None, false) => f.write_fmt(format_args!("{}", im))?,
+            (None, true) => f.write_fmt(format_args!("{:#}", im))?,
+            (Some(prec), false) => f.write_fmt(format_args!("{:.*}", prec, im))?,
+            (Some(prec), true) => f.write_fmt(format_args!("{:#.*}", prec, im))?,
+        }
+        f.write_str(if i_is_digit::<B>() { "*i" } else { "i" })
     }
 }
 
