@@ -45,7 +45,7 @@ fn converted_precision<const B: Word, const NewB: Word>(precision: usize) -> usi
         // one is kept: it still satisfies the bound.
         let (log_b, frac_b) = log2_base::<B>();
         let (log_newb, frac_newb) = log2_base::<NewB>();
-        (UBig::from(precision) * log_b << frac_newb as usize)
+        ((UBig::from(precision) * log_b) << frac_newb as usize)
             / (UBig::from(log_newb + 1) << frac_b as usize)
     };
     usize::try_from(digits).unwrap_or(usize::MAX).max(1)
