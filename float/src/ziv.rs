@@ -428,7 +428,9 @@ impl<R: ErrorBounds> Context<R> {
         // `f32` estimates' own rounding at astronomical exponents; a radius it lets through is
         // simply decided exactly below.
         let width_ub = lb.log2_bounds().1.max(rb.log2_bounds().1);
-        if e.log2_bounds().0 > width_ub + 2.0 + width_ub.abs() * 1e-6 {
+        // (`f32::abs` is not available without `std` at the MSRV)
+        let margin = 2.0 + if width_ub < 0.0 { -width_ub } else { width_ub } * 1e-6;
+        if e.log2_bounds().0 > width_ub + margin {
             return false;
         }
 
