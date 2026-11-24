@@ -1,10 +1,11 @@
 use core::str::FromStr;
 
 use dashu_base::Approximation::Inexact;
+use dashu_base::Sign;
 use dashu_float::ops::Abs;
 use dashu_float::round::mode::{Away, Down, HalfAway, HalfEven, Up, Zero};
 use dashu_float::round::Rounding::{AddOne, NoOp, SubOne};
-use dashu_float::{round, Context, DBig, FBig, Repr, Word};
+use dashu_float::{round, Context, DBig, FBig, FpError, Repr, Word};
 use dashu_int::IBig;
 
 #[test]
@@ -463,6 +464,26 @@ fn test_trig_argument_with_exponent_near_half_isize_min() {
             assert_eq!(x.atan_unit(360), scaled(y.atan_unit(360)), "atan_unit({m}e{e})");
         }
     }
+}
+
+/// Right at the bottom of the exponent range the neighbours of `x` have no representable last
+/// place, so the functions that return `x ± tiny` report an underflow (promptly, under every
+/// mode) while `cos` is still the float next to 1.
+#[test]
+fn test_trig_argument_at_bottom_of_exponent_range() {
+    let x = Repr::<2>::new(IBig::ONE, isize::MIN + 10);
+    let neg = -x.clone();
+    let down = Context::<Down>::new(53);
+    let even = Context::<HalfEven>::new(53);
+    assert_eq!(down.sin(&x, None), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(even.sin(&neg, None), Err(FpError::Underflow(Sign::Negative)));
+    assert_eq!(down.tan(&x, None), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(down.asin(&neg, None), Err(FpError::Underflow(Sign::Negative)));
+    assert_eq!(even.atan(&x, None), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(even.cos(&x, None), Ok(Inexact(FBig::ONE, AddOne)));
+    let (s, c) = down.sin_cos(&x, None);
+    assert_eq!(s, Err(FpError::Underflow(Sign::Positive)));
+    assert!(matches!(c, Ok(Inexact(_, NoOp))));
 }
 
 /// The inverse ×u functions next to an axis: the angle is an exactly representable quarter

@@ -138,6 +138,27 @@ fn test_tiny_argument() {
     }
 }
 
+/// Right at the bottom of the exponent range the neighbours of `x` have no representable last
+/// place: the functions that return `x ± tiny` report an underflow, `cosh` is the float next
+/// to 1.
+#[test]
+fn test_argument_at_bottom_of_exponent_range() {
+    use dashu_base::Approximation::Inexact;
+    use dashu_float::round::Rounding::NoOp;
+    use dashu_float::FpError;
+    let x = Repr::<2>::new(IBig::ONE, isize::MIN + 10);
+    let neg = -x.clone();
+    let down = Context::<mode::Down>::new(53);
+    assert_eq!(down.sinh(&x, None), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(down.tanh(&neg, None), Err(FpError::Underflow(Sign::Negative)));
+    assert_eq!(down.asinh(&x, None), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(down.atanh(&neg, None), Err(FpError::Underflow(Sign::Negative)));
+    assert_eq!(down.cosh(&x, None), Ok(Inexact(FBig::ONE, NoOp)));
+    let (s, c) = down.sinh_cosh(&x, None);
+    assert_eq!(s, Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(c, Ok(Inexact(FBig::ONE, NoOp)));
+}
+
 /// The `Rounding` flag of a `tanh` that saturates next to `±1` is the adjustment applied to
 /// the truncated significand, as everywhere else: `tanh(13)` at 10 digits towards zero is the
 /// truncation `0.9999999999` itself — `NoOp`, like `tanh(12)` one step below the saturation

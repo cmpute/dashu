@@ -426,17 +426,27 @@ impl<R: ErrorBounds> Context<R> {
     /// towards zero otherwise (sin, atan, tanh, asinh). That bound holds for all eight on
     /// `|x| ≤ 1/2`. `None` when `x` is not small enough for the displacement to stay clear of
     /// every rounding boundary (see [`round_near`](Self::round_near)): the Ziv loop takes over.
+    ///
+    /// An argument whose exponent is within the precision of `isize::MIN` is an underflow: the
+    /// last place of its neighbours is below the exponent range, so the result cannot be
+    /// rounded there (and the loop could never certify it either).
     pub(crate) fn tiny_odd<const B: Word>(
         &self,
         x: &Repr<B>,
         outward: bool,
-    ) -> Option<Rounded<FBig<R, B>>> {
+    ) -> Option<FpResult<FBig<R, B>>> {
         let top = top_exp(x);
         if top >= 0 {
             return None; // not certainly below 1/B ≤ 1/2
         }
+        let last_place = isize::try_from(self.precision)
+            .ok()
+            .and_then(|p| x.exponent.checked_sub(p)?.checked_sub(4));
+        if last_place.is_none() {
+            return Some(Err(FpError::Underflow(x.sign())));
+        }
         let dir = if outward { x.sign() } else { -x.sign() };
-        self.round_near(x, dir, top.saturating_mul(3))
+        self.round_near(x, dir, top.saturating_mul(3)).map(Ok)
     }
 
     /// The correctly rounded value of an even function at a tiny `x`, when the result is `1`
@@ -509,7 +519,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, false) {
-            return Ok(r);
+            return r;
         }
 
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
@@ -646,8 +656,8 @@ impl<R: ErrorBounds> Context<R> {
         // A tiny argument: `sin(x) = x − δ` and `cos(x) = 1 − δ'` (see `sin` / `cos`). The two
         // shortcuts engage at different magnitudes, so either may leave its half to the loop.
         match (self.tiny_odd(x, false), self.tiny_even(x, Sign::Negative, 0)) {
-            (Some(s), Some(c)) => return (Ok(s), Ok(c)),
-            (Some(s), None) => return (Ok(s), self.cos(x, cache)),
+            (Some(s), Some(c)) => return (s, Ok(c)),
+            (Some(s), None) => return (s, self.cos(x, cache)),
             (None, Some(c)) => return (self.sin(x, cache), Ok(c)),
             (None, None) => {}
         }
@@ -732,7 +742,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, true) {
-            return Ok(r);
+            return r;
         }
 
         // tan = sin/cos, correctly rounded via the Ziv loop; the sin/cos error propagation into the
@@ -1460,7 +1470,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, true) {
-            return Ok(r);
+            return r;
         }
 
         // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
@@ -1621,7 +1631,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, false) {
-            return Ok(r);
+            return r;
         }
 
         self.ziv(50, |guard| {

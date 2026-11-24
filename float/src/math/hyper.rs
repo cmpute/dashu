@@ -48,7 +48,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, true) {
-            return Ok(r);
+            return r;
         }
         if exp_certainly_overflows(x) {
             // far past the exponent range: no need to reduce an astronomically large argument
@@ -161,8 +161,8 @@ impl<R: ErrorBounds> Context<R> {
         // A tiny argument: `sinh(x) = x + δ` and `cosh(x) = 1 + δ'` (see `sinh` / `cosh`). The
         // two shortcuts engage at different magnitudes, so either may leave its half to the loop.
         match (self.tiny_odd(x, true), self.tiny_even(x, Sign::Positive, 0)) {
-            (Some(s), Some(c)) => return (Ok(s), Ok(c)),
-            (Some(s), None) => return (Ok(s), self.cosh(x, cache)),
+            (Some(s), Some(c)) => return (s, Ok(c)),
+            (Some(s), None) => return (s, self.cosh(x, cache)),
             (None, Some(c)) => return (self.sinh(x, cache), Ok(c)),
             (None, None) => {}
         }
@@ -449,7 +449,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, false) {
-            return Ok(r);
+            return r;
         }
 
         // For sufficiently large |x|, tanh(x) = sign(x)·(1 − δ) with 0 < δ = 2/(e^{2|x|}+1) below
@@ -515,7 +515,7 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, false) {
-            return Ok(r);
+            return r;
         }
 
         // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
@@ -655,7 +655,7 @@ impl<R: ErrorBounds> Context<R> {
         }
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, true) {
-            return Ok(r);
+            return r;
         }
 
         // atanh(x) = ln_1p(2x/(1-x)) / 2. The ratio and the `ln_1p` input error are tracked as a
