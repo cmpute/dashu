@@ -9,8 +9,9 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
+    utils::Factored,
 };
-use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 
 // `|x|` (in log2) above which exp's reduction quotient `s = floor(x/ln B)` might overflow `isize`,
@@ -786,7 +787,106 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // `base` is positive here (negative non-integer base returned OutOfDomain above).
+        // An exactly representable power (`4^0.5 = 2`, `0.25^1.5 = 0.125`) is resolved first: the
+        // Ziv loop cannot certify a true value that sits on a rounding boundary.
+        if let Some(result) = self.powf_exact(base, exp) {
+            return result;
+        }
         self.pow_exp_log(base, exp, cache)
+    }
+
+    /// The value of `x^y` when it is a *rounding boundary* — exactly representable in base `B`
+    /// with at most `precision + 1` significant digits (a representable value or an exact tie) —
+    /// correctly rounded; `None` when it is not (the Ziv loop then converges on it). `x` is
+    /// positive, finite and not one; `y` is finite and nonzero.
+    ///
+    /// These are the results the `exp(y·ln x)` loop can never certify: its error interval has a
+    /// positive radius around a value that is itself the edge of a rounding preimage, so
+    /// `powf(4, 0.5)` under a directed mode doubled its working precision forever.
+    ///
+    /// Write `y = n/d` in lowest terms. `x^y` is rational only if `x` is a perfect `d`-th power
+    /// of a rational `r`, and then `x^y = rⁿ`. With `x` factored over the primes `qᵢ` of the
+    /// base, `x = c·Π qᵢ^Eᵢ` (`c` coprime to the base, [`Factored`]), that holds iff `d` divides
+    /// every `Eᵢ` and `c = γ^d`; the power is `γⁿ·Π qᵢ^(n·Eᵢ/d)`, which has a finite base-`B`
+    /// expansion iff `n > 0` or `γ = 1`. Everything is decided on these exponents, so neither
+    /// a power of the base nor an oversized root is ever built: `d` larger than every `|Eᵢ|` and
+    /// than the bit length of `c` rules the case out, and a result with more digits than the
+    /// rounding can see is left to the loop.
+    fn powf_exact<const B: Word>(&self, x: &Repr<B>, y: &Repr<B>) -> Option<FpResult<FBig<R, B>>> {
+        // y = ±n/d: the denominator collects the negative powers of the base's primes
+        let fy = Factored::new::<B>(&(&y.significand).unsigned_abs(), y.exponent, &[]);
+        let mut d: u128 = 1;
+        let mut n_mag = fy.cofactor.clone();
+        for &(q, w) in &fy.primes {
+            if w < 0 {
+                let power = (q as u128).checked_pow(u32::try_from(-w).ok()?)?;
+                d = d.checked_mul(power)?;
+            } else {
+                n_mag *= UBig::from(q).pow(usize::try_from(w).ok()?);
+            }
+        }
+        let d = i128::try_from(d).ok()?;
+        let n = i128::try_from(&n_mag).ok()?;
+        let n = if y.sign() == Sign::Negative { -n } else { n };
+
+        // x = c·Π qᵢ^Eᵢ must be a perfect d-th power
+        let fx = Factored::new::<B>(&(&x.significand).unsigned_abs(), x.exponent, &[]);
+        if fx.primes.iter().any(|&(_, e)| e % d != 0) {
+            return None;
+        }
+        let gamma = if fx.cofactor.is_one() {
+            UBig::ONE
+        } else {
+            // a d-th power of an integer ≥ 2 has more than d bits
+            let d = usize::try_from(d).ok()?;
+            if d >= fx.cofactor.bit_len() {
+                return None;
+            }
+            let root = fx.cofactor.nth_root(d);
+            if root.clone().pow(d) != fx.cofactor {
+                return None;
+            }
+            root
+        };
+        if n < 0 && !gamma.is_one() {
+            return None; // 1/γ^|n| has no finite expansion in this base
+        }
+
+        // x^y = γ^n · Π qᵢ^Fᵢ with Fᵢ = n·Eᵢ/d. Split off the largest power of the base,
+        // B^h with h = min ⌊Fᵢ/bᵢ⌋, so that x^y = m·B^h for an integer m not divisible by B.
+        let multiplicities = Factored::new::<B>(&UBig::ONE, 1, &[]).primes;
+        let mut exps = alloc::vec::Vec::with_capacity(fx.primes.len());
+        let mut h = i128::MAX;
+        for (&(q, e), &(_, b)) in fx.primes.iter().zip(&multiplicities) {
+            let f = (e / d).checked_mul(n)?;
+            h = h.min(f.div_euclid(b));
+            exps.push((q, f, b));
+        }
+        // the digits of m must fit what the rounding can see; bound its bit length first
+        let digit_bits = (Word::BITS - (B - 1).leading_zeros()) as u128; // ⌈log2 B⌉
+        let max_bits = (self.precision as u128 + 2) * digit_bits + 2;
+        let n_abs = n.unsigned_abs();
+        let mut bits = (gamma.bit_len() as u128 - 1).checked_mul(n_abs)?;
+        for &(q, f, b) in &exps {
+            let r = (f - b * h) as u128;
+            bits =
+                bits.checked_add(r.checked_mul((Word::BITS - 1 - q.leading_zeros()) as u128)?)?;
+        }
+        if bits > max_bits {
+            return None;
+        }
+        let mut m = gamma.pow(n_abs as usize);
+        for &(q, f, b) in &exps {
+            m *= UBig::from(q).pow((f - b * h) as usize);
+        }
+        // (m ≥ 1 and h are exact, so a range error here is the true verdict)
+        if h >= isize::MAX as i128 {
+            return Some(Err(FpError::Overflow(Sign::Positive)));
+        }
+        if h <= isize::MIN as i128 {
+            return Some(Err(FpError::Underflow(Sign::Positive)));
+        }
+        Some(self.finish_rounded(self.repr_round(Repr::new(m.into(), h as isize))))
     }
 
     /// `x^y = exp(y·ln x)` for `pos_base > 0`, correctly rounded via a Ziv loop — the shared core

@@ -898,6 +898,113 @@ mod pow_range {
     };
     use dashu_int::{IBig, UBig, Word};
 
+    /// `powf(z^d, n/d)` against `z^n` computed exactly (`n ≥ 0`) or as the correctly rounded
+    /// quotient `1/z^|n|` (`n < 0`). `inv_d` is `1/d` as an exact value of the base.
+    fn check_root_power<R: ErrorBounds, const B: Word>(
+        p: usize,
+        z: &Repr<B>,
+        d: usize,
+        inv_d: &Repr<B>,
+        n: i32,
+    ) {
+        let ctx = Context::<R>::new(p);
+        let exact = Context::<R>::new(0);
+        let x = exact.powi(z, d.into()).unwrap().value();
+        let y = Repr::<B>::new(inv_d.significand() * IBig::from(n), inv_d.exponent());
+        let power = exact.powi(z, n.unsigned_abs().into()).unwrap().value();
+        let want = if n >= 0 {
+            Ok(power.with_precision(p))
+        } else {
+            ctx.div(&Repr::one(), power.repr())
+        };
+        let got = ctx.powf(x.repr(), &y, None);
+        assert_eq!(got, want, "({z:?}^{d})^({n}/{d}) at {p} digits");
+    }
+
+    fn check_root_power_modes<const B: Word>(
+        p: usize,
+        z: &Repr<B>,
+        d: usize,
+        inv_d: &Repr<B>,
+        n: i32,
+    ) {
+        check_root_power::<mode::Zero, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Away, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Down, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Up, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::HalfEven, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::HalfAway, B>(p, z, d, inv_d, n);
+    }
+
+    /// A power with a non-integer exponent that is exactly representable (or an exact tie) is
+    /// returned correctly rounded and flagged, in every mode. Regression: `powf(4, 0.5)` and
+    /// `powf(0.25, 1.5)` did not terminate under `Down`/`Up`/`Zero` (the default mode of
+    /// `FBig`), and under the nearest modes `2` came back flagged `Inexact`.
+    #[test]
+    fn test_powf_exact_results() {
+        // base 2: d ∈ {2, 4, 8}
+        for (d, inv_d) in [(2usize, (1, -1)), (4, (1, -2)), (8, (1, -3))] {
+            let inv_d = Repr::<2>::new(inv_d.0.into(), inv_d.1);
+            for sig in [1i32, 2, 3, 5, 7, 12] {
+                for exp in [-3isize, 0, 2] {
+                    let z = Repr::<2>::new(sig.into(), exp);
+                    if z.is_one() {
+                        continue;
+                    }
+                    for n in [-3i32, -1, 1, 3, 5] {
+                        for p in [1usize, 2, 3, 20, 50, 100, 500] {
+                            check_root_power_modes::<2>(p, &z, d, &inv_d, n);
+                        }
+                    }
+                }
+            }
+        }
+        // base 10: 1/2 = 0.5, 1/4 = 0.25, 1/5 = 0.2
+        for (d, inv_d) in [(2usize, (5, -1)), (4, (25, -2)), (5, (2, -1))] {
+            let inv_d = Repr::<10>::new(inv_d.0.into(), inv_d.1);
+            for sig in [2i32, 5, 15, 25, 3] {
+                for exp in [-2isize, 0, 1] {
+                    let z = Repr::<10>::new(sig.into(), exp);
+                    for n in [-3i32, -1, 1, 3, 7] {
+                        if n.unsigned_abs() as usize % d == 0 {
+                            continue;
+                        }
+                        for p in [1usize, 2, 3, 6, 15, 30, 150] {
+                            check_root_power_modes::<10>(p, &z, d, &inv_d, n);
+                        }
+                    }
+                }
+            }
+        }
+        // bases with a square factor: 4^0.5 = 2 in base 4, 3 = 9^0.5 in base 9
+        let half4 = Repr::<4>::new(2.into(), -1);
+        check_root_power_modes::<4>(3, &Repr::new(2.into(), 0), 2, &half4, 1);
+        check_root_power_modes::<4>(3, &Repr::new(6.into(), -1), 2, &half4, 3);
+        let third9 = Repr::<9>::new(3.into(), -1);
+        check_root_power_modes::<9>(3, &Repr::new(3.into(), 0), 3, &third9, 1);
+        check_root_power_modes::<9>(3, &Repr::new(2.into(), 1), 3, &third9, 2);
+
+        // the reported calls
+        let x = FBig::<mode::Zero, 2>::from(4u32).with_precision(53).value();
+        let half = FBig::<mode::Zero, 2>::from_parts(1.into(), -1);
+        assert_eq!(x.powf(&half), FBig::<mode::Zero, 2>::from(2u32));
+        let (four, half) = (Repr::<2>::new(4.into(), 0), Repr::<2>::new(1.into(), -1));
+        let got = Context::<mode::Down>::new(2).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let got = Context::<mode::Up>::new(20).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let got = Context::<mode::HalfEven>::new(2).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let (quarter, y) = (Repr::<2>::new(1.into(), -2), Repr::<2>::new(3.into(), -1));
+        let got = Context::<mode::Zero>::new(20).powf(&quarter, &y, None);
+        assert_eq!(got, Ok(Exact(FBig::from_parts(1.into(), -3))));
+        // an exact result beyond the exponent range is a range error, not a hang
+        let x = Repr::<2>::new(1.into(), isize::MAX - 1);
+        let y = Repr::<2>::new(3.into(), -1);
+        let got = Context::<mode::Zero>::new(20).powf(&x, &y, None);
+        assert_eq!(got, Err(FpError::Overflow(Sign::Positive)));
+    }
+
     /// `(±1)^n` is `±1` for any exponent. Regression: with a base of `-1` and an exponent past
     /// `2^64` the call did not return under `Down`/`Up`.
     #[test]
