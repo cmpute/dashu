@@ -1,34 +1,53 @@
-//! Complex hyperbolic functions, built from the complex circular functions via the rotation
-//! identities
+//! Complex hyperbolic functions, built from the complex circular functions.
+//!
+//! With `S(x + iy) = y + ix` (swapping the two parts — `S(z) = i·conj(z)`), the odd functions
+//! satisfy
 //!
 //! ```text
-//!   sinh z = -i·sin(i·z)      asinh z = -i·asin(i·z)
-//!   cosh z =  cos(i·z)        acosh z =  ±i·acos z       (sign of ± follows Im z)
-//!   tanh z = -i·tan(i·z)      atanh z = -i·atan(i·z)
+//!   sinh z = S(sin(S z))      asinh z = S(asin(S z))
+//!   tanh z = S(tan(S z))      atanh z = S(atan(S z))
 //! ```
 //!
-//! Each identity rotates the argument by `i` (an exact part swap `(x, y) → (−y, x)`), evaluates the
-//! already correctly-rounded complex circular function, and rotates the result back
-//! (`(u, v) → (v, −u)`). The rotations are sign-exact — they move existing digits, never round — so
-//! the hyperbolic result carries the inner function's rounding certification unchanged; no separate
-//! Ziv loop or guard precision is needed.
+//! (e.g. `sinh(x+iy) = sinh x·cos y + i·cosh x·sin y` against
+//! `sin(y+ix) = sin y·cosh x + i·cos y·sinh x`), and for the even ones
 //!
-//! The exactly-zero cases are handled explicitly with the Annex-G signed-zero values: the rotation
-//! through `cos` would mis-sign `cosh`'s imaginary zero (the circular `cos`'s signed-product rule
-//! applies to the *rotated* argument's swapped signs), and `tan`/`tanh` at zero has no exact shortcut
-//! of its own (it would trip the Ziv limited-precision check for an unlimited-precision zero).
+//! ```text
+//!   cosh z = cos(i·z)         acosh z = S(acos(conj z))             (Im z ≥ 0)
+//!                             acosh z = S(−Re acos z + i·Im acos z)  (Im z < 0)
+//! ```
+//!
+//! A swap moves existing digits and never negates a part, so each part of the hyperbolic result
+//! *is* a correctly rounded part of the circular result, under every rounding mode. That is
+//! the point of this formulation: the textbook rotations `sinh z = −i·sin(iz)` negate one part
+//! of an already-rounded result, which under the directed modes `Down`/`Up` turns that part's
+//! rounding around (a part rounded down, negated, is the true value rounded *up*). Where a
+//! negation is unavoidable (`sinh_cosh`'s shared evaluation, `acosh` below the real axis) it is
+//! applied to the working-precision value *before* the final rounding (the `negate` arguments
+//! of `sin_cos_parts` / `acos_parts`).
+//!
+//! The exactly-zero cases are handled explicitly with the Annex-G signed-zero values: the
+//! rotation through `cos` would mis-sign `cosh`'s imaginary zero (the circular `cos`'s
+//! signed-product rule applies to the *rotated* argument's swapped signs), and `tan`/`tanh` at
+//! zero has no exact shortcut of its own (it would trip the Ziv limited-precision check for an
+//! unlimited-precision zero).
 
 use dashu_base::Approximation;
 use dashu_base::Sign;
-use dashu_float::round::{ErrorBounds, Rounding};
+use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, FBig, FpError, Repr};
 use dashu_int::Word;
 
 use crate::cbig::CBig;
-use crate::repr::{exact, reborrow_cache, CRounded, CfpResult, Context};
+use crate::repr::{combine_parts, exact, reborrow_cache, CRounded, CfpResult, Context};
 
 impl<R: ErrorBounds> Context<R> {
-    /// Hyperbolic sine (context layer), correctly rounded via `sinh z = -i·sin(i·z)`.
+    /// `S(z) = Im z + i·Re z` — the exact part swap the odd hyperbolic functions conjugate the
+    /// circular ones with.
+    fn swapped<const B: Word>(&self, z: &CBig<R, B>) -> CBig<R, B> {
+        CBig::new(z.im().clone(), z.re().clone(), *self)
+    }
+
+    /// Hyperbolic sine (context layer), correctly rounded via `sinh(x+iy) = S(sin(y+ix))`.
     ///
     /// Special values: `sinh(±0 ± i·0) = ±0 + i·±0` (the signed zeros carry the input parts'
     /// signs); an infinite input maps to [`FpError::Indeterminate`].
@@ -47,8 +66,7 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
         self.assert_limited();
-        let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
-        Ok(rotate_neg_i(self.sin::<B>(&iz, reborrow_cache(&mut cache))?))
+        Ok(swap_parts(self.sin::<B>(&self.swapped(z), reborrow_cache(&mut cache))?))
     }
 
     /// Hyperbolic cosine (context layer), correctly rounded via `cosh z = cos(i·z)`.
@@ -76,12 +94,13 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
         self.assert_limited();
+        // i·z = −y + ix (an exact rotation of the *argument*; the result needs none)
         let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
         self.cos::<B>(&iz, reborrow_cache(&mut cache))
     }
 
-    /// Simultaneously compute `sinh z` and `cosh z` (context layer), sharing one evaluation of the
-    /// inner `sin_cos(iz)`. Returns `(sinh_result, cosh_result)`, each an [`CfpResult`].
+    /// Simultaneously compute `sinh z` and `cosh z` (context layer), sharing one evaluation of
+    /// the inner `sin_cos(S z)`. Returns `(sinh_result, cosh_result)`, each an [`CfpResult`].
     pub fn sinh_cosh<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -107,16 +126,27 @@ impl<R: ErrorBounds> Context<R> {
             return (Ok(sinh), Ok(cosh));
         }
         self.assert_limited();
-        let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
-        let (sin_iz, cos_iz) = self.sin_cos::<B>(&iz, reborrow_cache(&mut cache));
-        match (sin_iz, cos_iz) {
-            (Ok(s), Ok(c)) => (Ok(rotate_neg_i(s)), Ok(c)),
+        // With w = S z = y + ix:
+        //   sin w = sin y·cosh x + i·cos y·sinh x   ⇒ sinh z = S(sin w)
+        //   cos w = cos y·cosh x − i·sin y·sinh x   ⇒ cosh z = conj(cos w)
+        // The conjugation negates cos w's imaginary part, so that part is requested negated
+        // from the shared evaluation (negated before its rounding).
+        let w = self.swapped(z);
+        match self.sin_cos_parts::<B>(
+            &w,
+            reborrow_cache(&mut cache),
+            false,
+            [false, false, false, true],
+        ) {
+            Ok([sin_re, sin_im, cos_re, neg_cos_im]) => {
+                (Ok(combine_parts(sin_im, sin_re)), Ok(combine_parts(cos_re, neg_cos_im)))
+            }
             // an error in the shared evaluation fails both parts together.
-            (Err(e), _) | (_, Err(e)) => (Err(e), Err(e)),
+            Err(e) => (Err(e), Err(e)),
         }
     }
 
-    /// Hyperbolic tangent (context layer), correctly rounded via `tanh z = -i·tan(i·z)`.
+    /// Hyperbolic tangent (context layer), correctly rounded via `tanh(x+iy) = S(tan(y+ix))`.
     ///
     /// Special values: `tanh(±0 ± i·0) = ±0 + i·±0`; an infinite input maps to
     /// [`FpError::Indeterminate`].
@@ -135,11 +165,12 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
         self.assert_limited();
-        let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
-        Ok(rotate_neg_i(self.tan::<B>(&iz, reborrow_cache(&mut cache))?))
+        Ok(swap_parts(self.tan::<B>(&self.swapped(z), reborrow_cache(&mut cache))?))
     }
 
-    /// Inverse hyperbolic sine (context layer), correctly rounded via `asinh z = -i·asin(i·z)`.
+    /// Inverse hyperbolic sine (context layer), correctly rounded via `asinh z = S(asin(S z))`.
+    /// The branch cuts lie on the imaginary axis outside `[−i, i]`; on them the real part takes
+    /// the sign of the real zero.
     ///
     /// An infinite input maps to [`FpError::Indeterminate`] (mirroring `asin`).
     pub fn asinh<const B: Word>(
@@ -151,14 +182,13 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::Indeterminate);
         }
         self.assert_limited();
-        let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
-        Ok(rotate_neg_i(self.asin::<B>(&iz, reborrow_cache(&mut cache))?))
+        Ok(swap_parts(self.asin::<B>(&self.swapped(z), reborrow_cache(&mut cache))?))
     }
 
     /// Inverse hyperbolic cosine (context layer), correctly rounded via `acosh z = ±i·acos z`,
     /// where the sign follows `Im z` so the branch cut on `]−∞, 1]` lands on the correct side
-    /// (a negative — including negative-zero — imaginary part selects `−i`, matching `acos`'s
-    /// own signed-zero cut).
+    /// (a negative — including negative-zero — imaginary part selects `−i`). The result has a
+    /// non-negative real part, and `acosh(conj z) = conj(acosh z)`.
     ///
     /// An infinite input maps to [`FpError::Indeterminate`] (mirroring `acos`).
     pub fn acosh<const B: Word>(
@@ -170,15 +200,23 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::Indeterminate);
         }
         self.assert_limited();
-        let acos_z = self.acos::<B>(z, reborrow_cache(&mut cache))?;
-        if z.im().sign() == Sign::Negative {
-            Ok(rotate_neg_i(acos_z))
+        // With acos z = u + iv (u ∈ [0, π], and v of the opposite sign to Im z):
+        //   Im z ≥ 0:  acosh z =  i·acos z = −v + iu = S(acos(conj z))   (acos(conj z) = u − iv)
+        //   Im z < 0:  acosh z = −i·acos z =  v − iu = S(−u + iv)
+        // so both cases are a part swap; below the axis the real part of `acos` is requested
+        // negated (before its rounding).
+        let [re, im] = if z.im().sign() == Sign::Negative {
+            self.acos_parts::<B>(z, reborrow_cache(&mut cache), true)?
         } else {
-            Ok(rotate_pos_i(acos_z))
-        }
+            let conj = CBig::new(z.re().clone(), -z.im().clone(), *self);
+            self.acos_parts::<B>(&conj, reborrow_cache(&mut cache), false)?
+        };
+        Ok(combine_parts(im, re))
     }
 
-    /// Inverse hyperbolic tangent (context layer), correctly rounded via `atanh z = -i·atan(i·z)`.
+    /// Inverse hyperbolic tangent (context layer), correctly rounded via
+    /// `atanh z = S(atan(S z))`. The branch cuts lie on the real axis outside `[−1, 1]`; on them
+    /// the imaginary part `±π/2` takes the sign of the imaginary zero.
     ///
     /// An infinite input maps to [`FpError::Indeterminate`] (mirroring `atan`).
     pub fn atanh<const B: Word>(
@@ -190,8 +228,7 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::Indeterminate);
         }
         self.assert_limited();
-        let iz = CBig::new(-z.im().clone(), z.re().clone(), *self);
-        Ok(rotate_neg_i(self.atan::<B>(&iz, reborrow_cache(&mut cache))?))
+        Ok(swap_parts(self.atan::<B>(&self.swapped(z), reborrow_cache(&mut cache))?))
     }
 }
 
@@ -264,43 +301,19 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     }
 }
 
-/// `-i·(u + iv) = v - i·u`: swap the parts and negate the new imaginary part. Sign-exact, so an
-/// `Exact` result stays exact. For an inexact result the parts' rounding flags swap along with the
-/// parts, and the negated part's direction flips (`AddOne ↔ SubOne`).
-fn rotate_neg_i<R: ErrorBounds, const B: Word>(r: CRounded<R, B>) -> CRounded<R, B> {
+/// Swap the two parts of a rounded complex result (`u + iv ↦ v + iu`), carrying each part's
+/// rounding flag with it. Nothing is negated, so every part keeps its correct rounding under
+/// every mode.
+fn swap_parts<R: ErrorBounds, const B: Word>(r: CRounded<R, B>) -> CRounded<R, B> {
     match r {
         Approximation::Exact(v) => {
             let (re, im) = v.into_parts();
-            Approximation::Exact(CBig::from_parts(im, -re))
+            Approximation::Exact(CBig::from_parts(im, re))
         }
         Approximation::Inexact(v, (r_re, r_im)) => {
             let (re, im) = v.into_parts();
-            Approximation::Inexact(CBig::from_parts(im, -re), (r_im, neg_rounding(r_re)))
+            Approximation::Inexact(CBig::from_parts(im, re), (r_im, r_re))
         }
-    }
-}
-
-/// `+i·(u + iv) = -v + i·u`: swap the parts and negate the new real part.
-fn rotate_pos_i<R: ErrorBounds, const B: Word>(r: CRounded<R, B>) -> CRounded<R, B> {
-    match r {
-        Approximation::Exact(v) => {
-            let (re, im) = v.into_parts();
-            Approximation::Exact(CBig::from_parts(-im, re))
-        }
-        Approximation::Inexact(v, (r_re, r_im)) => {
-            let (re, im) = v.into_parts();
-            Approximation::Inexact(CBig::from_parts(-im, re), (neg_rounding(r_im), r_re))
-        }
-    }
-}
-
-/// Negating a value flips the direction of its rounding adjustment (`AddOne ↔ SubOne`); see
-/// `log`'s zero-path `-π` handling for the same reasoning.
-fn neg_rounding(r: Rounding) -> Rounding {
-    match r {
-        Rounding::NoOp => Rounding::NoOp,
-        Rounding::AddOne => Rounding::SubOne,
-        Rounding::SubOne => Rounding::AddOne,
     }
 }
 

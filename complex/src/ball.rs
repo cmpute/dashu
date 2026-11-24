@@ -8,9 +8,10 @@
 //! re-exports), so the per-component propagation rules are float's own; only the *complex* rules
 //! live here — the product rule (4 tracked products + add/sub), the quotient through `‖z‖²`,
 //! and the input-error folds for the float kernels, which run on the midpoints and get their own
-//! contribution from the kernel's rounding via `Ball::from_rounded` (exact → radius 0, inexact →
+//! contribution from the kernel's rounding via [`kernel_ball`] (exact → radius 0, inexact →
 //! one work-ulp; the public kernels are correctly rounded, so one ulp covers them with a 2×
-//! margin).
+//! margin). A kernel's `Exact` flag is only believed where the result *can* be exact — see
+//! [`kernel_ball`].
 //!
 //! Soundness of every fold below rests on the same two facts as float's ball: a [`Mag`] is a
 //! rigorous upper bound by construction (all its ops round up), and the folds are stated as
@@ -18,6 +19,7 @@
 //! fudge constants appear anywhere.
 
 use dashu_base::{Approximation, Sign};
+use dashu_float::round::Rounding;
 use dashu_float::{ulp_mag, Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Mag, Repr};
 use dashu_int::{IBig, Word};
 
@@ -44,15 +46,18 @@ impl<const B: Word> CBall<B> {
         }
     }
 
-    /// Seed from an input's parts: the parts are re-rooted to the working precision (an input
-    /// carrying more digits than the working precision rounds here, and that rounding joins the
-    /// radius like any other). The re-round runs under [`mode::HalfEven`] regardless of the
-    /// caller's mode — one work-ulp covers any direction's rounding error.
-    pub(crate) fn from_parts(re: &Repr<B>, im: &Repr<B>, prec: usize) -> Self {
-        Self {
-            re: seed_ball(re, prec),
-            im: seed_ball(im, prec),
-        }
+    /// Seed from an input's parts, *exactly* (both radii zero), whatever the working precision.
+    ///
+    /// The parts are deliberately **not** rounded to the working precision, even when they
+    /// carry more digits than it: every tracked operation rounds its own result, and the float
+    /// kernels accept an operand of any width. Rounding the seed instead would make the input
+    /// itself inexact, which (a) hides the exactly-representable results the directed modes
+    /// can only certify through a zero radius (`√(w²) = w` for a wide `w`), (b) moves an input
+    /// next to a branch point *onto* it (`asin(1 + 2⁻³⁰)` at 10 digits), and (c) is amplified
+    /// without bound by the steep kernels — `exp` of a rounded `1.2e15` carries an input
+    /// radius of ~2³⁵, i.e. a result radius astronomically larger than the result.
+    pub(crate) fn from_parts(re: &Repr<B>, im: &Repr<B>, _prec: usize) -> Self {
+        Self::exact(re.clone(), im.clone())
     }
 
     // ========================================================================
@@ -72,6 +77,22 @@ impl<const B: Word> CBall<B> {
                 re: -self.im.clone(),
                 im: self.re.clone(),
             }
+        }
+    }
+
+    /// `−self` (exact: both midpoints change sign, the radii are unchanged).
+    pub(crate) fn neg(&self) -> Self {
+        Self {
+            re: -self.re.clone(),
+            im: -self.im.clone(),
+        }
+    }
+
+    /// The complex conjugate (exact).
+    pub(crate) fn conj(&self) -> Self {
+        Self {
+            re: self.re.clone(),
+            im: -self.im.clone(),
         }
     }
 
@@ -166,19 +187,18 @@ impl<const B: Word> CBall<B> {
         prec: usize,
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Self, FpError> {
-        let mut ex = Ball::from_rounded(
-            fctx.exp(&self.re.mid, reborrow_cache(&mut cache))?
-                .map(FBig::into_repr),
-            prec,
-        );
+        // e^x is exact only at x = 0, sin/cos only at 0
+        let mut ex = kernel_ball(fctx.exp(&self.re.mid, reborrow_cache(&mut cache))?, prec, |_| {
+            is_zero(&self.re.mid)
+        });
         if !self.re.rad.is_zero() {
             // float's exp fold, verbatim (the magnitude before the error, never clamped)
             let factor = ex.mag().mul(&self.re.rad.exp_upper());
             ex.add_error(factor.mul(&self.re.rad));
         }
         let (sin_y, cos_y) = fctx.sin_cos(&self.im.mid, reborrow_cache(&mut cache));
-        let mut sy = Ball::from_rounded(sin_y?.map(FBig::into_repr), prec);
-        let mut cy = Ball::from_rounded(cos_y?.map(FBig::into_repr), prec);
+        let mut sy = kernel_ball(sin_y?, prec, |_| is_zero(&self.im.mid));
+        let mut cy = kernel_ball(cos_y?, prec, |_| is_zero(&self.im.mid));
         if !self.im.rad.is_zero() {
             sy.add_error(self.im.rad);
             cy.add_error(self.im.rad);
@@ -202,9 +222,27 @@ impl<const B: Word> CBall<B> {
         prec: usize,
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Self, FpError> {
+        // Both midpoints cancelled onto zero while the ball still has a radius (the true value
+        // is some unknown nonzero point near the origin): neither `ln` nor `atan2` has a value
+        // at the origin, so export the whole plane — a Ziv retry at a higher guard, where the
+        // midpoint re-emerges from its addends' rounding noise. (An *exact* zero is the genuine
+        // `log 0`, left to the kernels.)
+        if self.re.mid.significand().is_zero()
+            && self.im.mid.significand().is_zero()
+            && !self.re.mid.is_infinite()
+            && !self.im.mid.is_infinite()
+            && !(self.re.rad.is_zero() && self.im.rad.is_zero())
+        {
+            return Ok(Self {
+                re: Ball::with_error(Repr::zero(), Mag::INFINITY),
+                im: Ball::with_error(Repr::zero(), Mag::INFINITY),
+            });
+        }
+
         // ‖z‖ with the hypot fold (the Euclidean norm is 1-Lipschitz: |Δ‖z‖| ≤ |δx| + |δy|)
-        let mut r =
-            Ball::from_rounded(fctx.hypot(&self.re.mid, &self.im.mid)?.map(FBig::into_repr), prec);
+        let mut r = kernel_ball(fctx.hypot(&self.re.mid, &self.im.mid)?, prec, |mid| {
+            hypot_is_exact(mid, &self.re.mid, &self.im.mid, prec)
+        });
         r.add_error(self.re.rad.add(&self.im.rad));
 
         // A lower bound of the true ‖z‖ (drives both folds). The *bracket width* must not be
@@ -239,17 +277,22 @@ impl<const B: Word> CBall<B> {
                 .div(&lo2)
         };
 
-        let mut ln_r = Ball::from_rounded(
-            fctx.ln(&r.mid, reborrow_cache(&mut cache))?
-                .map(FBig::into_repr),
-            prec,
-        );
+        // ln r is exact only at r = 1
+        let mut ln_r = kernel_ball(fctx.ln(&r.mid, reborrow_cache(&mut cache))?, prec, |_| {
+            r.mid == Repr::one()
+        });
         ln_r.add_error(ln_fold);
 
-        let mut arg = Ball::from_rounded(
-            fctx.atan2(&self.im.mid, &self.re.mid, reborrow_cache(&mut cache))?
-                .map(FBig::into_repr),
+        // the angle is exact only on the positive real axis (0); every other axis value is a
+        // multiple of π/2
+        let mut arg = kernel_ball(
+            fctx.atan2(&self.im.mid, &self.re.mid, reborrow_cache(&mut cache))?,
             prec,
+            |_| {
+                is_zero(&self.im.mid)
+                    && !is_zero(&self.re.mid)
+                    && self.re.mid.sign() == Sign::Positive
+            },
         );
         arg.add_error(arg_fold);
 
@@ -281,8 +324,9 @@ impl<const B: Word> CBall<B> {
         {
             return Ok(Self::exact(Repr::zero(), Repr::zero()));
         }
-        let mut r =
-            Ball::from_rounded(fctx.hypot(&self.re.mid, &self.im.mid)?.map(FBig::into_repr), prec);
+        let mut r = kernel_ball(fctx.hypot(&self.re.mid, &self.im.mid)?, prec, |mid| {
+            hypot_is_exact(mid, &self.re.mid, &self.im.mid, prec)
+        });
         r.add_error(self.re.rad.add(&self.im.rad));
 
         let two = Ball::exact(Repr::<B>::new(IBig::from(2u8), 0));
@@ -294,11 +338,13 @@ impl<const B: Word> CBall<B> {
             // r − x = r + |x| — no cancellation
             let b0 = sqrt_real(r.sub(&self.re, prec)?.div(&two, prec)?, fctx, prec)?;
             let b = if self.im.mid.sign() == Sign::Negative {
-                -b0
+                -b0.clone()
             } else {
-                b0
+                b0.clone()
             };
-            let a = div_real(&self.im, &b.mul(&two, prec)?, prec)?;
+            // a = |y|/(2|b|) ≥ 0: the real part of the principal root is never negative, also
+            // as a zero (`√(−x − 0i) = +0 − i√x`, the conjugate of `√(−x + 0i)`)
+            let a = div_real(&abs_ball(&self.im), &b0.mul(&two, prec)?, prec)?;
             Ok(Self { re: a, im: b })
         }
     }
@@ -316,15 +362,139 @@ impl<const B: Word> CBall<B> {
     }
 }
 
-/// Re-root one input part to the working precision (an over-precise input rounds here, and the
-/// rounding joins the radius like any other).
-fn seed_ball<const B: Word>(re: &Repr<B>, prec: usize) -> Ball<B> {
-    // build the part as an exact (unlimited) value, then round to the working precision — an
-    // over-precise significand genuinely rounds here (same-precision `with_precision` is a no-op)
-    let rooted =
-        FBig::<mode::HalfEven, B>::from_repr(re.clone(), FloatCtxt::<mode::HalfEven>::new(0))
-            .with_precision(prec);
-    Ball::from_rounded(rooted.map(FBig::into_repr), prec)
+/// Wrap the result of a `dashu-float` kernel, evaluated at working precision `prec`, as a ball:
+/// an exact result keeps a zero radius, a rounded one gets one work-ulp (the kernels are
+/// correctly rounded, so one ulp covers the rounding with a 2× margin).
+///
+/// The zero radius is what certifies exactly-representable results, so it must only be granted
+/// when the result really is exact. The kernel's own `Exact` flag is not sufficient evidence:
+/// a kernel may report `Exact` when its *internal* approximation happened to land on the
+/// returned value while the true value is merely within its error bound (`hypot(1, 2⁴⁰)`,
+/// `cosh(2⁻⁴³)`, …) — and a zero radius on a rounded value makes every bound derived from it
+/// unsound (a `ln|z|` certified with 20 good bits, an exact `0/0` where the denominator was
+/// really `1 + 2⁻⁸⁷ − 1`). So the flag is only believed when `can_be_exact` — a cheap
+/// *mathematical* criterion supplied by the call site (the argument is the function's only
+/// rational point, or the claimed value verifies exactly) — agrees. It is consulted only when
+/// the kernel claims exactness.
+pub(crate) fn kernel_ball<R: Round, const B: Word>(
+    rounded: Approximation<FBig<R, B>, Rounding>,
+    prec: usize,
+    can_be_exact: impl FnOnce(&Repr<B>) -> bool,
+) -> Ball<B> {
+    match rounded {
+        // (an infinite result is a special value of the kernel, e.g. ln 0, not a rounding)
+        Approximation::Exact(v) if v.repr().is_infinite() || can_be_exact(v.repr()) => {
+            Ball::exact(v.into_repr())
+        }
+        Approximation::Exact(v) | Approximation::Inexact(v, _) => {
+            let mid = v.into_repr();
+            let rad = ulp_mag::<B>(&mid, prec);
+            Ball::with_error(mid, rad)
+        }
+    }
+}
+
+/// `true` ⟺ `x` is a (signed) zero.
+pub(crate) fn is_zero<const B: Word>(x: &Repr<B>) -> bool {
+    !x.is_infinite() && x.significand().is_zero()
+}
+
+/// An exact product (unlimited precision); `None` on a range error.
+fn exact_mul<const B: Word>(a: &Repr<B>, b: &Repr<B>) -> Option<Repr<B>> {
+    FloatCtxt::<mode::Zero>::new(0)
+        .mul(a, b)
+        .ok()
+        .map(|r| r.value().into_repr())
+}
+
+/// `true` ⟺ `mid² = arg` exactly (the test for an exact real square root).
+fn square_is<const B: Word>(mid: &Repr<B>, arg: &Repr<B>) -> bool {
+    exact_mul(mid, mid).map_or(false, |sq| &sq == arg)
+}
+
+/// `true` ⟺ `mid² = a² + b²` exactly (the test for an exact `hypot`).
+fn hypot_is_exact<const B: Word>(mid: &Repr<B>, a: &Repr<B>, b: &Repr<B>, prec: usize) -> bool {
+    if is_zero(a) || is_zero(b) {
+        // hypot(x, 0) = |x| is a plain rounding of the operand, whose flag is reliable
+        return true;
+    }
+    // The exact sum aligns the two squares, so bound its width before building it. When the
+    // squares are this far apart their digit ranges do not overlap, the sum spans (to within a
+    // digit or two) the whole distance, and that is more than the `2·prec` digits `mid²` can
+    // have — so the result cannot be exact.
+    let top = |x: &Repr<B>| 2 * (x.exponent() as i128 + x.digits_ub() as i128);
+    let bottom = |x: &Repr<B>| 2 * x.exponent() as i128;
+    let span = top(a).max(top(b)) - bottom(a).min(bottom(b));
+    let limit = 8 * (prec as i128 + a.digits_ub() as i128 + b.digits_ub() as i128) + 64;
+    if span > limit {
+        return false;
+    }
+    let (Some(m2), Some(a2), Some(b2)) = (exact_mul(mid, mid), exact_mul(a, a), exact_mul(b, b))
+    else {
+        return false;
+    };
+    FloatCtxt::<mode::Zero>::new(0)
+        .add(&a2, &b2)
+        .map_or(false, |sum| sum.value().into_repr() == m2)
+}
+
+/// `true` ⟺ `6·x` is an integer — a superset of the arguments at which `sin(πx)` or `cos(πx)`
+/// is rational (Niven: the only rational values are `0`, `±1/2`, `±1`), i.e. of the arguments
+/// at which the ×π kernels can be exact.
+pub(crate) fn six_x_is_integer<const B: Word>(x: &Repr<B>) -> bool {
+    if x.is_infinite() {
+        return false;
+    }
+    exact_mul(x, &Repr::new(IBig::from(6u8), 0)).map_or(false, |t| is_zero(&t) || t.exponent() >= 0)
+}
+
+/// `true` ⟺ the claimed `mid` equals `base^exp` exactly (the test for an exact real integer
+/// power; `exp ≠ 0`). The exact power is only built when it is small enough to possibly fit
+/// `prec` digits — in an exotic base a reciprocal `1/sⁿ` can be far shorter than `sⁿ`, hence
+/// the generous factor; beyond it the answer is a conservative `false`, which a later, wider
+/// attempt revisits.
+pub(crate) fn powi_is_exact<const B: Word>(
+    mid: &Repr<B>,
+    base: &Repr<B>,
+    exp: &IBig,
+    prec: usize,
+) -> bool {
+    use dashu_base::Signed;
+    if base.is_infinite() || mid.is_infinite() || is_zero(base) {
+        return false;
+    }
+    let n = match usize::try_from(exp.clone().into_parts().1) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    if n.saturating_mul(base.digits_ub()) > prec.saturating_mul(128).saturating_add(64) {
+        // (a power of the base itself is exact at any size, and is a bare exponent)
+        return base.significand().is_one() || (-base.significand()).is_one();
+    }
+    // base^n exactly: significand power and exponent multiple
+    let Some(e) = (n as i128).checked_mul(base.exponent() as i128) else {
+        return false;
+    };
+    let Ok(e) = isize::try_from(e) else {
+        return false;
+    };
+    let power = Repr::<B>::new(base.significand().pow(n), e);
+    if exp.is_positive() {
+        mid == &power
+    } else {
+        // mid = 1/base^n ⟺ mid · base^n = 1
+        exact_mul(mid, &power).map_or(false, |one| one == Repr::one())
+    }
+}
+
+/// `|b|` as a ball: the midpoint's magnitude with the radius unchanged (`||x| − |y|| ≤ |x − y|`).
+/// A negative zero becomes `+0`.
+pub(crate) fn abs_ball<const B: Word>(b: &Ball<B>) -> Ball<B> {
+    if b.mid.sign() == Sign::Negative {
+        -b.clone()
+    } else {
+        b.clone()
+    }
 }
 
 /// `num / d` by a real ball. A precisely-zero numerator divides to a precisely-zero quotient —
@@ -336,7 +506,11 @@ fn seed_ball<const B: Word>(re: &Repr<B>, prec: usize) -> Ball<B> {
 /// cosh 2y > 0` for `y ≠ 0`, `2·root > 0` in `sqrt`) re-emerges above its addends' rounding
 /// noise. The kernel division must not run in that state: a zero-mid denominator surfaces as
 /// the infinity that panics the part arithmetic.
-fn div_real<const B: Word>(num: &Ball<B>, d: &Ball<B>, prec: usize) -> Result<Ball<B>, FpError> {
+pub(crate) fn div_real<const B: Word>(
+    num: &Ball<B>,
+    d: &Ball<B>,
+    prec: usize,
+) -> Result<Ball<B>, FpError> {
     let d_exact_zero = d.rad.is_zero() && d.mid.significand().is_zero();
     if num.rad.is_zero() && num.mid.significand().is_zero() {
         if d_exact_zero {
@@ -362,17 +536,20 @@ fn sqrt_real<R: ErrorBounds, const B: Word>(
 ) -> Result<Ball<B>, FpError> {
     // float's `finish_mid` rule: the fresh ε joins only when the kernel rounded inexact — an
     // exact root keeps `rad = 0` so the exact chain (e.g. √4) stays certifiable
-    let (mid, eps) = match fctx.sqrt(&arg.mid)?.map(FBig::into_repr) {
-        Approximation::Exact(repr) => (repr, Mag::ZERO),
-        Approximation::Inexact(repr, _) => {
-            let eps = ulp_mag::<B>(&repr, prec);
-            (repr, eps)
-        }
-    };
+    let root = kernel_ball(fctx.sqrt(&arg.mid)?, prec, |mid| square_is(mid, &arg.mid));
+    let (mid, eps) = (root.mid, root.rad);
     if mid.significand().is_zero() {
         // √(exact 0): the kernel returned an exact zero — keep the chain exact (directed modes
-        // can only certify a zero component through a zero radius).
-        return Ok(Ball::exact(mid));
+        // can only certify a zero component through a zero radius). A zero midpoint that still
+        // carries a radius is a different matter: the true argument is some unknown value within
+        // `rad` of zero, its root is within `√rad`, and no multiple of the *input* radius bounds
+        // that (the derivative at the origin is infinite). Export the whole line instead — a
+        // Ziv retry at a higher guard, where the argument stops rounding onto zero.
+        return Ok(if arg.rad.is_zero() {
+            Ball::exact(mid)
+        } else {
+            Ball::with_error(mid, Mag::INFINITY)
+        });
     }
     let lo = Mag::from_repr_lower(&arg.mid).sub_down(&arg.rad);
     let mut rad = if lo.is_zero() {
@@ -572,13 +749,82 @@ mod tests {
     }
 
     #[test]
-    fn from_parts_of_fitting_parts_is_exact() {
+    fn from_parts_is_exact_at_any_width() {
         let z = CBall::from_parts(&repr(3, 0), &repr(4, 0), 20);
         assert!(z.re.rad.is_zero() && z.im.rad.is_zero());
-        // an over-precise part rounds down at the seed precision, and the rounding joins the
-        // radius
-        let wide = Repr::new(IBig::from(1025), -10); // 21 bits at seed precision 10
+        // an over-precise part is *not* rounded at the seed precision: the seed stays exact
+        // (the operations round their own results)
+        let wide = Repr::new(IBig::from(1025), -10); // 11 bits at seed precision 10
         let z = CBall::from_parts(&wide, &Repr::<2>::zero(), 10);
-        assert!(!z.re.rad.is_zero());
+        assert!(z.re.rad.is_zero());
+        assert_eq!(z.re.mid, wide);
+    }
+
+    // √(−1 − 0i) = +0 − i: the real part of the principal root is never a negative zero.
+    #[test]
+    fn sqrt_negative_real_with_negative_zero_imaginary() {
+        let p = 10;
+        let fctx = FloatCtxt::<mode::HalfEven>::new(p);
+        let out = cb(repr(-1, 0), Repr::<2>::neg_zero())
+            .sqrt(&fctx, p)
+            .unwrap();
+        assert!(out.re.rad.is_zero() && out.im.rad.is_zero());
+        assert!(out.re.mid.is_pos_zero());
+        assert_eq!(out.im.mid, repr(-1, 0));
+    }
+
+    // A zero midpoint that still carries a radius must not root to an *exact* zero.
+    #[test]
+    fn sqrt_real_of_inexact_zero_is_not_exact() {
+        let p = 10;
+        let fctx = FloatCtxt::<mode::HalfEven>::new(p);
+        let arg = Ball::with_error(Repr::<2>::zero(), Mag::from_repr(&repr(1, -20)));
+        let out = sqrt_real(arg, &fctx, p).unwrap();
+        assert!(out.rad.is_infinite());
+    }
+    // A kernel's `Exact` flag only yields a zero radius where the call site says the result
+    // can be exact; otherwise the value is treated as rounded (one work-ulp).
+    #[test]
+    fn kernel_ball_trusts_exact_only_when_possible() {
+        let p = 20;
+        let fctx = FloatCtxt::<mode::HalfEven>::new(p);
+        let one = F::from_repr(repr(1, 0), fctx);
+        let b = kernel_ball(Approximation::Exact(one.clone()), p, |_| true);
+        assert!(b.rad.is_zero());
+        let b = kernel_ball(Approximation::Exact(one.clone()), p, |_| false);
+        assert!(!b.rad.is_zero() && b.mid == repr(1, 0));
+        let b = kernel_ball(Approximation::Inexact(one, Rounding::NoOp), p, |_| true);
+        assert!(!b.rad.is_zero());
+        // an infinite special value passes through as it is
+        let inf = F::from_repr(Repr::neg_infinity(), fctx);
+        let b = kernel_ball(Approximation::Exact(inf), p, |_| false);
+        assert!(b.mid.is_infinite() && b.rad.is_zero());
+    }
+
+    #[test]
+    fn exactness_criteria() {
+        // hypot: 3² + 4² = 5², but 1² + (2⁴⁰)² is not a square
+        assert!(hypot_is_exact(&repr(5, 0), &repr(3, 0), &repr(4, 0), 10));
+        assert!(!hypot_is_exact(&repr(1, 40), &repr(1, 0), &repr(1, 40), 53));
+        assert!(hypot_is_exact(&repr(7, 3), &repr(-7, 3), &Repr::zero(), 10));
+        // far-apart operands are answered without building the aligned sum
+        assert!(!hypot_is_exact(&repr(1, 1 << 40), &repr(1, 0), &repr(1, 1 << 40), 53));
+        // sqrt
+        assert!(square_is(&repr(3, -1), &repr(9, -2)));
+        assert!(!square_is(&repr(1, 40), &(repr(1, 80).clone() + repr(1, 0))));
+        // the ×π lattice
+        assert!(six_x_is_integer(&repr(1, -1)) && six_x_is_integer(&repr(-5, 0)));
+        assert!(six_x_is_integer(&Repr::<2>::zero()));
+        assert!(!six_x_is_integer(&repr(1, -2)));
+        assert!(six_x_is_integer(&Repr::<3>::new(IBig::from(1), -1))); // 1/3 in base 3
+                                                                       // integer powers
+        assert!(powi_is_exact(&repr(81, 0), &repr(3, 0), &IBig::from(4), 20));
+        assert!(!powi_is_exact(&repr(80, 0), &repr(3, 0), &IBig::from(4), 20));
+        assert!(powi_is_exact(&repr(1, -6), &repr(1, 2), &IBig::from(-3), 20));
+        assert!(!powi_is_exact(&repr(1, -4), &repr(3, 0), &IBig::from(-2), 20));
+        // 1/8 = 0.125 in base 10
+        let eighth = Repr::<10>::new(IBig::from(125), -3);
+        let two = Repr::<10>::new(IBig::from(2), 0);
+        assert!(powi_is_exact(&eighth, &two, &IBig::from(-3), 20));
     }
 }

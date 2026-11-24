@@ -4,7 +4,7 @@ use crate::ball::CBall;
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, exact, reborrow_cache, CfpResult, Context};
 use dashu_base::{Approximation, Sign};
-use dashu_float::round::{ErrorBounds, Rounding};
+use dashu_float::round::ErrorBounds;
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
 use dashu_int::Word;
 
@@ -37,24 +37,13 @@ impl<R: ErrorBounds> Context<R> {
                         FBig::from_repr(Repr::zero_with_sign(Sign::Positive), self.float()),
                     ));
                 }
-                let mut pi = self.float().pi::<B>(reborrow_cache(&mut cache));
-                if im.is_neg_zero() {
-                    // Negate π, flipping the rounding adjustment (`AddOne` ↔ `SubOne`): negating a
-                    // value negates its significand, so the adjustment applied to the truncated
-                    // significand flips sign (`Approximation::map` would keep the error unchanged).
-                    pi = match pi {
-                        Approximation::Exact(v) => Approximation::Exact(-v),
-                        Approximation::Inexact(v, Rounding::AddOne) => {
-                            Approximation::Inexact(-v, Rounding::SubOne)
-                        }
-                        Approximation::Inexact(v, Rounding::SubOne) => {
-                            Approximation::Inexact(-v, Rounding::AddOne)
-                        }
-                        Approximation::Inexact(v, Rounding::NoOp) => {
-                            Approximation::Inexact(-v, Rounding::NoOp)
-                        }
-                    };
-                }
+                // `±π` rounded once under this mode. (Negating a rounded `+π` instead would
+                // round `−π` in the opposite direction under `Down`/`Up`.)
+                let pi = self.round_pi_multiple::<B>(
+                    im.is_neg_zero(),
+                    false,
+                    reborrow_cache(&mut cache),
+                )?;
                 return Ok(combine_parts(Approximation::Exact(neg_inf), pi));
             }
             return Ok(exact(
