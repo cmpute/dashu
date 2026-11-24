@@ -509,3 +509,163 @@ fn test_from_f64() {
     assert_eq!(UBig::try_from(1e30f64), Ok(ubig!(1000000000000000019884624838656)));
     assert_eq!(UBig::try_from(1e40f64), Ok(ubig!(10000000000000000303786028427003666890752)));
 }
+
+#[test]
+fn test_ibig_from_float_truncates() {
+    // the fractional part is dropped (rounding towards zero) regardless of the sign
+    assert_eq!(IBig::try_from(0.5f64), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-0.5f64), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-0.25f64), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-1e-300f64), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(1.5f64), Ok(ibig!(1)));
+    assert_eq!(IBig::try_from(-1.5f64), Ok(ibig!(-1)));
+    assert_eq!(IBig::try_from(-2.5f64), Ok(ibig!(-2)));
+    assert_eq!(IBig::try_from(-2.75f64), Ok(ibig!(-2)));
+    assert_eq!(IBig::try_from(-2.0f64), Ok(ibig!(-2)));
+    assert_eq!(IBig::try_from(-3.0f64), Ok(ibig!(-3)));
+    assert_eq!(IBig::try_from(-0.5f32), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-1.5f32), Ok(ibig!(-1)));
+    assert_eq!(IBig::try_from(-2.5f32), Ok(ibig!(-2)));
+    assert_eq!(IBig::try_from(-f32::from_bits(1)), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-f64::from_bits(1)), Ok(ibig!(0)));
+    assert_eq!(IBig::try_from(-1e30f64), Ok(-IBig::try_from(1e30f64).unwrap()));
+
+    for f in [
+        0.25f64,
+        0.5,
+        0.99,
+        1.0,
+        1.5,
+        2.5,
+        1e10 + 0.5,
+        4503599627370495.5,
+        1e300,
+    ] {
+        let pos = IBig::try_from(f).unwrap();
+        assert_eq!(IBig::try_from(-f).unwrap(), -&pos, "f = {}", f);
+        assert_eq!(IBig::from(UBig::try_from(f).unwrap()), pos, "f = {}", f);
+        if f < 1e18 {
+            assert_eq!(pos, IBig::from(f.trunc() as i64));
+        }
+    }
+    assert!(IBig::try_from(f64::NAN).is_err());
+    assert!(IBig::try_from(f64::NEG_INFINITY).is_err());
+}
+
+#[test]
+fn test_from_chunks_overlapping() {
+    let chunk_bits = 1usize << 16;
+    let chunks = [UBig::ONE, UBig::ONE];
+    assert_eq!(
+        UBig::from_chunks(chunks.iter(), chunk_bits),
+        (UBig::ONE << chunk_bits) + UBig::ONE
+    );
+
+    // a single chunk is returned as is whatever the size of the chunks
+    let chunks = [UBig::from(5u8)];
+    assert_eq!(UBig::from_chunks(chunks.iter(), usize::MAX), UBig::from(5u8));
+    let chunks = [UBig::ones(200)];
+    assert_eq!(UBig::from_chunks(chunks.iter(), 1), UBig::ones(200));
+
+    // chunks larger than chunk_bits are summed, carries included
+    let ones = UBig::ones(200);
+    for chunk_bits in [1, 3, 63, 64, 65, 127, 128, 129, 200, 1000] {
+        let chunks = [ones.clone(), ones.clone(), UBig::ONE, ones.clone()];
+        let expected = &ones
+            + (&ones << chunk_bits)
+            + (UBig::ONE << (2 * chunk_bits))
+            + (&ones << (3 * chunk_bits));
+        assert_eq!(UBig::from_chunks(chunks.iter(), chunk_bits), expected, "{}", chunk_bits);
+
+        let chunks = [UBig::ZERO, UBig::ZERO, ones.clone(), UBig::ZERO];
+        assert_eq!(UBig::from_chunks(chunks.iter(), chunk_bits), &ones << (2 * chunk_bits));
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_from_chunks_zero_bits_empty() {
+    let _ = UBig::from_chunks([].iter(), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_from_chunks_zero_bits_nonempty() {
+    let _ = UBig::from_chunks([UBig::from(1u8), UBig::from(2u8)].iter(), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_to_chunks_zero_bits() {
+    let _ = UBig::ONE.to_chunks(0);
+}
+
+#[test]
+fn test_to_f32_rounding_up_to_power_of_two() {
+    // 2^64 - 1 rounds up to 2^64 (it must not be reported as exact, on any word size)
+    let two_pow_64 = 18446744073709551616.0f32;
+    assert_eq!(UBig::from(u64::MAX).to_f32(), Inexact(two_pow_64, Positive));
+    assert_eq!(IBig::from(u64::MAX).to_f32(), Inexact(two_pow_64, Positive));
+    assert_eq!((-IBig::from(u64::MAX)).to_f32(), Inexact(-two_pow_64, Negative));
+    assert_eq!((UBig::from(u64::MAX) + 1u8).to_f32(), Exact(two_pow_64));
+    assert_eq!(UBig::from(u32::MAX).to_f32(), Inexact(4294967296.0f32, Positive));
+    assert_eq!((UBig::from(u32::MAX) + 1u8).to_f32(), Exact(4294967296.0f32));
+    assert_eq!(UBig::from(u16::MAX).to_f32(), Exact(65535.0f32));
+    assert_eq!(UBig::from(u128::MAX).to_f32(), Inexact(f32::INFINITY, Positive));
+    assert_eq!(UBig::from(u64::MAX).to_f64(), Inexact(18446744073709551616.0f64, Positive));
+    assert_eq!(
+        UBig::from(u128::MAX).to_f64(),
+        Inexact(340282366920938463463374607431768211456.0f64, Positive)
+    );
+}
+
+#[test]
+fn test_to_float_sticky_bit_below_round_bit() {
+    let p = |k: usize| UBig::ONE << k;
+
+    // f64: the mantissa covers bits 199..=147 and the round bit is bit 146
+    let up = 2f64.powi(199) + 2f64.powi(147);
+    let down = 2f64.powi(199);
+    assert_eq!((p(199) + p(146) + p(145)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146) + p(144)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146) + p(0)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146)).to_f64(), Inexact(down, Negative));
+    assert_eq!((p(199) + p(147) + p(146)).to_f64(), Inexact(down + 2f64.powi(148), Positive));
+    assert_eq!((p(199) + p(145)).to_f64(), Inexact(down, Negative));
+    assert_eq!((p(199) + p(144)).to_f64(), Inexact(down, Negative));
+    assert_eq!(IBig::from(p(199) + p(145)).to_f64(), Inexact(down, Negative));
+    assert_eq!((-IBig::from(p(199) + p(146) + p(145))).to_f64(), Inexact(-up, Negative));
+
+    // f32: the mantissa covers bits 99..=76 and the round bit is bit 75
+    let up = 2f32.powi(99) + 2f32.powi(76);
+    let down = 2f32.powi(99);
+    for k in [74, 73, 72, 70, 64, 1, 0] {
+        assert_eq!((p(99) + p(75) + p(k)).to_f32(), Inexact(up, Positive), "k = {}", k);
+        assert_eq!((p(99) + p(k)).to_f32(), Inexact(down, Negative), "k = {}", k);
+    }
+    assert_eq!((p(99) + p(75)).to_f32(), Inexact(down, Negative));
+    assert_eq!((p(99) + p(76)).to_f32(), Exact(up));
+
+    // a single low bit at every position, for several sizes
+    for n in [65usize, 100, 129, 200, 566, 1000] {
+        let top = p(n - 1);
+        for k in 0..n - 1 {
+            let x = &top + p(k);
+            let exact64 = k + 53 >= n;
+            let f = x.to_f64();
+            assert_eq!(matches!(f, Exact(_)), exact64, "n = {}, k = {}", n, k);
+            let expected = if exact64 {
+                2f64.powi(n as i32 - 1) + 2f64.powi(k as i32)
+            } else {
+                2f64.powi(n as i32 - 1)
+            };
+            assert_eq!(f.value(), expected, "n = {}, k = {}", n, k);
+
+            if n <= 128 {
+                let exact32 = k + 24 >= n;
+                let f = x.to_f32();
+                assert_eq!(matches!(f, Exact(_)), exact32, "n = {}, k = {}", n, k);
+            }
+        }
+    }
+}

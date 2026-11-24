@@ -379,9 +379,25 @@ impl Repr {
     }
 
     fn from_chunks(chunks: &[&[Word]], chunk_bits: usize) -> Self {
+        assert!(chunk_bits > 0);
+
+        // the leading zero chunks don't contribute to the result
+        let nonzero_chunks = chunks
+            .iter()
+            .rposition(|words| words.iter().any(|&word| word != 0))
+            .map_or(0, |pos| pos + 1);
+        let chunks = &chunks[..nonzero_chunks];
+
         if let Some(max_len) = chunks.iter().map(|words| words.len()).max() {
-            // allocate an extra word for shifting
-            let result_len = max_len + (chunks.len() - 1) * chunk_bits + 1;
+            // The top chunk starts at the bit (chunks.len() - 1) * chunk_bits, and an
+            // extra word is allocated for shifting. This is also enough for the sum
+            // when the chunks overlap, because the sum of the lower chunks is less
+            // than 2^(WORD_BITS * max_len) at the bit position of the top chunk.
+            let top_shift = match (chunks.len() - 1).checked_mul(chunk_bits) {
+                Some(shift) => shift,
+                None => crate::error::panic_allocate_too_much(),
+            };
+            let result_len = max_len + top_shift / WORD_BITS_USIZE + 1;
             let mut result = Buffer::allocate(result_len);
             result.push_zeros(result_len);
             let mut buffer = Buffer::allocate_exact(max_len + 1);
@@ -866,13 +882,16 @@ macro_rules! ibig_float_conversions {
 
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 let (man, exp) = value.decode().map_err(|_| ConversionError::OutOfBounds)?;
-                let mut result: IBig = man.into();
+                // The shift is applied to the magnitude, so that the fractional part is
+                // truncated (rounding towards zero) for both signs. Shifting a negative
+                // IBig to the right would round towards the negative infinity instead.
+                let mut result = UBig::from(man.unsigned_abs());
                 if exp >= 0 {
                     result <<= exp as usize;
                 } else {
                     result >>= (-exp) as usize;
                 }
-                Ok(result)
+                Ok(IBig::from_parts(Sign::from(man < 0), result))
             }
         }
 
@@ -1123,7 +1142,14 @@ mod repr {
 
     fn to_f32_small(dword: DoubleWord) -> Approximation<f32, Sign> {
         let f = dword as f32;
-        if f.is_infinite() {
+
+        // `f as DoubleWord` is a saturating float→int cast: when `dword` rounds up to
+        // 2^BITS, the cast clamps back to `DoubleWord::MAX` and the round-trip
+        // comparison could report `Equal`, wrongly tagging the conversion `Exact`.
+        // `dword as f32` is at most 2^BITS (which is the infinity if it's out of the
+        // range of f32), so reaching 2^BITS means that the value is rounded up.
+        const TWO_POW_BITS: f32 = (1u128 << (DoubleWord::BITS - 1)) as f32 * 2.0;
+        if f >= TWO_POW_BITS {
             return Inexact(f, Sign::Positive);
         }
 
