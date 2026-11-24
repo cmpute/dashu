@@ -236,6 +236,68 @@ fn test_sinh_cosh_pi_large_argument() {
     }
 }
 
+/// `asinh` / `acosh` of a huge argument are `ln(2|x|)` to within `1/(2x²)`. The textbook
+/// compositions used to be formed regardless — `x² + 1` and `1 + (x + …)` aligned a unit
+/// against the argument digit for digit, and ran out of memory from `2^(2^40)` on.
+#[test]
+fn test_asinh_acosh_huge_argument() {
+    type F = FBig<mode::HalfEven, 2>;
+    for e in [
+        1isize << 20,
+        1 << 40,
+        isize::MAX / 2 - 100,
+        isize::MAX - 100,
+    ] {
+        for p in [5usize, 20, 50, 100, 500] {
+            for sig in [1, 5] {
+                let x = F::from_parts(IBig::from(sig), e).with_precision(p).value();
+                let ln_2x = F::from_parts(IBig::from(2 * sig), e)
+                    .with_precision(p)
+                    .value()
+                    .ln();
+                assert_eq!(x.asinh(), ln_2x, "asinh({sig}·2^{e}) at {p} bits");
+                assert_eq!(x.acosh(), ln_2x, "acosh({sig}·2^{e}) at {p} bits");
+                assert_eq!((-x).asinh(), -ln_2x, "asinh(-{sig}·2^{e}) at {p} bits");
+            }
+        }
+    }
+    // Around the magnitude where the asymptotic form takes over (x² past the working
+    // precision), every mode agrees with the same call at a precision wide enough to stay on
+    // the general composition, rounded once more.
+    fn check<R: dashu_float::round::ErrorBounds>(sig: i32, e: isize, p: usize) {
+        let x = Repr::<2>::new(IBig::from(sig), e);
+        let wide = Context::<mode::HalfEven>::new(p + 2 * e as usize + 200);
+        let narrow = Context::<R>::new(p);
+        let reround = |v: FBig<mode::HalfEven, 2>| {
+            FBig::<R, 2>::from_repr(v.into_repr(), Context::new(0))
+                .with_precision(p)
+                .value()
+        };
+        let asinh = narrow.asinh(&x, None).unwrap().value();
+        assert_eq!(asinh, reround(wide.asinh(&x, None).unwrap().value()), "asinh {sig}·2^{e} @{p}");
+        let neg = narrow.asinh(&-x.clone(), None).unwrap().value();
+        assert_eq!(neg, reround(wide.asinh(&-x.clone(), None).unwrap().value()));
+        if sig > 0 {
+            let acosh = narrow.acosh(&x, None).unwrap().value();
+            assert_eq!(
+                acosh,
+                reround(wide.acosh(&x, None).unwrap().value()),
+                "acosh {sig}·2^{e} @{p}"
+            );
+        }
+    }
+    for p in [20usize, 50, 100, 500] {
+        for e in [p / 2, p / 2 + 20, p / 2 + 40, p, 2 * p] {
+            for sig in [1, 3, 7] {
+                check::<mode::HalfEven>(sig, e as isize, p);
+                check::<mode::Down>(sig, e as isize, p);
+                check::<mode::Up>(sig, e as isize, p);
+                check::<mode::Zero>(sig, e as isize, p);
+            }
+        }
+    }
+}
+
 #[test]
 fn test_infinities() {
     let ctx = Context::<mode::HalfEven>::new(30);

@@ -20,7 +20,7 @@ use crate::{
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
-        trig::{even_negligible, odd_negligible, square_negligible, top_exp},
+        trig::{bottom_exp, even_negligible, odd_negligible, square_negligible, top_exp},
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -535,6 +535,12 @@ impl<R: ErrorBounds> Context<R> {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let sign = x.sign();
             let wp = work.precision;
+            if square_dominates(x, wp) {
+                // asinh(x) = sign·(ln(2|x|) + δ), 0 < δ < 1/(4x²): below the last place
+                let res = ln_2x_ball(&work, x, reborrow_cache(&mut cache))?;
+                let result = if sign == Sign::Negative { -res } else { res };
+                return Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)));
+            }
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
             let abs_x_ball = if sign == Sign::Negative {
                 -x_ball
@@ -548,16 +554,8 @@ impl<R: ErrorBounds> Context<R> {
                     let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one, wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
-                // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|).
-                Err(FpError::Overflow(_)) => {
-                    let two_abs = Repr::new((x.significand() * IBig::from(2)).abs(), x.exponent());
-                    work.ln_compute::<B>(
-                        &two_abs,
-                        work.precision,
-                        false,
-                        reborrow_cache(&mut cache),
-                    )
-                }
+                // |x| so large that x² overflows (taken by the asymptotic branch above).
+                Err(FpError::Overflow(_)) => ln_2x_ball(&work, x, reborrow_cache(&mut cache)),
                 Err(other) => unreachable!("sqr: {other:?}"),
             }?;
             let result = if sign == Sign::Negative { -res } else { res };
@@ -609,6 +607,11 @@ impl<R: ErrorBounds> Context<R> {
         self.ziv(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
+            if square_dominates(x, wp) {
+                // acosh(x) = ln(2x) − δ, 0 < δ < 1/(2x²): below the last place
+                let res = ln_2x_ball(&work, x, reborrow_cache(&mut cache))?;
+                return Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)));
+            }
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
             let one = Ball::exact_int(IBig::ONE, wp);
             let xm1_ball = x_ball.sub(&one, wp)?;
@@ -618,11 +621,8 @@ impl<R: ErrorBounds> Context<R> {
                     let arg = xm1_ball.add(&prod_ball.sqrt(wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
-                // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
-                Err(FpError::Overflow(_)) => {
-                    let two_x = Repr::new(x.significand() * IBig::from(2), x.exponent());
-                    work.ln_compute::<B>(&two_x, work.precision, false, reborrow_cache(&mut cache))
-                }
+                // (x-1)(x+1) overflowed (taken by the asymptotic branch above).
+                Err(FpError::Overflow(_)) => ln_2x_ball(&work, x, reborrow_cache(&mut cache)),
                 Err(other) => unreachable!("mul: {other:?}"),
             }?;
             Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)))
@@ -905,6 +905,29 @@ fn exp_certainly_overflows<const B: Word>(x: &Repr<B>) -> bool {
 fn pi_argument_guard<const B: Word>(x: &Repr<B>) -> usize {
     const CAP: isize = 4 * usize::BITS as isize;
     top_exp(x).clamp(0, CAP) as usize + 2
+}
+
+/// Is `|x| ≥ B^(wp/2 + 3)`, so that `x² ≥ B^(wp + 5)` lies wholly beyond the working precision?
+/// Then `asinh(|x|)` and `acosh(|x|)` are `ln(2|x|)` to within `1/(2x²)`, less than one work-ulp
+/// of a logarithm that is itself above 1 — and the textbook compositions should not be formed
+/// at all: their `x² + 1`, `(x − 1)(x + 1)` and `1 + arg` align a unit against a magnitude of
+/// `x²`, digit for digit, however astronomical the exponent.
+fn square_dominates<const B: Word>(x: &Repr<B>, wp: usize) -> bool {
+    bottom_exp(x) > (wp / 2 + 2) as isize
+}
+
+/// `ln(2|x|)` widened by one ulp: `asinh(|x|)` / `acosh(|x|)` when [`square_dominates`]. The
+/// doubling is exact, and `ln_compute` folds the rounding of its argument itself.
+fn ln_2x_ball<const B: Word>(
+    work: &Context<mode::HalfEven>,
+    x: &Repr<B>,
+    cache: Option<&mut ConstCache>,
+) -> Result<Ball<B>, FpError> {
+    let two_abs = Repr::new((x.significand() * IBig::from(2)).abs(), x.exponent());
+    let mut ball = work.ln_compute::<B>(&two_abs, work.precision, false, cache)?;
+    let ulp = ulp_mag::<B>(&ball.mid, work.precision);
+    ball.add_error(ulp);
+    Ok(ball)
 }
 
 /// `±0` `Repr` carrying the sign of `x` (used by the odd hyperbolics at zero input).
