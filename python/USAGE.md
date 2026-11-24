@@ -42,7 +42,23 @@ UBig(2) + 3 == 5
 FBig(1.5) * 2 == FBig(3.0)
 UBig(17) // 5 == 3
 divmod(UBig(17), 5) == (UBig(3), UBig(2))
+7 % UBig(3) == 1          # a Python number can be on either side
+UBig(3) - 5 == IBig(-2)   # a negative difference of UBig is an IBig
 ```
+
+Equal numbers also **hash** equally, across the dashu types and with Python's `int`, `float`,
+`Fraction`, `Decimal` and `complex`, so they can be mixed as `dict` keys and `set` members
+(`{1.5: "x"}[FBig(1.5)]`, `5 in {UBig(5)}`).
+
+Division and modulo by zero follow Python: an integer or rational zero divisor raises
+`ZeroDivisionError` (as does `%` by a float zero), while `/` by a float zero gives an infinity.
+`pow(x, e, 0)` raises `ValueError`. `int(x)` truncates toward zero for every type, and
+`math.floor` / `math.ceil` / `math.trunc` / `round()` are exact for `FBig`, `DBig` and `RBig`
+(`round()` rounds ties away from zero).
+
+In-place operators on integers (`+=`, `*=`, `&=`, ...) give the same value as the binary
+operator: where the result cannot stay in place (a negative operand or result for a `UBig`, a
+non-integer operand), the name is rebound to the new value, as for Python's `int`.
 
 - **Integers**: `+ - * / // % **`, comparisons, in-place ops, bit operations
   (`& | ^ << >>`), roots (`sqrt`/`cbrt`/`nth_root`), `gcd`/`gcd_ext`, `ilog`, bit
@@ -116,13 +132,21 @@ format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
 
 - **Integers** delegate to Python `int`, so every presentation type works (`b`/`o`/`d`/
   `x`/`X`/`c`/`n`) with sign, width, fill, zero-pad, and grouping — with no loss.
-- **Floats** (`FBig`/`DBig`) support `e`/`E`/`f`/`g` with precision, sign, width, align,
-  fill, zero-pad, and grouping. With no explicit precision, all significant digits are
-  shown (use `.6e` for the fixed 6-digit default).
+- **Floats** (`FBig`/`DBig`) support `e`/`E`/`f`/`g`/`G`/`%` with precision, sign, width,
+  align, fill, zero-pad, and grouping, laid out as for Python's `float`. With no explicit
+  precision, all significant digits are shown (use `.6e` for the fixed 6-digit default).
+  `g` switches to the scientific notation as in Python (exponent below -4 or not below the
+  precision): `format(DBig("123456"), ".2g") == '1.2e+05'`. Digits are rounded half away
+  from zero (the rounding of `DBig`), where `float` rounds half to even.
 - **`FBig` is base 2**, so its default `str`/`format` and the `'a'`/`'A'` types print in
   **hexadecimal** — lossless, with no base conversion, e.g. `str(FBig(1.5)) == '0x3p-1'`.
-  Decimal presentations (`'e'`/`'f'`/`'g'`) convert to base 10. `DBig` prints in decimal.
-- **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`.
+  The sign option and zero-padding apply there too: `format(FBig(-1.5), "012a") ==
+  '-0x000003p-1'`. Decimal presentations (`'e'`/`'f'`/`'g'`) convert to base 10; with an
+  explicit precision (and for `'f'`) the digits are those of the exact binary value, e.g.
+  `format(FBig(0.1), ".20f") == '0.10000000000000000555'`. `DBig` prints in decimal.
+- **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`; with a float
+  presentation type the digits are those of the exact value, rounded once at the requested
+  precision.
 
 ## Cross-type comparison
 

@@ -5,7 +5,7 @@
 
 use pyo3::{
     Bound, FromPyObject, PyErr, PyResult,
-    exceptions::{PySyntaxError, PyTypeError, PyValueError},
+    exceptions::{PyIndexError, PySyntaxError, PyTypeError, PyValueError, PyZeroDivisionError},
     ffi, intern,
     prelude::*,
     types::{PyBytes, PyDict, PyFloat, PyInt},
@@ -38,6 +38,26 @@ pub fn parse_signed_index(index: isize, length: usize, unlimited: bool) -> Optio
         let i = index.unsigned_abs();
         if i <= length { Some(length - i) } else { None }
     }
+}
+
+/// Read a subscript as an integer index. Returns `None` if the subscript is not an integer
+/// (so that the caller can go on and try a slice), and an `IndexError` (as `list` does) if it
+/// is an integer that does not fit in an index-sized integer.
+pub fn extract_index(index: &Bound<'_, PyAny>) -> Option<PyResult<isize>> {
+    if index.is_instance_of::<PyInt>() {
+        Some(
+            index
+                .extract::<isize>()
+                .map_err(|_| PyIndexError::new_err("cannot fit 'int' into an index-sized integer")),
+        )
+    } else {
+        index.extract::<isize>().ok().map(Ok)
+    }
+}
+
+/// The error for a division (or modulo) by an exact zero, as raised by Python's own numbers.
+pub fn zero_division_error() -> PyErr {
+    PyZeroDivisionError::new_err("division or modulo by zero")
 }
 
 pub fn conversion_error_to_py(error: ConversionError) -> PyErr {
@@ -210,7 +230,60 @@ impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'py> {
     }
 }
 
+/// The right-hand operand of the in-place operators of `UBig`: an unsigned integer.
+///
+/// The extraction fails for any other operand, which makes the in-place operator return
+/// `NotImplemented`, so that Python falls back to the binary operator (`a += b` becomes
+/// `a = a + b`) and the result is the same as that of the binary form.
+pub struct UnsignedOperand(pub UBig);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for UnsignedOperand {
+    type Error = PyErr;
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        UniInput::extract(ob)?.into_ubig().map(Self)
+    }
+}
+
+/// The right-hand operand of the in-place operators of `IBig`: an integer.
+/// See [`UnsignedOperand`] for what happens with other operands.
+pub struct SignedOperand(pub IBig);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for SignedOperand {
+    type Error = PyErr;
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        UniInput::extract(ob)?.into_ibig().map(Self)
+    }
+}
+
 impl<'a> UniInput<'a> {
+    /// Whether the input is an exact number (an integer or a rational), as opposed to a float.
+    pub fn is_exact(&self) -> bool {
+        matches!(
+            self,
+            Self::Uint(_)
+                | Self::Int(_)
+                | Self::BUint(_)
+                | Self::BInt(_)
+                | Self::OBInt(_)
+                | Self::BRational(_)
+                | Self::OBRational(_)
+        )
+    }
+
+    /// Whether the input is an exact zero (an integer or a rational). Dividing by it raises
+    /// `ZeroDivisionError`, while dividing by a float zero gives an infinity.
+    pub fn is_exact_zero(&self) -> bool {
+        match self {
+            Self::Uint(x) => *x == 0,
+            Self::BUint(x) => x.0.is_zero(),
+            Self::BInt(x) => x.0.is_zero(),
+            Self::OBInt(x) => x.is_zero(),
+            Self::BRational(x) => x.0.is_zero(),
+            Self::OBRational(x) => x.is_zero(),
+            _ => false,
+        }
+    }
+
     pub fn into_ubig(self) -> PyResult<UBig> {
         let err = PyTypeError::new_err(ERRMSG_INPUT_NOT_UBIG);
         match self {

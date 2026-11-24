@@ -10,19 +10,20 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::str::FromStr;
 
 use dashu::complex::CBig;
+use dashu::float::FBig;
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult,
     basic::CompareOp,
-    exceptions::PyTypeError,
+    exceptions::{PyTypeError, PyValueError},
     intern,
     prelude::*,
-    types::{PyComplex, PyFloat, PyInt},
+    types::{PyComplex, PyFloat, PyInt, PyString},
 };
 
 use crate::{
     cache::{unwrap_complex, unwrap_float, with_cache},
     convert::{conversion_error_to_py, parse_error_to_py, parse_to_ibig, parse_to_long},
-    types::{CPy, DPy, FPy, UniInput},
+    types::{CPy, DPy, FPy, IPy, UPy, UniInput},
 };
 
 /// Promote any real Python number (or a `(re, im)` pair / Python `complex`) to a bare `CBig`.
@@ -32,6 +33,12 @@ fn to_cbig(ob: &Bound<'_, PyAny>) -> PyResult<CBig> {
     }
     if let Ok(f) = ob.extract::<PyRef<FPy>>() {
         return Ok(CBig::from(f.0.clone()));
+    }
+    if let Ok(u) = ob.extract::<PyRef<UPy>>() {
+        return Ok(CBig::from(dashu::integer::IBig::from(u.0.clone())));
+    }
+    if let Ok(i) = ob.extract::<PyRef<IPy>>() {
+        return Ok(CBig::from(i.0.clone()));
     }
     if let Ok(d) = ob.extract::<PyRef<DPy>>() {
         // base 10 -> base 2 via the correctly-rounded conversion, then embed as z + 0i
@@ -62,6 +69,29 @@ fn to_cbig(ob: &Bound<'_, PyAny>) -> PyResult<CBig> {
         return CBig::from_str(&s).map_err(parse_error_to_py);
     }
     Err(PyTypeError::new_err("expected a CBig, float, int, complex, or string"))
+}
+
+/// Exact equality of a real part with a real number.
+fn real_eq(re: &dashu::float::Repr<2>, real: UniInput<'_>) -> bool {
+    use core::cmp::Ordering::Equal;
+    use num_order::NumOrd;
+    let re = dashu::float::FBig::<dashu::float::round::mode::Zero, 2>::from_repr(
+        re.clone(),
+        dashu::float::Context::new(0),
+    );
+    match real {
+        UniInput::Uint(x) => re.num_cmp(&x) == Equal,
+        UniInput::Int(x) => re.num_cmp(&x) == Equal,
+        UniInput::BUint(x) => re.num_cmp(&x.0) == Equal,
+        UniInput::BInt(x) => re.num_cmp(&x.0) == Equal,
+        UniInput::OBInt(x) => re.num_cmp(&x) == Equal,
+        UniInput::Float(x) => re.num_cmp(&x) == Equal,
+        UniInput::BFloat(x) => re.num_cmp(&x.0) == Equal,
+        UniInput::BDecimal(x) => re.num_cmp(&x.0) == Equal,
+        UniInput::OBDecimal(x) => re.num_cmp(&x) == Equal,
+        UniInput::BRational(x) => re.num_cmp(&x.0) == Equal,
+        UniInput::OBRational(x) => re.num_cmp(&x) == Equal,
+    }
 }
 
 macro_rules! impl_cpy_binops {
@@ -127,11 +157,37 @@ impl CPy {
     #[new]
     #[pyo3(signature = (re, im=None))]
     fn __new__(re: &Bound<'_, PyAny>, im: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        // CBig(re, im): build from two real parts
+        // CBig(re, im) is `re + im*j`, as for Python's `complex(re, im)`. Usually both
+        // arguments are real and become the two parts; an argument that is itself complex
+        // contributes both of its parts.
         if let Some(im_ob) = im {
-            let re_f = to_cbig(re)?.into_parts().0;
-            let im_f = to_cbig(im_ob)?.into_parts().0;
-            return Ok(CPy(CBig::from_parts(re_f, im_f)));
+            let (re_re, re_im) = to_cbig(re)?.into_parts();
+            let (im_re, im_im) = to_cbig(im_ob)?.into_parts();
+            let is_zero = |f: &FBig| f.repr().significand().is_zero() && f.repr().is_finite();
+            if is_zero(&re_im) && is_zero(&im_im) {
+                return Ok(CPy(CBig::from_parts(re_re, im_re)));
+            }
+
+            // (a + bj) + (c + dj)j = (a - d) + (b + c)j, computed exactly: the precision is
+            // that of the most precise part, or more if a sum has more digits than that
+            let parts = [&re_re, &re_im, &im_re, &im_im];
+            if parts.iter().any(|f| f.repr().is_infinite()) {
+                return Err(PyValueError::new_err("arithmetic with infinity"));
+            }
+            let unlimited = parts.iter().any(|f| f.precision() == 0);
+            let precision = parts.iter().map(|f| f.precision()).max().unwrap_or(0);
+            let exact = |f: FBig| f.with_precision(0).value();
+            let rounded = |f: FBig| {
+                let precision = if unlimited {
+                    0
+                } else {
+                    precision.max(f.digits())
+                };
+                f.with_precision(precision).value()
+            };
+            let real = rounded(exact(re_re) - exact(im_im));
+            let imag = rounded(exact(re_im) + exact(im_re));
+            return Ok(CPy(CBig::from_parts(real, imag)));
         }
         // single argument forms
         if let Ok(s) = re.extract::<String>() {
@@ -159,30 +215,50 @@ impl CPy {
             return Ok(format!("{}", self.0));
         }
         let (re, im) = self.0.clone().into_parts();
-        let re_s = crate::format::format_dbig(&re.to_decimal().value(), format_spec)?;
-        let mut im_s = crate::format::format_dbig(&im.to_decimal().value(), format_spec)?;
+        let re_s = crate::format::format_fbig_decimal(&re, format_spec)?;
+        let mut im_s = crate::format::format_fbig_decimal(&im, format_spec)?;
         if !(im_s.starts_with('-') || im_s.starts_with('+')) {
             im_s = format!("+{im_s}");
         }
         Ok(format!("({re_s}{im_s}j)"))
     }
-    fn __hash__(&self) -> u64 {
-        // mirror Python's complex hash convention loosely: combine real/imag float hashes
-        let (re, im) = self.0.clone().into_parts();
-        let re_hash = re.to_f64().value().to_bits();
-        let im_hash = im.to_f64().value().to_bits();
-        re_hash.wrapping_add(im_hash.wrapping_mul(3))
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_complex(self.0.re(), self.0.im())
     }
     fn __bool__(&self) -> bool {
         !self.0.is_zero()
     }
     /// Complex numbers have no ordering — only `==` and `!=` are defined.
-    fn __richcmp__(&self, other: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<bool> {
-        let other = to_cbig(other)?;
-        match op {
-            CompareOp::Eq => Ok(self.0 == other),
-            CompareOp::Ne => Ok(self.0 != other),
-            _ => Err(PyTypeError::new_err("no ordering relation is defined for complex numbers")),
+    ///
+    /// Comparing with an object that is not a number (`None`, a string, ...) is not an error:
+    /// the comparison returns `NotImplemented`, so that `==` is `False` and `!=` is `True`
+    /// (unless the other object knows how to compare itself with a `CBig`).
+    fn __richcmp__(
+        &self,
+        other: &Bound<'_, PyAny>,
+        op: CompareOp,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        if !matches!(op, CompareOp::Eq | CompareOp::Ne) {
+            return Err(PyTypeError::new_err(
+                "no ordering relation is defined for complex numbers",
+            ));
+        }
+        // a string is not a number here, although the constructor can parse one
+        let other = if other.is_instance_of::<PyString>() {
+            None
+        } else if let Ok(real) = UniInput::extract(other.as_borrowed()) {
+            // a real number of any type: compare exactly (no conversion to a binary float)
+            let is_zero = |r: &dashu::float::Repr<2>| r.significand().is_zero() && r.is_finite();
+            let equal = is_zero(self.0.im()) && real_eq(self.0.re(), real);
+            return (equal == matches!(op, CompareOp::Eq)).into_py_any(py);
+        } else {
+            // a `CBig` or a Python `complex`
+            to_cbig(other).ok()
+        };
+        match other {
+            Some(other) => ((self.0 == other) == matches!(op, CompareOp::Eq)).into_py_any(py),
+            None => Ok(py.NotImplemented()),
         }
     }
 

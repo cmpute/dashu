@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::ops::*;
 use std::vec::Vec;
 
@@ -15,19 +13,23 @@ use pyo3::{
 
 use crate::{
     convert::{
-        conversion_error_to_py, convert_from_ibig, convert_from_ubig, parse_error_to_py,
-        parse_signed_index, parse_to_ibig, parse_to_long, parse_to_ubig,
+        SignedOperand, UnsignedOperand, conversion_error_to_py, convert_from_ibig,
+        convert_from_ubig, extract_index, parse_error_to_py, parse_signed_index, parse_to_ibig,
+        parse_to_long, parse_to_ubig, zero_division_error,
     },
+    float::{dpy_mod, fpy_mod},
+    math::{ubig_gcd, ubig_gcd_ext},
+    rational::rpy_mod,
     types::{DPy, FPy, IPy, PySign, PyWords, RPy, UPy, UniInput},
 };
 
 use dashu::base::{
-    Abs, BitTest, CubicRoot, PowerOfTwo, Sign, Signed, SquareRoot, UnsignedAbs,
-    ring::{DivRemEuclid, ExtendedGcd, Gcd},
+    Abs, BitTest, CubicRoot, PowerOfTwo, Sign, Signed, SquareRoot, UnsignedAbs, ring::DivRemEuclid,
 };
-use dashu::float::FBig;
+use dashu::float::{DBig, FBig};
 use dashu::integer::{IBig, UBig, Word, fast_div};
-use num_order::{NumHash, NumOrd};
+use dashu::rational::RBig;
+use num_order::NumOrd;
 
 // error messages
 const ERRMSG_LENGTH_TOO_LARGE: &str = "the integer has too many bits for indexing";
@@ -52,6 +54,10 @@ const ERRMSG_MODULUS_INT_ONLY: &str = "modulus must be an integer";
 const ERRMSG_POW_INT_EXP: &str = "the exponent must be a non-negative integer";
 const ERRMSG_POW_MOD_INT_EXP: &str =
     "modular exponentiation requires a non-negative integer exponent";
+const ERRMSG_POW_ZERO_MODULUS: &str = "pow() 3rd argument cannot be 0";
+const ERRMSG_POW_EXP_TOO_LARGE: &str = "the exponent is too large";
+const ERRMSG_ZEROTH_ROOT: &str = "the 0th root is not defined";
+const ERRMSG_ILOG_ZERO: &str = "the logarithm of zero is not defined";
 
 macro_rules! impl_binops {
     ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
@@ -165,73 +171,168 @@ impl_ubig_bit_binops!(IPy, ipy_bitxor, bitxor);
 /// and `r = a - b*q`, so `r` carries the sign of `b`. This differs from truncating division
 /// (`.rem()`, whose remainder has the sign of `a`) and from Euclidean division (`r >= 0`) whenever
 /// `b < 0`, and matches CPython's `//`, `%`, and `divmod` for integers.
-fn ibig_div_mod_floor(a: &IBig, b: &IBig) -> (IBig, IBig) {
+///
+/// A zero divisor raises `ZeroDivisionError`.
+fn ibig_div_mod_floor(a: &IBig, b: &IBig) -> PyResult<(IBig, IBig)> {
+    if b.is_zero() {
+        return Err(zero_division_error());
+    }
     let (q, r) = a.div_rem_euclid(b);
     let r: IBig = r.into();
     if b.sign() == Sign::Negative && !r.is_zero() {
-        (q - IBig::ONE, r + b)
+        Ok((q - IBig::ONE, r + b))
     } else {
-        (q, r)
+        Ok((q, r))
     }
 }
 
+/// `UBig - UBig` (also with a non-negative `int` on either side): the difference is a `UBig`
+/// when it is not negative, and an `IBig` otherwise (as when subtracting an `IBig`).
+fn unsigned_sub(lhs: &UBig, rhs: &UBig, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    if lhs >= rhs {
+        UPy(lhs - rhs).into_py_any(py)
+    } else {
+        IPy(-IBig::from(rhs - lhs)).into_py_any(py)
+    }
+}
+fn upy_sub_any(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    match rhs {
+        UniInput::Uint(x) => unsigned_sub(&lhs.0, &UBig::from(x), py),
+        UniInput::BUint(x) => unsigned_sub(&lhs.0, &x.0, py),
+        other => upy_sub(lhs, other, py),
+    }
+}
+fn upy_rsub_any(lhs: UniInput<'_>, rhs: &UPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    match lhs {
+        UniInput::Uint(x) => unsigned_sub(&UBig::from(x), &rhs.0, py),
+        UniInput::BUint(x) => unsigned_sub(&x.0, &rhs.0, py),
+        other => upy_rsub(other, rhs, py),
+    }
+}
+
+/// An integer operand standing on the left of a reflected operator.
+enum IntOperand {
+    U(UPy),
+    I(IPy),
+}
+
+/// Promote an integer input to the dashu integer type that the constructor-free arithmetic
+/// would use for it (`UBig` if non-negative, `IBig` otherwise); other inputs are given back.
+fn into_int_operand(x: UniInput<'_>) -> Result<IntOperand, UniInput<'_>> {
+    match x {
+        UniInput::Uint(x) => Ok(IntOperand::U(UPy(x.into()))),
+        UniInput::Int(x) => Ok(IntOperand::I(IPy(x.into()))),
+        UniInput::BUint(x) => Ok(IntOperand::U(UPy(x.0.clone()))),
+        UniInput::BInt(x) => Ok(IntOperand::I(IPy(x.0.clone()))),
+        UniInput::OBInt(x) => {
+            if x.sign() == Sign::Negative {
+                Ok(IntOperand::I(IPy(x)))
+            } else {
+                Ok(IntOperand::U(UPy(x.unsigned_abs())))
+            }
+        }
+        other => Err(other),
+    }
+}
+
+type UPyBinOp = fn(&UPy, UniInput<'_>, Python<'_>) -> PyResult<Py<PyAny>>;
+type IPyBinOp = fn(&IPy, UniInput<'_>, Python<'_>) -> PyResult<Py<PyAny>>;
+
+/// A reflected operator (`lhs op self`, where `rhs` is `self`) defined between integers only:
+/// promote the left operand and apply the forward operator, so that both orders agree.
+fn int_reflected(
+    lhs: UniInput<'_>,
+    rhs: UniInput<'_>,
+    py: Python<'_>,
+    upy_op: UPyBinOp,
+    ipy_op: IPyBinOp,
+) -> PyResult<Py<PyAny>> {
+    match into_int_operand(lhs) {
+        Ok(IntOperand::U(u)) => upy_op(&u, rhs, py),
+        Ok(IntOperand::I(i)) => ipy_op(&i, rhs, py),
+        Err(_) => Ok(py.NotImplemented()),
+    }
+}
+
+/// The reflected modulo `lhs % self` (where `rhs` is `self`), for any number on the left.
+fn int_rmod(lhs: UniInput<'_>, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    match into_int_operand(lhs) {
+        Ok(IntOperand::U(u)) => upy_mod(&u, rhs, py),
+        Ok(IntOperand::I(i)) => ipy_mod(&i, rhs, py),
+        Err(other) => match other {
+            UniInput::BDecimal(_) | UniInput::OBDecimal(_) => dpy_mod(&other.into_dpy()?, rhs, py),
+            UniInput::BRational(_) | UniInput::OBRational(_) => {
+                rpy_mod(&other.into_rpy()?, rhs, py)
+            }
+            _ => fpy_mod(&other.into_fpy()?, rhs, py),
+        },
+    }
+}
+
+/// The reflected power `pow(lhs, self, modulus)` (where `exp` is `self`).
+fn int_rpow(
+    lhs: UniInput<'_>,
+    exp: UniInput<'_>,
+    modulus: Option<UniInput<'_>>,
+    py: Python<'_>,
+) -> PyResult<Py<PyAny>> {
+    match into_int_operand(lhs) {
+        Ok(IntOperand::U(u)) => upy_pow(&u, exp, modulus, py),
+        Ok(IntOperand::I(i)) => IPy(ipy_pow(&i.0, exp, modulus)?).into_py_any(py),
+        Err(_) => Ok(py.NotImplemented()),
+    }
+}
+
+/// Division by an exact zero raises `ZeroDivisionError` (a float zero gives an infinity).
+fn check_divisor(rhs: &UniInput<'_>) -> PyResult<()> {
+    if rhs.is_exact_zero() {
+        Err(zero_division_error())
+    } else {
+        Ok(())
+    }
+}
+/// The same check for the reflected division `lhs / self`, where `self` is an integer.
+fn check_reflected_divisor(lhs: &UniInput<'_>, self_is_zero: bool) -> PyResult<()> {
+    if self_is_zero && lhs.is_exact() {
+        Err(zero_division_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// The integer divisor of a floored division or modulo, if the operand is an integer.
+fn int_divisor(rhs: &UniInput<'_>) -> Option<IBig> {
+    match rhs {
+        UniInput::Uint(x) => Some(IBig::from(*x)),
+        UniInput::Int(x) => Some(IBig::from(*x)),
+        UniInput::BUint(x) => Some(x.0.clone().into()),
+        UniInput::BInt(x) => Some(x.0.clone()),
+        UniInput::OBInt(x) => Some(x.clone()),
+        _ => None,
+    }
+}
+
+/// `a % rhs` for an integer `a`: floored modulo between integers; with any other number the
+/// integer is promoted to the type of that number first.
+fn int_mod(a: &IBig, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    if let Some(b) = int_divisor(&rhs) {
+        return IPy(ibig_div_mod_floor(a, &b)?.1).into_py_any(py);
+    }
+    match rhs {
+        UniInput::BDecimal(_) | UniInput::OBDecimal(_) => {
+            dpy_mod(&DPy(DBig::from(a.clone())), rhs, py)
+        }
+        UniInput::BRational(_) | UniInput::OBRational(_) => {
+            rpy_mod(&RPy(RBig::from(a.clone())), rhs, py)
+        }
+        _ => fpy_mod(&FPy(FBig::from(a.clone())), rhs, py),
+    }
+}
 fn upy_mod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-    use pyo3::IntoPyObjectExt;
-    let a = lhs.0.as_ibig();
-    let obj = match rhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).1).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).1).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).1).into_py_any(py)?,
-        UniInput::Float(x) => {
-            let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
-            FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
-        }
-        UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,
-        UniInput::BDecimal(x) => {
-            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
-        }
-        UniInput::OBDecimal(x) => {
-            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
-        }
-        UniInput::BRational(x) => {
-            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
-        }
-        UniInput::OBRational(x) => {
-            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
-        }
-    };
-    Ok(obj)
+    int_mod(lhs.0.as_ibig(), rhs, py)
 }
 fn ipy_mod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-    use pyo3::IntoPyObjectExt;
-    let a = &lhs.0;
-    let obj = match rhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).1).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).1).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).1).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).1).into_py_any(py)?,
-        UniInput::Float(x) => {
-            let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
-            FPy(FBig::from(lhs.0.clone()).rem(f)).into_py_any(py)?
-        }
-        UniInput::BFloat(x) => FPy(FBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?,
-        UniInput::BDecimal(x) => {
-            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
-        }
-        UniInput::OBDecimal(x) => {
-            DPy(dashu::float::DBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
-        }
-        UniInput::BRational(x) => {
-            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(&x.0)).into_py_any(py)?
-        }
-        UniInput::OBRational(x) => {
-            RPy(dashu::rational::RBig::from(lhs.0.clone()).rem(x)).into_py_any(py)?
-        }
-    };
-    Ok(obj)
+    int_mod(&lhs.0, rhs, py)
 }
 
 fn ipy_pow(base: &IBig, exp: UniInput, modulus: Option<UniInput>) -> PyResult<IBig> {
@@ -239,40 +340,55 @@ fn ipy_pow(base: &IBig, exp: UniInput, modulus: Option<UniInput>) -> PyResult<IB
 
     if let Some(m) = modulus {
         // parse the modulus, keeping both its sign and magnitude
-        let (sign, m_mag) = match m {
-            UniInput::Uint(x) => (Sign::Positive, UBig::from(x)),
-            UniInput::BUint(x) => (Sign::Positive, x.0.clone()),
-            UniInput::Int(x) => (x.sign(), UBig::from(x.unsigned_abs())),
-            UniInput::BInt(x) => (x.0.sign(), (&x.0).unsigned_abs()),
-            UniInput::OBInt(x) => x.into_parts(),
-            _ => return Err(PyTypeError::new_err(ERRMSG_MODULUS_INT_ONLY)),
-        };
+        let (sign, m_mag) = m
+            .into_ibig()
+            .map_err(|_| PyTypeError::new_err(ERRMSG_MODULUS_INT_ONLY))?
+            .into_parts();
+        if m_mag.is_zero() {
+            // as for Python's int
+            return Err(PyValueError::new_err(ERRMSG_POW_ZERO_MODULUS));
+        }
+        let exp = exp
+            .into_ubig()
+            .map_err(|_| PyTypeError::new_err(ERRMSG_POW_MOD_INT_EXP))?;
         let ring = ConstDivisor::new(m_mag.clone());
 
-        match exp {
-            UniInput::Uint(x) => {
-                let (bsign, u) = base.clone().into_parts();
-                let mut r = ring.reduce(u);
-                if bsign == Sign::Negative {
-                    r = r.neg();
-                }
-                let residue: IBig = r.pow(&x.into()).residue().into();
-                // CPython: the result carries the sign of the modulus (like `%`), so a negative
-                // modulus shifts the non-negative residue into `(modulus, 0]`.
-                let result = if sign == Sign::Negative && !residue.is_zero() {
-                    residue - IBig::from(m_mag)
-                } else {
-                    residue
-                };
-                Ok(result)
-            }
-            _ => Err(PyTypeError::new_err(ERRMSG_POW_MOD_INT_EXP)),
+        let (bsign, u) = base.clone().into_parts();
+        let mut r = ring.reduce(u);
+        if bsign == Sign::Negative {
+            r = r.neg();
         }
+        let residue: IBig = r.pow(&exp).residue().into();
+        // CPython: the result carries the sign of the modulus (like `%`), so a negative
+        // modulus shifts the non-negative residue into `(modulus, 0]`.
+        let result = if sign == Sign::Negative && !residue.is_zero() {
+            residue - IBig::from(m_mag)
+        } else {
+            residue
+        };
+        Ok(result)
     } else {
-        match exp {
-            UniInput::Uint(x) => Ok(base.pow(x as _)),
-            _ => Err(PyTypeError::new_err(ERRMSG_POW_INT_EXP)),
-        }
+        let exp = exp
+            .into_ubig()
+            .map_err(|_| PyTypeError::new_err(ERRMSG_POW_INT_EXP))?;
+        let exp =
+            usize::try_from(exp).map_err(|_| PyOverflowError::new_err(ERRMSG_POW_EXP_TOO_LARGE))?;
+        Ok(base.pow(exp))
+    }
+}
+
+/// `pow(UBig, exp, modulus)`: a `UBig`, unless a negative modulus makes the result negative.
+fn upy_pow(
+    base: &UPy,
+    exp: UniInput,
+    modulus: Option<UniInput>,
+    py: Python<'_>,
+) -> PyResult<Py<PyAny>> {
+    let n = ipy_pow(base.0.as_ibig(), exp, modulus)?;
+    if n.sign() == Sign::Negative {
+        IPy(n).into_py_any(py)
+    } else {
+        UPy(n.unsigned_abs()).into_py_any(py)
     }
 }
 
@@ -281,11 +397,11 @@ fn upy_floordiv(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyA
     use pyo3::IntoPyObjectExt;
     let a = lhs.0.as_ibig();
     let obj = match rhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).0).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).0).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).0).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x))?.0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig())?.0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x))?.0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0)?.0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x)?.0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
@@ -294,11 +410,11 @@ fn upy_rfloordiv(lhs: UniInput<'_>, rhs: &UPy, py: Python<'_>) -> PyResult<Py<Py
     use pyo3::IntoPyObjectExt;
     let b = rhs.0.as_ibig();
     let obj = match lhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b).0).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b).0).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b).0).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b)?.0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b)?.0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b)?.0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b)?.0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b)?.0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
@@ -308,23 +424,23 @@ fn upy_divmod(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny
     let a = lhs.0.as_ibig();
     let obj = match rhs {
         UniInput::Uint(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x))?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BUint(x) => {
-            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig());
+            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig())?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::Int(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x))?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BInt(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &x.0);
+            let (q, r) = ibig_div_mod_floor(a, &x.0)?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::OBInt(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &x);
+            let (q, r) = ibig_div_mod_floor(a, &x)?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
@@ -336,11 +452,11 @@ fn ipy_floordiv(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyA
     use pyo3::IntoPyObjectExt;
     let a = &lhs.0;
     let obj = match rhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig()).0).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x)).0).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0).0).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x).0).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x))?.0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(a, x.0.as_ibig())?.0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(a, &IBig::from(x))?.0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(a, &x.0)?.0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(a, &x)?.0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
@@ -349,11 +465,11 @@ fn ipy_rfloordiv(lhs: UniInput<'_>, rhs: &IPy, py: Python<'_>) -> PyResult<Py<Py
     use pyo3::IntoPyObjectExt;
     let b = &rhs.0;
     let obj = match lhs {
-        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
-        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b).0).into_py_any(py)?,
-        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b).0).into_py_any(py)?,
-        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b).0).into_py_any(py)?,
-        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b).0).into_py_any(py)?,
+        UniInput::Uint(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b)?.0).into_py_any(py)?,
+        UniInput::BUint(x) => IPy(ibig_div_mod_floor(x.0.as_ibig(), b)?.0).into_py_any(py)?,
+        UniInput::Int(x) => IPy(ibig_div_mod_floor(&IBig::from(x), b)?.0).into_py_any(py)?,
+        UniInput::BInt(x) => IPy(ibig_div_mod_floor(&x.0, b)?.0).into_py_any(py)?,
+        UniInput::OBInt(x) => IPy(ibig_div_mod_floor(&x, b)?.0).into_py_any(py)?,
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
     };
     Ok(obj)
@@ -363,23 +479,23 @@ fn ipy_divmod(lhs: &IPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny
     let a = &lhs.0;
     let obj = match rhs {
         UniInput::Uint(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x))?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BUint(x) => {
-            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig());
+            let (q, r) = ibig_div_mod_floor(a, x.0.as_ibig())?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::Int(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x));
+            let (q, r) = ibig_div_mod_floor(a, &IBig::from(x))?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::BInt(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &x.0);
+            let (q, r) = ibig_div_mod_floor(a, &x.0)?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         UniInput::OBInt(x) => {
-            let (q, r) = ibig_div_mod_floor(a, &x);
+            let (q, r) = ibig_div_mod_floor(a, &x)?;
             (IPy(q), IPy(r)).into_py_any(py)?
         }
         _ => return Err(PyTypeError::new_err(ERRMSG_FLOORDIV_INT_ONLY)),
@@ -438,10 +554,8 @@ impl UPy {
             .call_method1("__format__", (format_spec,))?
             .extract::<String>()
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_ibig(self.0.as_ibig())
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         let order = match other {
@@ -467,7 +581,8 @@ impl UPy {
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         use pyo3::IntoPyObjectExt;
         let py = index.py();
-        if let Ok(i) = index.extract::<isize>() {
+        if let Some(i) = extract_index(index) {
+            let i = i?;
             let i = parse_signed_index(i, self.0.bit_len(), true)
                 .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             self.0.bit(i).into_py_any(py)
@@ -491,7 +606,8 @@ impl UPy {
         }
     }
     fn __setitem__(&mut self, index: &Bound<'_, PyAny>, set: bool) -> PyResult<()> {
-        if let Ok(i) = index.extract::<isize>() {
+        if let Some(i) = extract_index(index) {
+            let i = i?;
             let i = parse_signed_index(i, self.0.bit_len(), true)
                 .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             if set {
@@ -509,6 +625,11 @@ impl UPy {
             let indices = range.indices(len)?;
             if indices.step != 1 {
                 return Err(PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE));
+            }
+
+            // an empty slice (`stop <= start`) selects no bits
+            if indices.stop <= indices.start {
+                return Ok(());
             }
 
             // shortcut for clearing high bits
@@ -533,13 +654,16 @@ impl UPy {
         }
     }
     fn __delitem__(&mut self, index: &Bound<'_, PyAny>) -> PyResult<()> {
+        /// Remove the bits `start..end`: the bits above `end` move down to `start`, and the
+        /// bits below `start` stay.
         fn remove_bits_in_middle(u: &mut UBig, start: usize, end: usize) {
-            let (mut left, right) = core::mem::take(u).split_bits(end);
-            left.clear_high_bits(end - start);
-            *u = (right << start) | left;
+            let (mut low, high) = core::mem::take(u).split_bits(end);
+            low.clear_high_bits(start);
+            *u = (high << start) | low;
         }
 
-        if let Ok(i) = index.extract::<isize>() {
+        if let Some(i) = extract_index(index) {
+            let i = i?;
             let i = parse_signed_index(i, self.0.bit_len(), true)
                 .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             remove_bits_in_middle(&mut self.0, i, i + 1);
@@ -553,6 +677,11 @@ impl UPy {
             let indices = range.indices(len)?;
             if indices.step != 1 {
                 return Err(PyNotImplementedError::new_err(ERRMSG_STEPSIZE_TOO_LARGE));
+            }
+
+            // an empty slice (`stop <= start`) selects no bits
+            if indices.stop <= indices.start {
+                return Ok(());
             }
 
             // shortcut for clearing high bits
@@ -576,8 +705,11 @@ impl UPy {
     fn cbrt(&self) -> Self {
         UPy(self.0.cbrt())
     }
-    fn nth_root(&self, n: usize) -> Self {
-        UPy(self.0.nth_root(n))
+    fn nth_root(&self, n: usize) -> PyResult<Self> {
+        if n == 0 {
+            return Err(PyValueError::new_err(ERRMSG_ZEROTH_ROOT));
+        }
+        Ok(UPy(self.0.nth_root(n)))
     }
     fn sqr(&self) -> Self {
         UPy(self.0.sqr())
@@ -590,10 +722,18 @@ impl UPy {
         if base <= UBig::ONE {
             return Err(PyValueError::new_err("base must be greater than 1"));
         }
+        if self.0.is_zero() {
+            return Err(PyValueError::new_err(ERRMSG_ILOG_ZERO));
+        }
         Ok(self.0.ilog(&base))
     }
     fn is_multiple_of(&self, divisor: UniInput<'_>) -> PyResult<bool> {
-        Ok(self.0.is_multiple_of(&divisor.into_ubig()?))
+        let divisor = divisor.into_ubig()?;
+        if divisor.is_zero() {
+            // zero is the only multiple of zero
+            return Ok(self.0.is_zero());
+        }
+        Ok(self.0.is_multiple_of(&divisor))
     }
     fn remove(&mut self, factor: UniInput<'_>) -> PyResult<usize> {
         self.0
@@ -601,10 +741,10 @@ impl UPy {
             .ok_or_else(|| PyValueError::new_err("the factor does not divide this number"))
     }
     fn gcd(&self, other: UniInput<'_>) -> PyResult<Self> {
-        Ok(UPy(Gcd::gcd(&self.0, &other.into_ubig()?)))
+        Ok(UPy(ubig_gcd(&self.0, &other.into_ubig()?)))
     }
     fn gcd_ext(&self, other: UniInput<'_>) -> PyResult<(Self, IPy, IPy)> {
-        let (g, s, t) = ExtendedGcd::gcd_ext(&self.0, &other.into_ubig()?);
+        let (g, s, t) = ubig_gcd_ext(&self.0, &other.into_ubig()?);
         Ok((UPy(g), IPy(s), IPy(t)))
     }
 
@@ -730,11 +870,11 @@ impl UPy {
     }
     #[inline]
     fn __sub__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        upy_sub(self, other, py)
+        upy_sub_any(self, other, py)
     }
     #[inline]
     fn __rsub__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        upy_rsub(other, self, py)
+        upy_rsub_any(other, self, py)
     }
     #[inline]
     fn __mul__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -746,10 +886,12 @@ impl UPy {
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        check_divisor(&other)?;
         upy_div(self, other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        check_reflected_divisor(&other, self.0.is_zero())?;
         upy_rdiv(other, self, py)
     }
     #[inline]
@@ -775,44 +917,53 @@ impl UPy {
         modulus: Option<UniInput>,
         py: Python<'_>,
     ) -> PyResult<Py<PyAny>> {
-        use pyo3::IntoPyObjectExt;
-        ipy_pow(self.0.as_ibig(), other, modulus)
-            .and_then(|n| {
-                n.try_into()
-                    .map_err(|_| PyValueError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED))
-            })
-            .and_then(|u: UBig| UPy(u).into_py_any(py))
+        upy_pow(self, other, modulus, py)
+    }
+    #[inline]
+    fn __rmod__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_rmod(other, UniInput::BUint(slf), py)
+    }
+    #[inline]
+    fn __rdivmod__(
+        slf: PyRef<'_, Self>,
+        other: UniInput<'_>,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BUint(slf), py, upy_divmod, ipy_divmod)
+    }
+    #[inline]
+    fn __rpow__(
+        slf: PyRef<'_, Self>,
+        other: UniInput<'_>,
+        modulus: Option<UniInput<'_>>,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        int_rpow(other, UniInput::BUint(slf), modulus, py)
     }
 
+    // The in-place operators work in place only when the operand is an unsigned integer;
+    // with any other operand they return `NotImplemented` (see `UnsignedOperand`), and Python
+    // falls back to the binary operator. There is no `__isub__`, because the type of a
+    // difference depends on its sign: `n -= m` is always `n = n - m`.
     #[inline]
-    fn __iadd__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 += &other.into_ubig()?;
-        Ok(())
+    fn __iadd__(&mut self, other: UnsignedOperand) {
+        self.0 += other.0;
     }
     #[inline]
-    fn __isub__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 -= &other.into_ubig()?;
-        Ok(())
+    fn __imul__(&mut self, other: UnsignedOperand) {
+        self.0 *= other.0;
     }
     #[inline]
-    fn __imul__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 *= &other.into_ubig()?;
-        Ok(())
+    fn __iand__(&mut self, other: UnsignedOperand) {
+        self.0 &= other.0;
     }
     #[inline]
-    fn __iand__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 &= &other.into_ubig()?;
-        Ok(())
+    fn __ior__(&mut self, other: UnsignedOperand) {
+        self.0 |= other.0;
     }
     #[inline]
-    fn __ior__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 |= &other.into_ubig()?;
-        Ok(())
-    }
-    #[inline]
-    fn __ixor__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 ^= &other.into_ubig()?;
-        Ok(())
+    fn __ixor__(&mut self, other: UnsignedOperand) {
+        self.0 ^= other.0;
     }
     #[inline]
     fn __ilshift__(&mut self, other: usize) {
@@ -859,6 +1010,18 @@ impl UPy {
     #[inline]
     fn __xor__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         upy_bitxor(self, other, py)
+    }
+    #[inline]
+    fn __rand__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BUint(slf), py, upy_bitand, ipy_bitand)
+    }
+    #[inline]
+    fn __ror__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BUint(slf), py, upy_bitor, ipy_bitor)
+    }
+    #[inline]
+    fn __rxor__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BUint(slf), py, upy_bitxor, ipy_bitxor)
     }
 }
 
@@ -912,10 +1075,8 @@ impl IPy {
             .call_method1("__format__", (format_spec,))?
             .extract::<String>()
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_ibig(&self.0)
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         let order = match other {
@@ -939,7 +1100,8 @@ impl IPy {
         self.0.bit_len()
     }
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<bool> {
-        if let Ok(i) = index.extract::<isize>() {
+        if let Some(i) = extract_index(index) {
+            let i = i?;
             let i = parse_signed_index(i, self.0.bit_len(), true)
                 .ok_or(PyIndexError::new_err(ERRMSG_UBIG_BITS_OOR))?;
             Ok(self.0.bit(i))
@@ -962,6 +1124,9 @@ impl IPy {
         IPy(self.0.nth_root(3))
     }
     fn nth_root(&self, n: usize) -> PyResult<Self> {
+        if n == 0 {
+            return Err(PyValueError::new_err(ERRMSG_ZEROTH_ROOT));
+        }
         if n % 2 == 0 && self.0.sign() == Sign::Negative {
             return Err(PyValueError::new_err("cannot compute an even root of a negative number"));
         }
@@ -977,6 +1142,9 @@ impl IPy {
         let base = base.into_ubig()?;
         if base <= UBig::ONE {
             return Err(PyValueError::new_err("base must be greater than 1"));
+        }
+        if self.0.is_zero() {
+            return Err(PyValueError::new_err(ERRMSG_ILOG_ZERO));
         }
         Ok(self.0.ilog(&base))
     }
@@ -1152,10 +1320,12 @@ impl IPy {
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        check_divisor(&other)?;
         ipy_div(self, other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        check_reflected_divisor(&other, self.0.is_zero())?;
         ipy_rdiv(other, self, py)
     }
     #[inline]
@@ -1186,34 +1356,53 @@ impl IPy {
     }
 
     #[inline]
-    fn __iadd__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 += &other.into_ibig()?;
-        Ok(())
+    fn __rmod__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_rmod(other, UniInput::BInt(slf), py)
     }
     #[inline]
-    fn __isub__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 -= &other.into_ibig()?;
-        Ok(())
+    fn __rdivmod__(
+        slf: PyRef<'_, Self>,
+        other: UniInput<'_>,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BInt(slf), py, upy_divmod, ipy_divmod)
     }
     #[inline]
-    fn __imul__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 *= &other.into_ibig()?;
-        Ok(())
+    fn __rpow__(
+        slf: PyRef<'_, Self>,
+        other: UniInput<'_>,
+        modulus: Option<UniInput<'_>>,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
+        int_rpow(other, UniInput::BInt(slf), modulus, py)
+    }
+
+    // The in-place operators work in place when the operand is an integer; with any other
+    // operand they return `NotImplemented` (see `SignedOperand`), and Python falls back to
+    // the binary operator.
+    #[inline]
+    fn __iadd__(&mut self, other: SignedOperand) {
+        self.0 += other.0;
     }
     #[inline]
-    fn __iand__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 &= &other.into_ibig()?;
-        Ok(())
+    fn __isub__(&mut self, other: SignedOperand) {
+        self.0 -= other.0;
     }
     #[inline]
-    fn __ior__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 |= &other.into_ibig()?;
-        Ok(())
+    fn __imul__(&mut self, other: SignedOperand) {
+        self.0 *= other.0;
     }
     #[inline]
-    fn __ixor__(&mut self, other: UniInput<'_>) -> PyResult<()> {
-        self.0 ^= &other.into_ibig()?;
-        Ok(())
+    fn __iand__(&mut self, other: SignedOperand) {
+        self.0 &= other.0;
+    }
+    #[inline]
+    fn __ior__(&mut self, other: SignedOperand) {
+        self.0 |= other.0;
+    }
+    #[inline]
+    fn __ixor__(&mut self, other: SignedOperand) {
+        self.0 ^= other.0;
     }
     #[inline]
     fn __ilshift__(&mut self, other: usize) {
@@ -1264,6 +1453,18 @@ impl IPy {
     #[inline]
     fn __xor__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         ipy_bitxor(self, other, py)
+    }
+    #[inline]
+    fn __rand__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BInt(slf), py, upy_bitand, ipy_bitand)
+    }
+    #[inline]
+    fn __ror__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BInt(slf), py, upy_bitor, ipy_bitor)
+    }
+    #[inline]
+    fn __rxor__(slf: PyRef<'_, Self>, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        int_reflected(other, UniInput::BInt(slf), py, upy_bitxor, ipy_bitxor)
     }
 }
 

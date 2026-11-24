@@ -9,6 +9,7 @@ mod complex;
 mod convert;
 mod float;
 mod format;
+mod hash;
 mod int;
 mod math;
 mod num_order;

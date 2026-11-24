@@ -6,6 +6,7 @@
 use crate::cache::{unwrap_float, with_cache};
 use crate::types::{FPy, UPy, UniInput};
 use dashu::base::ring::{ExtendedGcd, Gcd};
+use dashu::integer::{IBig, UBig};
 use pyo3::prelude::*;
 
 /// Transcendental taking one float operand and a cache (`(repr, Option<&mut ConstCache>)`).
@@ -123,11 +124,32 @@ pub fn hypot(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
 }
 
 // Integer number theory
+//
+// `gcd(0, 0)` is 0 here, as in Python's `math.gcd` (the generic `Gcd` trait panics on it).
 #[pyfunction]
 pub fn gcd(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
-    Ok(UPy(Gcd::gcd(&a, &b)))
+    Ok(UPy(ubig_gcd(&a, &b)))
+}
+
+/// The greatest common divisor, with `gcd(0, 0) = 0`.
+pub fn ubig_gcd(a: &UBig, b: &UBig) -> UBig {
+    if a.is_zero() && b.is_zero() {
+        UBig::ZERO
+    } else {
+        Gcd::gcd(a, b)
+    }
+}
+
+/// The extended greatest common divisor `(g, s, t)` with `a*s + b*t = g`, and `(0, 0, 0)`
+/// for two zeros.
+pub fn ubig_gcd_ext(a: &UBig, b: &UBig) -> (UBig, IBig, IBig) {
+    if a.is_zero() && b.is_zero() {
+        (UBig::ZERO, IBig::ZERO, IBig::ZERO)
+    } else {
+        ExtendedGcd::gcd_ext(a, b)
+    }
 }
 
 #[pyfunction]
@@ -137,14 +159,18 @@ pub fn gcd_ext(
 ) -> PyResult<(UPy, crate::types::IPy, crate::types::IPy)> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
-    let (g, s, t) = ExtendedGcd::gcd_ext(&a, &b);
+    let (g, s, t) = ubig_gcd_ext(&a, &b);
     Ok((UPy(g), crate::types::IPy(s), crate::types::IPy(t)))
 }
 
+/// The least common multiple, which is 0 if either argument is 0 (as in Python's `math.lcm`).
 #[pyfunction]
 pub fn lcm(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
+    if a.is_zero() || b.is_zero() {
+        return Ok(UPy(UBig::ZERO));
+    }
     let g = Gcd::gcd(&a, &b);
     Ok(UPy((a / g) * b))
 }

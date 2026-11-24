@@ -51,3 +51,18 @@ def test_integer_input_is_unaffected(restore_precision):
 def test_zero_precision_rejected(restore_precision):
     with pytest.raises(ValueError):
         dashu.set_precision(0)
+
+
+def test_auto_float_uses_default_precision(restore_precision):
+    # auto(x) for a float is FBig(x): at the default precision, also for zero and subnormal
+    # values (auto(0.0) used to have precision 0, on which transcendentals panic)
+    for x in [0.0, -0.0, 5e-324, 2.0, 1.1, float("inf")]:
+        a = dashu.auto(x)
+        assert isinstance(a, FBig)
+        assert a.precision() == FBig(x).precision() == DEFAULT, x
+        assert a == FBig(x)
+    assert dashu.auto(0.0).sin() == 0
+    assert float(dashu.auto(0.0).exp()) == 1.0
+    dashu.set_precision(100)
+    assert dashu.auto(0.0).precision() == 100
+    assert dashu.auto(1.5).precision() == 100

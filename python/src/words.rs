@@ -1,3 +1,4 @@
+use crate::convert::extract_index;
 use crate::types::PyWords;
 
 use pyo3::{
@@ -40,7 +41,8 @@ impl PyWords {
     }
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let py = index.py();
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize
@@ -93,7 +95,8 @@ impl PyWords {
         }
     }
     fn __setitem__(&mut self, index: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>) -> PyResult<()> {
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             let value: Word = value.extract()?;
 
             // parse negative index
@@ -158,7 +161,8 @@ impl PyWords {
         }
     }
     fn __delitem__(&mut self, index: &Bound<'_, PyAny>) -> PyResult<()> {
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize

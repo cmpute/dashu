@@ -99,6 +99,43 @@ def test_dbig_arithmetic():
     assert DBig("1.5") < DBig("2.5")
 
 
+def test_int_truncates():
+    # int() truncates toward zero for every type, as for float / Decimal / Fraction
+    # (int(DBig) used to round to nearest: int(DBig("2.7")) was 3)
+    for text in ["0.4", "0.5", "2.7", "-2.5", "-0.5", "-2.7", "3", "1e3", "12345678901234567890.9"]:
+        expected = int(Decimal(text))
+        d = DBig(text)
+        assert int(d) == expected == math.trunc(d), text
+    for value in [0.4, 0.5, 2.7, -2.5, -0.5, 3.0, 1e20]:
+        assert int(FBig(value)) == int(value) == math.trunc(FBig(value))
+    # to_int() still rounds with the rounding mode of the type
+    assert DBig("2.7").to_int() == 3
+
+    import pytest
+    for inf in (FBig(float("inf")), FBig(float("-inf")), DBig(1) / 0):
+        for convert in (int, math.trunc, math.floor, math.ceil, round):
+            with pytest.raises(OverflowError):
+                convert(inf)
+
+
+def test_float_modulo_by_zero():
+    # x % 0 raises ZeroDivisionError as for float (not a Rust panic)
+    import pytest
+    for x in (FBig(5.0), DBig(5)):
+        for zero in (0, 0.0, type(x)(0), UBig(0), -0.0):
+            with pytest.raises(ZeroDivisionError):
+                x % zero
+        with pytest.raises(ZeroDivisionError):
+            5 % type(x)(0)
+        with pytest.raises(ZeroDivisionError):
+            UBig(5) % type(x)(0)
+        # division by zero keeps giving an infinity
+        assert (x / 0).is_infinite()
+    assert FBig(5.0) % 3 == 2
+    with pytest.raises(ValueError):
+        FBig(float("inf")) % 2
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -50,6 +50,51 @@ def test_float_conversion():
     assert RBig.from_parts(1, 2).to_float(53) == FBig(0.5)
 
 
+def test_rounding_dunders():
+    # math.floor / math.ceil / math.trunc / round() are exact (they used to go through float,
+    # or to raise TypeError)
+    import math
+    values = [
+        Fraction(7, 2), Fraction(-7, 2), Fraction(2**60 + 1), Fraction(-(2**60) - 1),
+        Fraction(10**400), Fraction(10**400 + 1, 3), Fraction(1, 3), Fraction(-1, 3), Fraction(0),
+    ]
+    for q in values:
+        r = RBig(q)
+        assert math.floor(r) == math.floor(q) == r.floor()
+        assert math.ceil(r) == math.ceil(q) == r.ceil()
+        assert math.trunc(r) == math.trunc(q) == r.trunc() == int(r)
+        assert round(r) == r.round()
+    assert math.floor(RBig.from_parts(2**60 + 1, 1)) == 2**60 + 1
+
+    # round() is to the nearest, ties away from zero like RBig.round()
+    assert round(RBig.from_parts(7, 3)) == 2 and round(RBig.from_parts(8, 3)) == 3
+    assert round(RBig.from_parts(5, 2)) == 3 and round(RBig.from_parts(-5, 2)) == -3
+    assert isinstance(round(RBig.from_parts(7, 2)), IBig)
+    # round(x, n) is the nearest multiple of 10**-n, as a rational
+    assert round(RBig.from_parts(1, 3), 2) == Fraction(33, 100)
+    assert round(RBig.from_parts(2, 3), 2) == Fraction(67, 100)
+    assert round(RBig.from_parts(12345, 1), -2) == 12300
+    assert isinstance(round(RBig.from_parts(1, 3), 0), RBig)
+
+
+def test_zero_division():
+    # division and modulo by zero raise ZeroDivisionError as for Fraction (not a Rust panic)
+    import pytest
+    import operator
+    for zero in (0, 0.0, RBig(0), UBig(0), Fraction(0)):
+        for op in (operator.truediv, operator.mod):
+            with pytest.raises(ZeroDivisionError):
+                op(RBig(5), zero)
+    for op in (operator.truediv, operator.mod):
+        with pytest.raises(ZeroDivisionError):
+            op(5, RBig(0))
+    with pytest.raises(ZeroDivisionError):
+        RBig(0).pow(-1)
+    with pytest.raises(ZeroDivisionError):
+        RBig.from_parts(1, 0)
+    assert RBig(0).pow(2) == 0 and RBig.from_parts(1, 2).pow(-2) == 4
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

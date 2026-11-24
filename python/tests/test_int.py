@@ -55,6 +55,66 @@ def test_conversion_to_chunks():
     n = UBig("0x123456789abcdef")
     assert UBig.from_chunks(n.to_chunks(10), 10) == n
 
+def _bits(v):
+    return [(v >> k) & 1 for k in range(v.bit_length())]
+
+
+def _from_bits(bits):
+    return sum(b << k for k, b in enumerate(bits))
+
+
+def test_del_bits_matches_list_model():
+    # A UBig is a little-endian list of bits: `del n[key]` must agree with `del` on that list.
+    # (The bits below the deleted range used to be replaced by the deleted ones.)
+    cases = [
+        (12, 0), (1, 0), (13, 0), (15, 2), (0b1011, 1), (0b1011, -1), (0b110101, 3),
+        (3, slice(1, 1)), (12, slice(1, 3)), (0b110101, slice(2, 4)), (0b110101, slice(1, -1)),
+        (0b110101, slice(0, 2)), (0b110101, slice(3, None)), (0b110101, slice(None, None)),
+        # empty slices, including stop < start, delete nothing
+        (12, slice(3, 1)), (0b110101, slice(4, 2)), (0b110101, slice(-1, 1)), (5, slice(7, 9)),
+        (2**70 + 5, 0), (2**70 + 5, 64), (2**130 + 2**64 + 3, slice(1, 65)),
+    ]
+    for v, key in cases:
+        n = UBig(v)
+        del n[key]
+        expected = _bits(v)
+        del expected[key]
+        assert int(n) == _from_bits(expected), (v, key)
+
+
+def test_set_bit_slice_matches_list_model():
+    # an empty slice (also with stop < start, which used to panic) selects no bits
+    cases = [
+        (12, slice(1, 1)), (12, slice(3, 1)), (12, slice(1, 3)), (12, slice(None, 2)),
+        (12, slice(2, None)), (0b110101, slice(4, 2)), (0b110101, slice(-1, 1)),
+        (0b110101, slice(1, -1)), (2**70 + 5, slice(66, 3)), (2**70 + 5, slice(3, 66)),
+    ]
+    for v, key in cases:
+        for value in (True, False):
+            n = UBig(v)
+            n[key] = value
+            expected = _bits(v)
+            expected[key] = [int(value)] * len(expected[key])
+            assert int(n) == _from_bits(expected), (v, key, value)
+
+
+def test_bit_index_out_of_index_range():
+    # an integer index that does not fit in an index-sized integer is an IndexError (as for
+    # a list), not a TypeError claiming that the index is not an integer
+    import pytest
+    for index in (2**63, 2**64, -2**63 - 1):
+        with pytest.raises(IndexError):
+            UBig(5)[index]
+        with pytest.raises(IndexError):
+            IBig(5)[index]
+        with pytest.raises(IndexError):
+            UBig(5)[index] = True
+        with pytest.raises(IndexError):
+            del UBig(5)[index]
+    with pytest.raises(TypeError):
+        UBig(5)["a"]
+
+
 if __name__ == "__main__":
     # test_bit_ops()
     test_conversion_to_chunks()

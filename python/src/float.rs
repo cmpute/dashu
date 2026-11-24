@@ -1,13 +1,16 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 
 use dashu::base::Abs;
-use dashu::float::{DBig, FBig};
-use num_order::{NumHash, NumOrd};
+use dashu::float::{DBig, FBig, Word, round::Round};
+use dashu::integer::IBig;
+use num_order::NumOrd;
 use pyo3::{
-    Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, intern, prelude::*,
+    Bound, IntoPyObjectExt, Py, PyAny, PyResult,
+    basic::CompareOp,
+    exceptions::{PyOverflowError, PyValueError, PyZeroDivisionError},
+    intern,
+    prelude::*,
     types::PyFloat,
 };
 
@@ -35,17 +38,56 @@ macro_rules! impl_float_binops {
     };
 }
 
+/// The remainder, with Python exceptions for the operands that the `%` operator of the float
+/// panics on: a zero divisor raises `ZeroDivisionError` (as `float` does), and an infinite
+/// operand raises `ValueError`.
+fn float_rem<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyResult<FBig<R, B>> {
+    if rhs.repr().significand().is_zero() && rhs.repr().is_finite() {
+        return Err(PyZeroDivisionError::new_err("float modulo by zero"));
+    }
+    if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
+        return Err(PyValueError::new_err("arithmetic with infinity"));
+    }
+    Ok(lhs.rem(rhs))
+}
+
+/// Generate the forward and reverse modulo dispatchers (see [`float_rem`]).
+macro_rules! impl_float_mod {
+    ($ty:ident, $into:ident, $method:ident, $rev_method:ident) => {
+        pub(crate) fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            let rhs = rhs.$into()?;
+            $ty(float_rem(&lhs.0, &rhs.0)?).into_py_any(py)
+        }
+        fn $rev_method(lhs: UniInput<'_>, rhs: &$ty, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            let lhs = lhs.$into()?;
+            $ty(float_rem(&lhs.0, &rhs.0)?).into_py_any(py)
+        }
+    };
+}
+
+/// Round a float to an integral value (with `trunc`, `floor`, `ceil` or `round`) and convert
+/// it to an integer. An infinity raises `OverflowError`, as for Python's `float`.
+fn integral_to_ibig<R: Round, const B: Word>(
+    f: &FBig<R, B>,
+    round: impl FnOnce(&FBig<R, B>) -> FBig<R, B>,
+) -> PyResult<IBig> {
+    if f.repr().is_infinite() {
+        return Err(PyOverflowError::new_err("cannot convert infinity to integer"));
+    }
+    Ok(round(f).to_int().value())
+}
+
 impl_float_binops!(FPy, into_fpy, fpy_add, add);
 impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, sub);
 impl_float_binops!(FPy, into_fpy, fpy_mul, mul);
 impl_float_binops!(FPy, into_fpy, fpy_div, fpy_rdiv, div);
-impl_float_binops!(FPy, into_fpy, fpy_mod, fpy_rmod, rem);
+impl_float_mod!(FPy, into_fpy, fpy_mod, fpy_rmod);
 
 impl_float_binops!(DPy, into_dpy, dpy_add, add);
 impl_float_binops!(DPy, into_dpy, dpy_sub, dpy_rsub, sub);
 impl_float_binops!(DPy, into_dpy, dpy_mul, mul);
 impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, div);
-impl_float_binops!(DPy, into_dpy, dpy_mod, dpy_rmod, rem);
+impl_float_mod!(DPy, into_dpy, dpy_mod, dpy_rmod);
 
 /// Generate a `__richcmp__` dispatcher over every `UniInput` variant using `num_cmp`.
 /// `FPy` and `DPy` order against all numeric inputs identically, so the bodies match.
@@ -136,13 +178,11 @@ impl FPy {
         // default / 'a' / 'A' -> hexadecimal (lossless); decimal presentations convert to base 10
         match crate::format::parse(format_spec)?.ty {
             '\0' | 'a' | 'A' => crate::format::format_fbig_hex(&self.0, format_spec),
-            _ => crate::format::format_dbig(&self.0.to_decimal().value(), format_spec),
+            _ => crate::format::format_fbig_decimal(&self.0, format_spec),
         }
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_fbig(&self.0)
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         fpy_richcmp(self, other, op)
@@ -153,8 +193,11 @@ impl FPy {
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
     }
+    /// `int(x)` truncates toward zero, as for Python's own numbers (whatever the rounding
+    /// mode of the type, which `to_int()` follows).
     fn __int__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        crate::convert::convert_from_ibig(&self.0.to_int().value(), py)?.into_py_any(py)
+        let int = integral_to_ibig(&self.0, FBig::trunc)?;
+        crate::convert::convert_from_ibig(&int, py)?.into_py_any(py)
     }
 
     /********** arithmetic **********/
@@ -243,24 +286,24 @@ impl FPy {
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
-    fn __trunc__(&self) -> IPy {
-        IPy(self.0.trunc().to_int().value())
+    fn __trunc__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::trunc).map(IPy)
     }
-    fn __floor__(&self) -> IPy {
-        IPy(self.0.floor().to_int().value())
+    fn __floor__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::floor).map(IPy)
     }
-    fn __ceil__(&self) -> IPy {
-        IPy(self.0.ceil().to_int().value())
+    fn __ceil__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::ceil).map(IPy)
     }
     #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use pyo3::IntoPyObjectExt;
         match ndigits {
             // round(x) with no digits returns a Python int (CPython contract).
-            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n) rounds to n *decimal* places, which is ill-defined for a base-2 float;
             // direct the user to the decimal type instead.
-            Some(_) => Err(pyo3::exceptions::PyValueError::new_err(
+            Some(_) => Err(PyValueError::new_err(
                 "round(x, ndigits) rounds to decimal places, which is not supported for the \
                  base-2 FBig; convert to a decimal first (e.g. round(x.to_decimal(), ndigits))",
             )),
@@ -383,10 +426,8 @@ impl DPy {
     fn __format__(&self, format_spec: &str) -> PyResult<String> {
         crate::format::format_dbig(&self.0, format_spec)
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_fbig(&self.0)
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         dpy_richcmp(self, other, op)
@@ -397,8 +438,11 @@ impl DPy {
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
     }
+    /// `int(x)` truncates toward zero, as for Python's own numbers (whatever the rounding
+    /// mode of the type, which `to_int()` follows).
     fn __int__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        crate::convert::convert_from_ibig(&self.0.to_int().value(), py)?.into_py_any(py)
+        let int = integral_to_ibig(&self.0, FBig::trunc)?;
+        crate::convert::convert_from_ibig(&int, py)?.into_py_any(py)
     }
 
     /********** arithmetic **********/
@@ -487,21 +531,21 @@ impl DPy {
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
-    fn __trunc__(&self) -> IPy {
-        IPy(self.0.trunc().to_int().value())
+    fn __trunc__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::trunc).map(IPy)
     }
-    fn __floor__(&self) -> IPy {
-        IPy(self.0.floor().to_int().value())
+    fn __floor__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::floor).map(IPy)
     }
-    fn __ceil__(&self) -> IPy {
-        IPy(self.0.ceil().to_int().value())
+    fn __ceil__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::ceil).map(IPy)
     }
     #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use pyo3::IntoPyObjectExt;
         match ndigits {
             // round(x) with no digits returns a Python int (CPython contract).
-            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n): quantize to the 10^(-n) digit place (Python's Decimal.quantize).
             Some(n) => DPy(self.0.quantize(-(n as isize)).value()).into_py_any(py),
         }

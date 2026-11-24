@@ -95,6 +95,22 @@ def test_words_sign_roundtrip():
     # leading zero words in the magnitude are trimmed
     assert IBig.from_sign_words(PySign.Negative, [1, 0]) == IBig(-1)
 
+def test_index_out_of_index_range():
+    # an integer index that does not fit in an index-sized integer is an IndexError, as for
+    # a list and as for any other out-of-range index (it used to be a TypeError)
+    import pytest
+    for index in (2, -2, 2**63 - 1, 2**63, -2**63 - 1, 2**64):
+        with pytest.raises(IndexError):
+            Words([1])[index]
+        with pytest.raises(IndexError):
+            Words([1])[index] = 0
+        with pytest.raises(IndexError):
+            del Words([1])[index]
+    with pytest.raises(TypeError):
+        Words([1])["a"]
+    assert Words([1, 2])[-1] == 2
+
+
 if __name__ == "__main__":
     test_words_get()
     test_words_set()

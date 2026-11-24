@@ -6,7 +6,9 @@
 //! the Python spec's layout (sign / width / align / fill / zero-pad / grouping) and the
 //! scientific exponent are normalized to CPython conventions.
 
-use dashu::float::DBig;
+use dashu::base::Sign;
+use dashu::float::{Context, DBig, FBig, Repr};
+use dashu::integer::UBig;
 use pyo3::PyResult;
 use pyo3::exceptions::PyValueError;
 
@@ -147,11 +149,73 @@ pub fn format_dbig(d: &DBig, spec_str: &str) -> PyResult<String> {
         )));
     }
 
+    if d.repr().is_infinite() {
+        // no digits to round, group or zero-pad
+        let body = if matches!(s.ty, 'E' | 'F' | 'G') {
+            "INF"
+        } else {
+            "inf"
+        };
+        return Ok(apply_layout(d.repr().sign() == Sign::Negative, "", body, false, &s));
+    }
+
     // Produce the unsigned (no sign policy) numeric body in decimal.
     let (negative, body) = render_body(d, &s)?;
-    let signed = apply_sign(body, negative, s.sign);
-    let grouped = apply_grouping(signed, s.group);
-    Ok(apply_layout(grouped, &s))
+    Ok(apply_layout(negative, "", &body, true, &s))
+}
+
+/// Render a base-2 `FBig` in one of the decimal presentation types.
+///
+/// A binary float is always exactly representable in decimal. Wherever the spec fixes the
+/// digits to print (an explicit precision, or the fixed notations with their default of 6
+/// fraction digits), they are the digits of the exact value, correctly rounded once by the
+/// formatting. (Converting with `to_decimal()` first would round to the ~`0.3 * precision`
+/// decimal digits that the binary precision is worth, and print zeros after them.)
+///
+/// Where the spec leaves the number of digits open (`'e'` / `'g'` without a precision), the
+/// float is shown with the decimal digits that its binary precision is worth, as `to_decimal()`
+/// gives them.
+pub fn format_fbig_decimal(f: &FBig, spec_str: &str) -> PyResult<String> {
+    let s = parse(spec_str)?;
+    let exact = s.prec.is_some() || matches!(s.ty, 'f' | 'F' | '%');
+    let d = if exact || f.repr().is_infinite() || f.precision() == 0 {
+        fbig_to_decimal_exact(f)
+    } else {
+        f.to_decimal().value()
+    };
+    format_dbig(&d, spec_str)
+}
+
+/// The exact decimal expansion of a base-2 float (see [`format_fbig_decimal`]).
+fn fbig_to_decimal_exact(f: &FBig) -> DBig {
+    /// Beyond this exponent the exact expansion is impractically long; the rounded conversion
+    /// is used instead.
+    const MAX_EXACT_EXPONENT: usize = 1 << 20;
+
+    let repr = f.repr();
+    if repr.is_infinite() {
+        return match repr.sign() {
+            Sign::Positive => DBig::INFINITY,
+            Sign::Negative => DBig::NEG_INFINITY,
+        };
+    }
+    if repr.is_neg_zero() {
+        return DBig::from_repr(Repr::neg_zero(), Context::new(1));
+    }
+
+    let exponent = repr.exponent();
+    if exponent.unsigned_abs() > MAX_EXACT_EXPONENT && f.precision() != 0 {
+        return f.to_decimal().value();
+    }
+    // m * 2^e = (m << e) for e >= 0, and (m * 5^-e) * 10^e for e < 0
+    let exact = if exponent >= 0 {
+        Repr::<10>::new(repr.significand() << exponent as usize, 0)
+    } else {
+        let scale = UBig::from(5u8).pow(exponent.unsigned_abs());
+        Repr::<10>::new(repr.significand() * scale, exponent)
+    };
+    let precision = exact.digits().max(1);
+    DBig::from_repr(exact, Context::new(precision))
 }
 
 /// Render the magnitude as a decimal string (without sign), per the spec's type.
@@ -176,12 +240,13 @@ fn render_body(d: &DBig, s: &Spec) -> PyResult<(bool, String)> {
             let p = s.prec.unwrap_or(6);
             // ×100, fixed, then a trailing '%'
             let scaled = d.clone() * DBig::from(100u8);
-            let (neg, mut body) = strip_sign(&format!("{:.*}", p, &scaled));
+            let (neg, mut body) = strip_sign(&format!("{:.*}", p, scaled));
             body.push('%');
             (neg, body)
         }
-        'g' | 'G' | 'n' | '\0' => {
-            // general / default: full plain decimal (dashu Display), with optional precision
+        'g' | 'G' | 'n' => render_general(d, s),
+        '\0' => {
+            // default: full plain decimal (dashu Display), with optional precision
             // limiting significant digits via a re-round.
             if let Some(p) = s.prec {
                 let rounded = d.clone().with_precision(p.max(1)).value();
@@ -195,9 +260,49 @@ fn render_body(d: &DBig, s: &Spec) -> PyResult<(bool, String)> {
     Ok((neg, raw))
 }
 
+/// The general format (`'g'` / `'G'` / `'n'`) of Python: round to `p` significant digits, then
+/// use the scientific notation if the exponent of the rounded value is below -4 or not below
+/// `p`, and the fixed notation otherwise; insignificant trailing zeros are removed.
+///
+/// Where the spec has no precision, `p` is the precision of the value (rather than CPython's
+/// fixed 6 for `float`), so no digit is hidden by default.
+fn render_general(d: &DBig, s: &Spec) -> (bool, String) {
+    let p = match s.prec {
+        Some(p) => p.max(1),
+        None => d.precision().max(d.digits()).max(1),
+    };
+
+    // the scientific rendering gives the exponent of the value rounded to `p` digits
+    let sci = format!("{:.*e}", p - 1, d);
+    let (neg, sci) = strip_sign(&sci);
+    let (mantissa, exponent) = match sci.find(['e', 'E']) {
+        Some(i) => (&sci[..i], sci[i + 1..].parse::<isize>().unwrap_or(0)),
+        None => (sci.as_str(), 0),
+    };
+
+    let body = if exponent < -4 || exponent >= p as isize {
+        let marker = if s.ty == 'G' { 'E' } else { 'e' };
+        format!("{}{marker}{exponent:+03}", strip_trailing_zeros(mantissa))
+    } else {
+        let fraction_digits = (p as isize - 1 - exponent) as usize;
+        let (_, fixed) = strip_sign(&format!("{:.*}", fraction_digits, d));
+        strip_trailing_zeros(&fixed).to_string()
+    };
+    (neg, body)
+}
+
+/// Remove the trailing zeros of the fractional part (and the decimal point if nothing is left).
+fn strip_trailing_zeros(digits: &str) -> &str {
+    if digits.contains('.') {
+        digits.trim_end_matches('0').trim_end_matches('.')
+    } else {
+        digits
+    }
+}
+
 /// Render a base-2 `FBig` in hexadecimal (lossless: hex significand, binary exponent),
 /// used for the default/`'a'`/`'A'` presentation types so no base conversion rounding occurs.
-pub fn format_fbig_hex(f: &dashu::float::FBig, spec_str: &str) -> PyResult<String> {
+pub fn format_fbig_hex(f: &FBig, spec_str: &str) -> PyResult<String> {
     let s = parse(spec_str)?;
     let upper = s.ty == 'A';
     let body = match s.prec {
@@ -216,7 +321,15 @@ pub fn format_fbig_hex(f: &dashu::float::FBig, spec_str: &str) -> PyResult<Strin
             }
         }
     };
-    Ok(apply_layout(body, &s))
+    // split the sign and the `0x` prefix off, so that the sign option applies and the padding
+    // of the '=' alignment (and so of the zero-padding) goes between the prefix and the digits
+    let (negative, body) = strip_sign(&body);
+    let (prefix, digits) = if body.starts_with("0x") || body.starts_with("0X") {
+        body.split_at(2)
+    } else {
+        ("", body.as_str())
+    };
+    Ok(apply_layout(negative, prefix, digits, false, &s))
 }
 
 /// Split a leading '-' from a dashu-rendered string; return (is_negative, magnitude_str).
@@ -230,102 +343,86 @@ fn strip_sign(s: &str) -> (bool, String) {
     }
 }
 
-/// Reattach the sign according to the Python sign option ('+', '-', ' ').
-fn apply_sign(body: String, negative: bool, sign: char) -> String {
-    if negative {
-        format!("-{body}")
-    } else {
-        match sign {
-            '+' => format!("+{body}"),
-            ' ' => format!(" {body}"),
-            _ => body,
-        }
-    }
-}
-
-/// Insert a grouping separator every 3 digits in the integer part.
-fn apply_grouping(mut body: String, group: Option<char>) -> String {
+/// Group the digits of an integer part by 3 with the given separator, and pad it with zeros
+/// on the left up to `min_width` characters. As in CPython, the padding zeros are grouped as
+/// well, and the result never starts with a separator (it is one character wider instead).
+fn group_digits(digits: &str, group: Option<char>, min_width: usize) -> String {
     let sep = match group {
-        Some(c) => c,
-        None => return body,
+        Some(sep) => sep,
+        None => return format!("{digits:0>min_width$}"),
     };
-    // locate the integer-part digits: from start (or after a leading sign) up to '.'/'e'/'E'/'%'
-    let bytes: Vec<char> = body.chars().collect();
-    let start = if bytes
-        .first()
-        .map(|c| *c == '-' || *c == '+')
-        .unwrap_or(false)
-    {
-        1
-    } else {
-        0
-    };
-    let end = bytes
-        .iter()
-        .enumerate()
-        .skip(start)
-        .find(|(_, c)| **c == '.' || **c == 'e' || **c == 'E' || **c == '%')
-        .map(|(i, _)| i)
-        .unwrap_or(bytes.len());
-    if end <= start {
-        return body;
-    }
-    let int_digits: Vec<char> = bytes[start..end].to_vec();
-    let m = int_digits.len();
-    let mut grouped = String::new();
-    for (k, c) in int_digits.iter().enumerate() {
-        if k > 0 && (m - k) % 3 == 0 {
-            grouped.push(sep);
+
+    let mut reversed: Vec<char> = Vec::new();
+    let mut group_len = 0;
+    let mut source = digits.chars().rev();
+    loop {
+        let digit = match source.next() {
+            Some(c) => c,
+            None if reversed.len() < min_width => '0',
+            None => break,
+        };
+        if group_len == 3 {
+            reversed.push(sep);
+            group_len = 0;
         }
-        grouped.push(*c);
+        reversed.push(digit);
+        group_len += 1;
     }
-    // reassemble
-    let prefix: String = bytes[..start].iter().collect();
-    let suffix: String = bytes[end..].iter().collect();
-    body = format!("{prefix}{grouped}{suffix}");
-    body
+    reversed.into_iter().rev().collect()
 }
 
-/// Apply width / align / fill / zero-pad.
-fn apply_layout(mut body: String, s: &Spec) -> String {
-    let width = match s.width {
-        Some(w) => w,
-        None => return body,
+/// Assemble the final string: sign (per the sign option), `prefix` (such as `0x`), and the
+/// body, with the grouping (for a decimal `numeric` body, whose leading digits are the integer
+/// part) and the width / align / fill / zero-pad of the spec.
+fn apply_layout(negative: bool, prefix: &str, body: &str, numeric: bool, s: &Spec) -> String {
+    let sign = if negative {
+        "-"
+    } else {
+        match s.sign {
+            '+' => "+",
+            ' ' => " ",
+            _ => "",
+        }
     };
-    let pad = width.saturating_sub(body.chars().count());
-    if pad == 0 {
-        return body;
-    }
     let (fill, align) = if s.zero {
         ('0', s.align.unwrap_or('='))
     } else {
         (s.fill, s.align.unwrap_or('>'))
     };
-    let pad_str: String = std::iter::repeat_n(fill, pad).collect();
+    let width = s.width.unwrap_or(0);
+
+    // the integer digits take the grouping; zero-padding between the sign and the digits
+    // extends them (so that it is grouped too)
+    let int_len = if numeric {
+        body.chars().take_while(|c| c.is_ascii_digit()).count()
+    } else {
+        0
+    };
+    let (int_digits, rest) = body.split_at(int_len);
+    let min_int_width = if int_len > 0 && fill == '0' && align == '=' {
+        width.saturating_sub(sign.len() + prefix.len() + rest.chars().count())
+    } else {
+        0
+    };
+    let int_part = if int_len > 0 {
+        group_digits(int_digits, s.group, min_int_width)
+    } else {
+        String::new()
+    };
+
+    let len = sign.len() + prefix.len() + int_part.chars().count() + rest.chars().count();
+    let pad = width.saturating_sub(len);
+    let fill_str = |n: usize| std::iter::repeat_n(fill, n).collect::<String>();
     match align {
-        '<' => body.push_str(&pad_str),
-        '>' => body = format!("{pad_str}{body}"),
+        '<' => format!("{sign}{prefix}{int_part}{rest}{}", fill_str(pad)),
         '^' => {
             let half = pad / 2;
-            body = format!(
-                "{}{}{}",
-                std::iter::repeat_n(fill, half).collect::<String>(),
-                body,
-                std::iter::repeat_n(fill, pad - half).collect::<String>()
-            );
+            format!("{}{sign}{prefix}{int_part}{rest}{}", fill_str(half), fill_str(pad - half))
         }
-        '=' => {
-            // padding after the sign
-            let (sign, rest) = if body.starts_with('-') || body.starts_with('+') {
-                body.split_at(1)
-            } else {
-                ("", body.as_str())
-            };
-            body = format!("{sign}{pad_str}{rest}");
-        }
-        _ => {}
+        // padding after the sign and the prefix
+        '=' => format!("{sign}{prefix}{}{int_part}{rest}", fill_str(pad)),
+        _ => format!("{}{sign}{prefix}{int_part}{rest}", fill_str(pad)),
     }
-    body
 }
 
 /// Normalize dashu's bare scientific exponent (`1.5e0`) to CPython's form (`1.5e+00`).
