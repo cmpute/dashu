@@ -276,6 +276,9 @@ impl Inverse for Repr {
 
     #[inline]
     fn inv(self) -> Repr {
+        if self.numerator.is_zero() {
+            panic_divide_by_0()
+        }
         let (sign, num) = self.numerator.into_parts();
         Repr {
             numerator: IBig::from_parts(sign, self.denominator),
