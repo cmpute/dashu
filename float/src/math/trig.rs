@@ -287,6 +287,16 @@ fn scale_unit<const B: Word>(
     v.scale_int(&IBig::from(u), wp)?.div(&two_pi, wp)
 }
 
+/// `|x| = 1/2`, decided exactly: `2|x| = 1`. (Never true in an odd base, where `1/2` is not
+/// representable; the doubling is on the significand, so no precision is involved.)
+fn is_abs_half<const B: Word>(x: &Repr<B>) -> bool {
+    if x.is_infinite() || x.significand.is_zero() {
+        return false;
+    }
+    let twice = Repr::<B>::new(IBig::from(2) * &x.significand, x.exponent);
+    repr_cmp_same_base::<B, true>(&twice, &Repr::<B>::one(), None).is_eq()
+}
+
 /// The exact rational `num/den` rounded under the caller's mode — the exact-value rows of the
 /// ×u tables (exact whenever den's prime factors divide the base, e.g. `u/4` in base 2 or 10;
 /// correctly rounded otherwise).
@@ -961,11 +971,9 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
-        // The `±1/2` row keeps the *rounded* comparison: the derivative is bounded there
-        // (`2/√3`), so an argument a sub-ulp below `1/2` moves the result by at most an ulp — and
-        // `1/2` is not exactly representable in an odd base, so there is no exact form to compare.
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
+        // The `±1/2` row, compared *exactly* like the `±1` rows (`2|x| = 1`). In an odd base
+        // `1/2` has no finite expansion, so no argument ever lands on this row there.
+        if is_abs_half(x) {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -1025,11 +1033,8 @@ impl<R: ErrorBounds> Context<R> {
         if x.significand.is_zero() {
             return exact_ratio(self, IBig::from(u), 4);
         }
-        // The `u/6` row keeps the rounded comparison, as in `asin_unit` (bounded derivative).
-        if FBig::<R, B>::new(x.clone(), *self)
-            .abs_cmp(&(FBig::<R, B>::ONE / 2u8))
-            .is_eq()
-        {
+        // The `u/6` / `u/3` row, compared exactly as in `asin_unit`.
+        if is_abs_half(x) {
             return exact_ratio(
                 self,
                 if x.sign() == Sign::Positive {
@@ -1195,12 +1200,11 @@ impl<R: ErrorBounds> Context<R> {
         let x_abs =
             FBig::<R, B>::new(Repr::new(x.significand.clone().abs(), x.exponent), Context::new(0));
         if y_abs.abs_cmp(&x_abs).is_eq() {
-            let same_half = (y.sign() == Sign::Positive) == (x.sign() == Sign::Positive);
-            return u8th(match (y.sign() == Sign::Positive, same_half) {
-                (true, true) => 1,   // (+y, +x): π/4
-                (true, false) => 3,  // (+y, −x): 3π/4
-                (false, true) => -1, // (−y, +x): −π/4
-                (false, false) => -3,
+            return u8th(match (y.sign() == Sign::Positive, x.sign() == Sign::Positive) {
+                (true, true) => 1,    // (+y, +x): π/4
+                (true, false) => 3,   // (+y, −x): 3π/4
+                (false, true) => -1,  // (−y, +x): −π/4
+                (false, false) => -3, // (−y, −x): −3π/4
             });
         }
 

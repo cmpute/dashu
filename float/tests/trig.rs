@@ -1,5 +1,9 @@
+use core::str::FromStr;
+
 use dashu_float::ops::Abs;
-use dashu_float::{round, DBig, FBig, Repr};
+use dashu_float::round::mode::{Down, HalfAway, HalfEven};
+use dashu_float::{round, DBig, FBig, Repr, Word};
+use dashu_int::IBig;
 
 #[test]
 fn test_pi() {
@@ -139,4 +143,79 @@ fn test_atan2_infinities() {
     let res: DBig = ctx.atan2(&neg_inf, &neg_inf, None).unwrap().value();
     let diff: DBig = res + &pi_3_4;
     assert!(diff.abs() < DBig::from_parts(1.into(), -29));
+}
+
+/// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`
+/// and the quadrant of `x` (the two negative-`y` diagonals used to be swapped).
+#[test]
+fn test_atan2_unit_diagonals() {
+    let d = |s: &str| DBig::from_str(s).unwrap();
+    for (y, x, want) in [
+        ("1.000", "1.000", 45),
+        ("1.000", "-1.000", 135),
+        ("-1.000", "1.000", -45),
+        ("-1.000", "-1.000", -135),
+        ("-2.50", "2.50", -45),
+        ("-2.50", "-2.50", -135),
+    ] {
+        assert_eq!(d(y).atan2_unit(&d(x), 360), DBig::from(want), "atan2_unit({y}, {x}, 360)");
+    }
+    // the same rows in base 2, where k/8 is exact: u = 8 gives the octant index itself
+    type F = FBig<HalfEven, 2>;
+    for p in [20usize, 50, 100, 500] {
+        let f = |v: i32| F::from(v).with_precision(p).value();
+        for (y, x, want) in [(3, 3, 1), (3, -3, 3), (-3, 3, -1), (-3, -3, -3)] {
+            assert_eq!(f(y).atan2_unit(&f(x), 8), F::from(want), "p = {p}, ({y}, {x})");
+            // and the radian atan2 agrees on the sign
+            assert_eq!(f(y).atan2(&f(x)).sign(), f(want).sign());
+        }
+    }
+}
+
+/// The `±1/2` exact row of `asin_unit` / `acos_unit` is matched exactly. In an odd base `1/2`
+/// is not representable, and arguments such as 2/3 (base 3) or 2/5 (base 5) used to be
+/// mistaken for it (a rounded `1/2` constant was compared instead).
+#[test]
+fn test_asin_acos_unit_half_row_is_exact() {
+    fn check<R: round::ErrorBounds, const B: Word>(sig: i32, exp: isize) {
+        let xf = sig as f64 * (B as f64).powi(exp as i32);
+        for p in [10usize, 20, 50] {
+            let x = FBig::<R, B>::from_parts(sig.into(), exp)
+                .with_precision(p)
+                .value();
+            let a = x.asin_unit(360).to_f64().value();
+            let c = x.acos_unit(360).to_f64().value();
+            let (ea, ec) = (xf.asin().to_degrees(), xf.acos().to_degrees());
+            // 10 base-B digits carry at least 10·log2(3) > 15 bits
+            assert!((a - ea).abs() < 1e-2, "asin_unit({sig}·{B}^{exp}) = {a}, expected {ea}");
+            assert!((c - ec).abs() < 1e-2, "acos_unit({sig}·{B}^{exp}) = {c}, expected {ec}");
+        }
+    }
+    check::<HalfEven, 3>(2, -1); // 2/3
+    check::<HalfEven, 3>(-2, -1);
+    check::<HalfEven, 3>(7, -2); // 7/9
+    check::<Down, 3>(1, -1); // 1/3
+    check::<HalfEven, 5>(2, -1); // 2/5
+    check::<Down, 5>(3, -1); // 3/5
+    check::<HalfEven, 7>(3, -1);
+    check::<HalfAway, 7>(4, -1);
+
+    // the genuine 1/2 keeps resolving exactly in the even bases, whatever its spelling
+    let half = DBig::from_str("0.5000").unwrap();
+    assert_eq!(half.asin_unit(360), DBig::from(30));
+    assert_eq!(half.acos_unit(360), DBig::from(60));
+    assert_eq!((-half.clone()).asin_unit(360), DBig::from(-30));
+    assert_eq!((-half).acos_unit(360), DBig::from(120));
+    type F = FBig<HalfEven, 2>;
+    for p in [20usize, 50, 100, 500] {
+        let half = F::from_parts(1.into(), -1).with_precision(p).value();
+        assert_eq!(half.asin_unit(12), F::ONE);
+        assert_eq!(half.acos_unit(12), F::from(2));
+        // a neighbour of 1/2 is not on the row
+        let near = F::from_parts((IBig::ONE << (p - 1)) + IBig::ONE, -(p as isize))
+            .with_precision(p)
+            .value();
+        assert!(near.asin_unit(12) > F::ONE);
+        assert!(near.acos_unit(12) < F::from(2));
+    }
 }
