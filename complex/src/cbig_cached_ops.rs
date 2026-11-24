@@ -269,7 +269,8 @@ impl<R: Round, const B: Word> Inverse for &CachedCBig<R, B> {
 // Sum / Product
 //
 // The value computation delegates to CBig's impls (fold with +/*). The result keeps the first
-// element's cache handle (empty iterator → Default).
+// element's cache handle (empty iterator → the identity — `0` for a sum, `1` for a product —
+// with a fresh cache).
 // ===========================================================================
 
 impl<R: Round, const B: Word> Sum for CachedCBig<R, B> {
@@ -312,7 +313,7 @@ impl<R: Round, const B: Word> Product for CachedCBig<R, B> {
                     .product();
                 CachedCBig::from_cbig(cbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(CBig::ONE), // the empty product is the multiplicative identity
         }
     }
 }
@@ -327,7 +328,7 @@ impl<'a, R: Round, const B: Word> Product<&'a CachedCBig<R, B>> for CachedCBig<R
                     .product();
                 CachedCBig::from_cbig(cbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(CBig::ONE), // the empty product is the multiplicative identity
         }
     }
 }
