@@ -212,3 +212,70 @@ fn test_sqr() {
         assert_eq!(&(-a).sqr(), b);
     }
 }
+
+/// Operand word counts whose products go through the transform-based multiplication, including
+/// sizes where the transform coefficients straddle word boundaries (with 32-bit and 64-bit words).
+const LARGE_MUL_WORDS: [usize; 7] = [4000, 4001, 4050, 4096, 4097, 5000, 65537];
+
+#[test]
+fn test_sqr_two_pow_minus_d_large() {
+    use dashu_int::{UBig, Word};
+
+    // (2^n - d)^2 = 2^(2n) - d * 2^(n+1) + d^2
+    let ds = [
+        ubig!(1),
+        ubig!(2),
+        (ubig!(1) << 64) - ubig!(2),
+        ubig!(1) << 64,
+    ];
+    for words in LARGE_MUL_WORDS {
+        let n = words * Word::BITS as usize;
+        for d in &ds {
+            let a = (UBig::ONE << n) - d;
+            let expected = (UBig::ONE << (2 * n)) - (d << (n + 1)) + d * d;
+            assert!(a.sqr() == expected, "sqr, words = {words}, d = {d}");
+            assert!(&a * &a == expected, "mul, words = {words}, d = {d}");
+        }
+    }
+}
+
+#[test]
+fn test_mul_all_ones_large() {
+    use dashu_int::{UBig, Word};
+
+    // Pseudo-random words that are each all ones, zero or one (long carry chains).
+    fn words(len: usize) -> Vec<Word> {
+        let mut s: u64 = 1;
+        (0..len)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                if s % 2 == 0 {
+                    Word::MAX
+                } else {
+                    (s as Word) & 1
+                }
+            })
+            .collect()
+    }
+
+    // a = 2^n - 1, so a * y = (y << n) - y
+    let check = |a_words: usize, y: &UBig| {
+        let n = a_words * Word::BITS as usize;
+        let a = (UBig::ONE << n) - UBig::ONE;
+        let expected = (y << n) - y;
+        assert!(&a * y == expected, "a_words = {a_words}, y = {y:?}");
+        assert!(y * &a == expected, "a_words = {a_words}, y = {y:?}");
+    };
+    for len in LARGE_MUL_WORDS {
+        let x = UBig::from_words(&words(len));
+        check(len, &x);
+        check(len, &(&x - UBig::ONE));
+        check(len, &((UBig::ONE << (len * Word::BITS as usize)) - ubig!(2)));
+    }
+    // unbalanced operands (the transform of the short operand is reused across chunks of the
+    // long one)
+    check(2500, &UBig::from_words(&words(15000)));
+    check(4000, &UBig::from_words(&words(13000)));
+}
