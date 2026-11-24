@@ -138,3 +138,47 @@ fn test_log_near_power() {
         assert_eq!((ubig!(5).pow(exponent) + 1u8).ilog(&ubig!(25)), exponent / 2);
     }
 }
+
+#[test]
+fn test_log_of_zero() {
+    use dashu_int::UBig;
+
+    // the logarithm of zero must be rejected for every base, including
+    // the bases with dedicated shortcuts (powers of two, multi-word bases)
+    let bases = [
+        ubig!(2),
+        ubig!(3),
+        ubig!(16),
+        ubig!(1234),
+        UBig::ONE << 64,
+        UBig::ONE << 128,
+        (UBig::ONE << 128) + ubig!(1),
+        (UBig::ONE << 300) + ubig!(1),
+    ];
+    for base in bases {
+        let b = base.clone();
+        let result = std::panic::catch_unwind(move || ubig!(0).ilog(&b));
+        assert!(result.is_err(), "ubig!(0).ilog({}) returned {:?}", base, result);
+        let b = base.clone();
+        let result = std::panic::catch_unwind(move || ibig!(0).ilog(&b));
+        assert!(result.is_err(), "ibig!(0).ilog({}) returned {:?}", base, result);
+    }
+}
+
+#[test]
+#[should_panic(expected = "logarithm is not defined for 0")]
+fn test_log_of_zero_base_2() {
+    let _ = ubig!(0).ilog(&ubig!(2));
+}
+
+#[test]
+#[should_panic(expected = "logarithm is not defined for 0")]
+fn test_log_of_zero_base_16() {
+    let _ = ibig!(0).ilog(&ubig!(16));
+}
+
+#[test]
+#[should_panic(expected = "logarithm is not defined for 0")]
+fn test_log_of_zero_large_base() {
+    let _ = ubig!(0).ilog(&(dashu_int::UBig::ONE << 128));
+}
