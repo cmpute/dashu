@@ -15,6 +15,10 @@ impl Repr {
             let num = IBig::from_str_radix(&src[..slash], radix)?;
             let den = IBig::from_str_radix(&src[slash + 1..], radix)?;
             let (sign, den) = den.into_parts();
+            if den.is_zero() {
+                // a zero denominator is not a rational number
+                return Err(ParseError::InvalidSyntax);
+            }
             Ok(Repr {
                 numerator: num * sign,
                 denominator: den,
@@ -40,6 +44,10 @@ impl Repr {
 
             if num_radix != den_radix {
                 return Err(ParseError::InconsistentRadix);
+            }
+            if den.is_zero() {
+                // a zero denominator is not a rational number
+                return Err(ParseError::InvalidSyntax);
             }
             Ok((
                 Repr {
@@ -122,12 +130,28 @@ impl Repr {
             None => (main, ""),
         };
 
+        // The sign has already been consumed, so every remaining run must consist of digits
+        // and separators only. The integer parser used below would accept a leading `+`,
+        // which must neither be allowed here nor be counted as a digit.
+        for part in [Some(int_str), Some(fract_str), repetend]
+            .into_iter()
+            .flatten()
+        {
+            if part.starts_with(['+', '-']) {
+                return Err(ParseError::InvalidDigit);
+            }
+        }
+
         // count written digits (underscores are separators, not digits) for the NoDigits guard
         let int_digits = int_str.len() - int_str.matches('_').count();
         let fract_digits = fract_str.len() - fract_str.matches('_').count();
         let rep_digits = repetend.map_or(0, |s| s.len() - s.matches('_').count());
         if int_digits + fract_digits + rep_digits == 0 {
             return Err(ParseError::NoDigits);
+        }
+        if repetend.is_some() && rep_digits == 0 {
+            // a repetend holding only separators is as empty as `()`
+            return Err(ParseError::InvalidSyntax);
         }
 
         let base = UBig::from(radix);
@@ -160,6 +184,12 @@ impl Repr {
             (num, den)
         };
 
+        // A zero value stays zero whatever the exponent is; return before building the
+        // (possibly astronomically large) scale factor.
+        if num.is_zero() {
+            return Ok(Repr::zero());
+        }
+
         // apply the exponent scale
         let abs_scale = scale.unsigned_abs();
         let scale_factor = base.pow(abs_scale);
@@ -182,6 +212,8 @@ impl RBig {
     /// The numerator and the denominator are separated by `/`.
     /// `src` may contain an optional `+` prefix.
     /// Digits 10-35 are represented by `a-z` or `A-Z`.
+    ///
+    /// A zero denominator (such as `"1/0"`) is rejected with [`ParseError::InvalidSyntax`].
     ///
     /// # Examples
     /// ```
@@ -210,6 +242,8 @@ impl RBig {
     /// If the radix prefixes for the numerator and the denominator are not the same,
     /// then a ParseError will be returned. The radix prefix for the denominator can be
     /// omitted, and the radix for the numerator will used for parsing.
+    ///
+    /// A zero denominator is rejected with [`ParseError::InvalidSyntax`].
     ///
     /// # Examples
     /// ```
@@ -261,9 +295,10 @@ impl RBig {
     /// # Errors
     ///
     /// Returns [`ParseError::NoDigits`] if the input contains no digits, and
-    /// [`ParseError::InvalidDigit`] for an invalid digit or exponent. An unclosed or empty
-    /// repetend, or a repetend with no preceding radix point, returns
-    /// [`ParseError::InvalidSyntax`].
+    /// [`ParseError::InvalidDigit`] for an invalid digit or exponent (a sign is only
+    /// accepted at the very start of the literal and directly after the exponent marker).
+    /// An unclosed or empty repetend (including one that holds only `_` separators), or a
+    /// repetend with no preceding radix point, returns [`ParseError::InvalidSyntax`].
     ///
     /// # Examples
     ///

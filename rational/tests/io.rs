@@ -282,3 +282,99 @@ fn test_relaxed_from_str_radix() {
     assert_eq!(Relaxed::from_str_radix("+1/-2", 10).unwrap(), rbig!(~-1/2));
     assert_eq!(Relaxed::from_str_radix("-1/-2", 10).unwrap(), rbig!(~1/2));
 }
+
+#[test]
+fn test_from_str_zero_denominator() {
+    // A zero denominator is an error rather than an `Ok` value violating the type's
+    // invariant (RBig) or a panic (Relaxed).
+    for s in ["1/0", "0/0", "-7/0", "5/-0", "-3/-0", "1/+0", "1/00"] {
+        assert_eq!(RBig::from_str_radix(s, 10).unwrap_err(), ParseError::InvalidSyntax, "{s}");
+        assert_eq!(s.parse::<RBig>().unwrap_err(), ParseError::InvalidSyntax, "{s}");
+        assert_eq!(Relaxed::from_str_radix(s, 10).unwrap_err(), ParseError::InvalidSyntax, "{s}");
+        assert_eq!(s.parse::<Relaxed>().unwrap_err(), ParseError::InvalidSyntax, "{s}");
+        assert_eq!(RBig::from_str_radix(s, 16).unwrap_err(), ParseError::InvalidSyntax, "{s}");
+        assert_eq!(Relaxed::from_str_radix(s, 16).unwrap_err(), ParseError::InvalidSyntax, "{s}");
+    }
+    for s in ["1/0", "0x1/0x0", "0b1/0", "-0o7/-0o0", "0/0"] {
+        assert_eq!(
+            RBig::from_str_with_radix_prefix(s).unwrap_err(),
+            ParseError::InvalidSyntax,
+            "{s}"
+        );
+        assert_eq!(
+            Relaxed::from_str_with_radix_prefix(s).unwrap_err(),
+            ParseError::InvalidSyntax,
+            "{s}"
+        );
+    }
+    // a zero numerator is of course fine
+    assert_eq!("0/5".parse::<RBig>().unwrap(), rbig!(0));
+    assert_eq!("0/5".parse::<Relaxed>().unwrap(), rbig!(~0));
+}
+
+#[test]
+fn test_from_str_expanded_sign_inside_literal() {
+    // a sign is only accepted in front of the literal (and in the exponent)
+    for (s, radix) in [
+        (".+1", 10u8),
+        ("0.+1", 10),
+        ("0.(+3)", 10),
+        ("1.+1", 2),
+        ("0.-1", 10),
+        ("0.(-3)", 10),
+        ("++1", 10),
+        ("-+1", 10),
+        ("+-1", 10),
+        ("--1.5", 10),
+    ] {
+        assert_eq!(RBig::from_str_expanded(s, radix).unwrap_err(), ParseError::InvalidDigit, "{s}");
+        assert_eq!(
+            Relaxed::from_str_expanded(s, radix).unwrap_err(),
+            ParseError::InvalidDigit,
+            "{s}"
+        );
+    }
+    assert_eq!(RBig::from_str_expanded("+.1", 10).unwrap(), rbig!(1 / 10));
+    assert_eq!(RBig::from_str_expanded("-1.5e+1", 10).unwrap(), rbig!(-15));
+}
+
+#[test]
+fn test_from_str_expanded_separator_only_repetend() {
+    // a repetend that holds only separators has no digits, just like `()`
+    for (s, radix) in [
+        ("0.1()", 2u8),
+        ("0.1(_)", 2),
+        ("12.5(__)", 10),
+        ("0.(_)", 10),
+    ] {
+        assert_eq!(
+            RBig::from_str_expanded(s, radix).unwrap_err(),
+            ParseError::InvalidSyntax,
+            "{s}"
+        );
+        assert_eq!(
+            Relaxed::from_str_expanded(s, radix).unwrap_err(),
+            ParseError::InvalidSyntax,
+            "{s}"
+        );
+    }
+    assert_eq!(RBig::from_str_expanded("0.1(0)", 2).unwrap(), rbig!(1 / 2));
+    assert_eq!(RBig::from_str_expanded("0.(1_6)", 10).unwrap(), rbig!(16 / 99));
+}
+
+#[test]
+fn test_from_str_expanded_zero_with_large_exponent() {
+    // zero scaled by any power of the radix is zero; the scale factor must not be built
+    for (s, radix) in [
+        ("0e-1000", 10u8),
+        ("0e-41643224064", 10),
+        ("0@-41643224064", 6),
+        ("0e9223372036854775807", 10),
+        ("-0.000e-9223372036854775808", 10),
+        ("0.(0)@41643224064", 16),
+    ] {
+        assert_eq!(RBig::from_str_expanded(s, radix).unwrap(), rbig!(0), "{s}");
+        assert_eq!(Relaxed::from_str_expanded(s, radix).unwrap(), rbig!(~0), "{s}");
+    }
+    assert_eq!(RBig::from_str_decimal("0e-41643224064").unwrap(), rbig!(0));
+}
