@@ -192,15 +192,25 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    // Chunk only from 3b: up to a ratio of ~3.1 a single full-length
-    // convolution measures faster (the chunked path would pay the b-hat and
-    // twiddle setup twice — once here, once in the tail's own convolution),
-    // while from ~3.1 upward reusing b-hat across chunks wins and the gap
-    // widens with the ratio.
-    if a.len() >= 3 * b.len() {
+    if is_chunked(a.len(), b.len()) {
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }
     add_signed_mul_conv(c, sign, a, b, memory)
+}
+
+/// The long operand is processed in chunks from this ratio of the operand lengths.
+///
+/// Up to a ratio of ~3.1 a single full-length convolution measures faster (the chunked
+/// path would pay the b-hat and twiddle setup twice — once for the chunks, once in the
+/// tail's own convolution), while from ~3.1 upward reusing b-hat across chunks wins and
+/// the gap widens with the ratio.
+pub const CHUNKING_RATIO: usize = 3;
+
+/// Whether [`add_signed_mul`] processes the long operand (`a_len` words) in chunks,
+/// re-dispatching the tail, rather than in a single convolution.
+#[inline]
+pub fn is_chunked(a_len: usize, b_len: usize) -> bool {
+    a_len >= CHUNKING_RATIO * b_len
 }
 
 /// NTT multiplication with asymmetric chunking.

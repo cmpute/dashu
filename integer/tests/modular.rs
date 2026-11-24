@@ -440,3 +440,36 @@ fn test_format() {
         );
     }
 }
+
+#[test]
+fn test_mul_equal_operands_large() {
+    // `&a * &a` and `a *= &a` switch to the squaring kernel, whose scratch requirement
+    // differs from the multiplication one (also for even moduli).
+    use dashu_int::UBig;
+    let mut cases = vec![
+        ((UBig::ONE << 3904) + UBig::ONE, UBig::ONE << 3777),
+        (UBig::ONE << 3840, UBig::ONE << 3776),
+        (UBig::ONE << 3840, UBig::ONE << 3777),
+        ((UBig::ONE << 3840) + UBig::ONE, UBig::ONE << 3840),
+        ((UBig::ONE << 4096) - ubig!(159), (UBig::ONE << 4095) + ubig!(12345)),
+    ];
+    for words in [29usize, 30, 31, 32, 33, 48, 62, 64, 80, 96, 97, 128, 200] {
+        let m = (UBig::ONE << (64 * words - 1)) + UBig::ONE;
+        let x = &m - ubig!(2);
+        cases.push((m, x));
+    }
+    for (m, x) in cases {
+        let ring = ConstDivisor::new(m.clone());
+        let a = ring.reduce(x.clone());
+        let expected = (&x * &x) % &m;
+        assert_eq!(a.sqr().residue(), expected);
+        assert_eq!((&a * &a).residue(), expected);
+        assert_eq!((a.clone() * a.clone()).residue(), expected);
+        let mut c = a.clone();
+        c *= &a;
+        assert_eq!(c.residue(), expected);
+        // an equal value that is a different object
+        let b = ring.reduce(x.clone());
+        assert_eq!((&a * &b).residue(), expected);
+    }
+}
