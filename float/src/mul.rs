@@ -3,12 +3,12 @@ use dashu_base::Sign::{self, *};
 use dashu_int::{high, IBig, UBig};
 
 use crate::{
-    add::cancel_zero,
+    add::{cancel_zero, zero_sum},
     error::{FpError, FpResult},
     fbig::FBig,
     helper_macros,
     repr::{rounded_to_repr, Context, Repr, Word},
-    round::{Round, Rounded, Rounding},
+    round::{Round, Rounded},
     utils::{digit_len, shl_digits, short_window_words, split_digits_ref},
 };
 use core::cmp::Ordering;
@@ -100,7 +100,17 @@ fn round_high_product<R: Round, const B: Word>(
 
     let (hi, lo) = split_digits_ref::<B>(&signif, shift);
     let hi_signed = sign * hi;
-    let adjust = if !lo.is_zero() || sticky {
+    if lo.is_zero() && !sticky {
+        // Zero shortfall and zero discarded digits: the product is exactly `hi` at this
+        // split, so the result is exact — and must be reported as such, like the exact
+        // path does.
+        return Some(dashu_base::Approximation::Exact(rounded_to_repr(
+            hi_signed,
+            exponent,
+            sign == Sign::Negative,
+        )));
+    }
+    let adjust = {
         // The radix power at the split, B^shift.
         let base_pow = shl_digits::<B>(&IBig::ONE, shift);
         let twice = &lo << 1;
@@ -132,10 +142,6 @@ fn round_high_product<R: Round, const B: Word>(
         };
 
         R::round_low_part(&hi_signed, sign, || ordering)
-    } else {
-        // Zero shortfall and zero discarded digits: the value is exact at this
-        // split — the same shortcut `round_fract` takes for a zero fraction.
-        Rounding::NoOp
     };
 
     let signif = hi_signed + adjust;
@@ -439,21 +445,20 @@ impl<R: Round> Context<R> {
         // product to `precision` could land 1 ulp off the exact-product-rounded value when the true
         // product sat near a rounding boundary. The exact product is always correctly rounded; the
         // shrink only mattered for operands far larger than the target precision, which is uncommon.)
-        let repr = lhs * rhs;
-        let repr = if repr.is_infinite() {
-            return Err(FpError::Overflow(repr.sign()));
-        } else if repr.significand.is_zero()
-            && !lhs.significand.is_zero()
-            && !rhs.significand.is_zero()
-        {
-            return Err(FpError::Underflow(repr.sign()));
-        } else {
-            repr
-        };
-        // The rounded form can still leave the finite exponent range when the
-        // product's significand is much wider than the precision (the split
-        // exponent `exponent + shift` saturates); report that as overflow too.
-        self.finish_rounded(self.repr_round(repr))
+        //
+        // The exponent range is checked on the *rounded* product (`repr_round_wide`), as the
+        // short-product path above does: a product whose exact form reaches below (or
+        // above) the exponent range can still round to a representable value.
+        let significand = &lhs.significand * &rhs.significand;
+        if significand.is_zero() {
+            // a zero product carries the XOR sign of the operands
+            let zero = Repr::zero_with_sign(lhs.sign() * rhs.sign());
+            return Ok(Rounded::Exact(FBig::new(zero, *self)));
+        }
+        let exponent = lhs.exponent as i128 + rhs.exponent as i128;
+        Ok(self
+            .repr_round_wide(significand, exponent)?
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the square of the floating point number under this context.
@@ -486,17 +491,15 @@ impl<R: Round> Context<R> {
         // to 2*precision before squaring, but that pre-rounding perturbs the square and could leave
         // the result 1 ulp off the correctly-rounded value near a rounding boundary — same issue
         // as `mul`. The dedicated `sqr` kernel is still used; it just gets the full significand.)
-        let exponent = f.exponent.checked_mul(2).ok_or({
-            // sqr always produces a non-negative result
-            if f.exponent > 0 {
-                FpError::Overflow(Positive)
-            } else {
-                FpError::Underflow(Positive)
-            }
-        })?;
-        let repr = Repr::new(f.significand.sqr().into(), exponent);
-        repr.check_finite_exponent()?;
-        self.finish_rounded(self.repr_round(repr))
+        if f.significand.is_zero() {
+            // sqr(±0) = +0
+            return Ok(Rounded::Exact(FBig::new(Repr::zero(), *self)));
+        }
+        // as in `mul`, the exponent range is checked on the rounded square
+        let exponent = 2 * f.exponent as i128;
+        Ok(self
+            .repr_round_wide(f.significand.sqr().into(), exponent)?
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Calculate the cubic of the floating point number under this context.
@@ -530,27 +533,16 @@ impl<R: Round> Context<R> {
         // to 3*precision before cubing, but that pre-rounding perturbs the cube and could leave the
         // result 1 ulp off the correctly-rounded value near a rounding boundary — same issue as
         // `mul`. The dedicated `cubic` kernel is still used; it just gets the full significand.)
-        let repr = if f.significand.is_zero() {
+        if f.significand.is_zero() {
             // cubic(±0) = ±0 (odd power preserves sign)
-            if f.is_neg_zero() {
-                Repr::neg_zero()
-            } else {
-                Repr::zero()
-            }
-        } else {
-            let sign = f.sign();
-            let exponent = f.exponent.checked_mul(3).ok_or({
-                if f.exponent > 0 {
-                    FpError::Overflow(sign)
-                } else {
-                    FpError::Underflow(sign)
-                }
-            })?;
-            let repr = Repr::new(f.significand.cubic(), exponent);
-            repr.check_finite_exponent()?;
-            repr
-        };
-        self.finish_rounded(self.repr_round(repr))
+            let zero = Repr::zero_with_sign(f.sign());
+            return Ok(Rounded::Exact(FBig::new(zero, *self)));
+        }
+        // as in `mul`, the exponent range is checked on the rounded cube
+        let exponent = 3 * f.exponent as i128;
+        Ok(self
+            .repr_round_wide(f.significand.cubic(), exponent)?
+            .map(|v| FBig::new(v, *self)))
     }
 
     /// Fused multiply–add under this context: `c + sign·(a·b)`, rounded once.
@@ -595,6 +587,29 @@ impl<R: Round> Context<R> {
             return Err(FpError::InfiniteInput);
         }
 
+        if a.significand.is_zero() || b.significand.is_zero() {
+            // a·b is a zero, with the XOR sign of its factors (and of the operation).
+            let prod_negative = (a.sign() != b.sign()) ^ (sign == Negative);
+            return if c.significand.is_zero() {
+                // Zero plus zero: the IEEE 754 §6.3 sum of two signed zeros, exactly as
+                // `Context::add`/`sub` compute it.
+                let zero = zero_sum::<R, B>(c.is_neg_zero(), prod_negative);
+                Ok(Rounded::Exact(FBig::new(zero, *self)))
+            } else {
+                // The zero product adds nothing to a nonzero c.
+                self.finish_rounded(self.repr_round_ref(c))
+            };
+        }
+        if c.significand.is_zero() {
+            // c == ±0 adds nothing to a nonzero product: the result is sign·(a·b) rounded
+            // once, which is `Context::mul` (the sign is applied before the rounding — for
+            // the directed modes `round(-x) != -round(x)`).
+            return match sign {
+                Positive => self.mul(a, b),
+                Negative => self.mul(a, &b.clone().neg()),
+            };
+        }
+
         // Exact product a·b. No operand shrinking (unlike Context::mul's 2p bound):
         // a cancellation between the product and c can expose arbitrarily low
         // product digits, so the full exact product is required for a correctly-
@@ -612,26 +627,15 @@ impl<R: Round> Context<R> {
 
         // Add c to sign·(a·b) with a single rounding. The product is exact, so the
         // only rounding is in the add step — the same path as Context::add/sub.
-        let sum = if prod.significand.is_zero() {
-            // a·b == ±0: the signed zero product adds nothing to c.
-            self.repr_round_ref(c)
-        } else {
-            let signed_prod = if sign == Negative { prod.neg() } else { prod };
-            if c.significand.is_zero() {
-                // c == ±0: the result is sign·(a·b), rounded once.
-                self.repr_round(signed_prod)
-            } else {
-                match c.exponent.cmp(&signed_prod.exponent) {
-                    Ordering::Equal => self.repr_round(cancel_zero::<R, B>(
-                        &c.significand + signed_prod.significand,
-                        c.exponent,
-                    )),
-                    Ordering::Greater => {
-                        self.repr_add_large_small(c.clone(), &signed_prod, Positive)
-                    }
-                    Ordering::Less => self.repr_add_small_large(c.clone(), &signed_prod, Positive),
-                }
-            }
+        // (Both the product and c are nonzero here.)
+        let signed_prod = if sign == Negative { prod.neg() } else { prod };
+        let sum = match c.exponent.cmp(&signed_prod.exponent) {
+            Ordering::Equal => self.repr_round(cancel_zero::<R, B>(
+                &c.significand + signed_prod.significand,
+                c.exponent,
+            )),
+            Ordering::Greater => self.repr_add_large_small(c.clone(), &signed_prod, Positive),
+            Ordering::Less => self.repr_add_small_large(c.clone(), &signed_prod, Positive),
         };
         self.finish_rounded(sum)
     }

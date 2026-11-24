@@ -498,8 +498,18 @@ mod triage {
         let x = DBig::from_str("-0.3").unwrap();
         assert!(x.round().repr().is_neg_zero());
         assert!(x.quantize(0).value().repr().is_neg_zero());
-        assert!(DBig::from_str("-1").unwrap().quantize(1).value().repr().is_neg_zero());
-        assert!(DBig::from_str("0.03").unwrap().quantize(-1).value().repr().is_pos_zero());
+        assert!(DBig::from_str("-1")
+            .unwrap()
+            .quantize(1)
+            .value()
+            .repr()
+            .is_neg_zero());
+        assert!(DBig::from_str("0.03")
+            .unwrap()
+            .quantize(-1)
+            .value()
+            .repr()
+            .is_pos_zero());
         let b = FBig::<mode::Zero, 2>::from_parts(IBig::from(-1), -2); // -0.25
         assert!(b.quantize(0).value().repr().is_neg_zero());
         // a nonzero result is unaffected

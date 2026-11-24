@@ -17,25 +17,6 @@ use dashu_base::{
 };
 use dashu_int::{fast_div::ConstDivisor, high, modular::IntoRing, IBig, UBig};
 
-/// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
-/// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
-/// `sign(lhs) XOR sign(rhs)`.
-fn make_div_repr<const B: Word>(
-    sign_negative: bool,
-    significand: IBig,
-    exponent: isize,
-) -> Repr<B> {
-    if significand.is_zero() {
-        if sign_negative {
-            Repr::neg_zero()
-        } else {
-            Repr::zero()
-        }
-    } else {
-        Repr::new(significand, exponent)
-    }
-}
-
 macro_rules! impl_div_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
         impl<R: Round, const B: Word> $op<FBig<R, B>> for FBig<R, B> {
@@ -703,19 +684,19 @@ impl<R: Round> Context<R> {
         };
 
         let (mut q, mut r) = num.div_rem(&den);
-        let mut e = lhs
-            .exponent
-            .checked_add(k as isize)
-            .and_then(|e| e.checked_sub(rhs.exponent))
-            .ok_or({
-                // lhs.exponent >= 0 whenever the addition overflows, and < 0 whenever the
-                // subtraction underflows (see the digit bound on `k` above)
-                if lhs.exponent >= 0 {
-                    FpError::Overflow(sign)
-                } else {
-                    FpError::Underflow(sign)
-                }
-            })?;
+        // The quotient's exponent is tracked in a wider type and confined to the `isize`
+        // range only once the quotient is scaled and rounded (`make`, below): the unscaled
+        // `lhs.exponent − rhs.exponent` can leave the range while the result does not
+        // (`2 / (3·2^(isize::MIN+1))` is `1·2^(isize::MAX−1)` at one digit).
+        let mut e = lhs.exponent as i128 + k as i128 - rhs.exponent as i128;
+        let make = |significand: IBig, exponent: i128| -> Result<Repr<B>, FpError> {
+            if significand.is_zero() {
+                // a zero quotient carries the XOR sign of the operands
+                Ok(Repr::zero_with_sign(sign))
+            } else {
+                Repr::new_wide(significand, exponent)
+            }
+        };
 
         // From here on the digit counts must be EXACT (the `digits_ub`/`digits_lb` estimates
         // only bound a value): each padding shift below has to land the scaled operand on an
@@ -727,9 +708,7 @@ impl<R: Round> Context<R> {
         // Exact division with the quotient already within the precision: nothing to scale and
         // nothing to round (the `lo` sticky part is empty exactly when k == 0).
         if r.is_zero() && k == 0 && qdigits <= self.precision {
-            let repr = make_div_repr(sign_negative, q, e);
-            repr.check_finite_exponent()?;
-            return Ok(Approximation::Exact(repr));
+            return Ok(Approximation::Exact(make(q, e)?));
         }
 
         if q.is_zero() {
@@ -738,9 +717,7 @@ impl<R: Round> Context<R> {
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
+            e -= shift as i128;
             let (q0, r0) = r.div_rem(&den);
             q = q0;
             r = r0;
@@ -757,9 +734,7 @@ impl<R: Round> Context<R> {
             let shift = self.precision - qdigits;
             shl_digits_in_place::<B>(&mut q, shift);
             shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
+            e -= shift as i128;
 
             let (q0, r0) = r.div_rem(&den);
             q += q0;
@@ -787,7 +762,7 @@ impl<R: Round> Context<R> {
         let repr = if qdigits > self.precision {
             debug_assert_eq!(qdigits, self.precision + 1);
             let (qh, ql) = split_digits::<B>(q, 1);
-            let e2 = e.saturating_add(1);
+            let e2 = e + 1;
 
             // The fraction is (ql + num_f/den_f)/B; ql (when nonzero) and num_f both carry
             // the dividend's sign, and |num_f| < den_f, so the fraction's sign is ql's, or
@@ -803,7 +778,7 @@ impl<R: Round> Context<R> {
             let low_sign = if ql_is_zero { num_f.sign() } else { ql.sign() };
 
             if ql_is_zero && num_f.is_zero() {
-                Approximation::Exact(make_div_repr(sign_negative, qh, e2))
+                Approximation::Exact(make(qh, e2)?)
             } else {
                 let adjust = R::round_low_part(&qh, low_sign, || {
                     // ql is a single base-B digit (|ql| < B), so its arithmetic runs in Word;
@@ -830,15 +805,14 @@ impl<R: Round> Context<R> {
                         }
                     }
                 });
-                Approximation::Inexact(make_div_repr(sign_negative, qh + adjust, e2), adjust)
+                Approximation::Inexact(make(qh + adjust, e2)?, adjust)
             }
         } else if num_f.is_zero() {
-            Approximation::Exact(make_div_repr(sign_negative, q, e))
+            Approximation::Exact(make(q, e)?)
         } else {
             let adjust = R::round_ratio(&q, num_f, &den_f);
-            Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
+            Approximation::Inexact(make(q + adjust, e)?, adjust)
         };
-        repr.value_ref().check_finite_exponent()?;
         Ok(repr)
     }
 

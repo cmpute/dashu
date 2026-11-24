@@ -71,11 +71,26 @@ fn test_div_exact_and_midpoint_results() {
 #[test]
 fn test_div_exponent_overflow() {
     let aw = pattern_words(words_for_precision(2400, 2), 33);
-    // a huge exponent difference: (MAX − 5) − (−10) overflows on subtraction
-    let a = Repr::<2>::new(significand(&aw), isize::MAX - 5);
-    let b = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 45)), -10);
+    let bw = pattern_words(words_for_precision(2400, 2), 45);
     let ctx = Context::<mode::HalfEven>::new(2400);
+    // a huge exponent difference: (MAX − 5) − (−5000) overflows on subtraction, and the
+    // quotient (about 2^(MAX + 5000)) is out of range even with a 2400-bit significand
+    let a = Repr::<2>::new(significand(&aw), isize::MAX - 5);
+    let b = Repr::<2>::new(significand(&bw), -5000);
     assert_eq!(ctx.div(&a, &b), Err(FpError::Overflow(Sign::Positive)));
+
+    // (MAX − 5) − (−10) overflows on subtraction too, but the quotient does not: its
+    // 2400-bit significand brings the exponent back into range. It is the quotient of the
+    // same significands at ordinary exponents, moved up by the difference.
+    let b = Repr::<2>::new(significand(&bw), -10);
+    let offset = isize::MAX - 7000;
+    let a_low = Repr::<2>::new(significand(&aw), isize::MAX - 5 - offset);
+    let low = ctx.div(&a_low, &b).unwrap();
+    let got = ctx.div(&a, &b).unwrap();
+    assert_eq!(matches!(got, Exact(_)), matches!(low, Exact(_)));
+    let (got, low) = (got.value(), low.value());
+    assert_eq!(got.repr().significand(), low.repr().significand());
+    assert_eq!(got.repr().exponent(), low.repr().exponent() + offset);
 
     let c = Repr::<2>::new(significand(&aw), isize::MIN + 5);
     let d = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 55)), 10);
@@ -140,8 +155,21 @@ fn test_mul_exponent_overflow() {
     let ctx = Context::<mode::HalfEven>::new(50);
     assert_eq!(ctx.mul(&a, &b), Err(FpError::Overflow(Positive)));
 
+    // an exponent sum below the range with a product that is not: the 50-bit rounding of
+    // the 8192-bit significand brings the exponent back into range
     let c = Repr::<2>::new(significand(&aw), isize::MIN + 5);
     let d = Repr::<2>::new(significand(&aw), -10);
+    let offset = isize::MIN + 5;
+    let low = ctx
+        .mul(&Repr::<2>::new(significand(&aw), 0), &d)
+        .unwrap()
+        .value();
+    let got = ctx.mul(&c, &d).unwrap().value();
+    assert_eq!(got.repr().significand(), low.repr().significand());
+    assert_eq!(got.repr().exponent(), low.repr().exponent() + offset);
+
+    // a product that is out of range for good
+    let d = Repr::<2>::new(significand(&aw), -10_000);
     assert_eq!(ctx.mul(&c, &d), Err(FpError::Underflow(Positive)));
 }
 

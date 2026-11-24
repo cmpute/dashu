@@ -382,9 +382,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         if exp <= self_exp {
             // finer-or-equal quantum: self is already an exact multiple of BASE^exp,
             // so only the precision changes (set so that ulp == BASE^exp).
-            let precision = self_exp
-                .abs_diff(exp)
-                .saturating_add(self.repr.digits());
+            let precision = self_exp.abs_diff(exp).saturating_add(self.repr.digits());
             return Exact(FBig::new(self.repr.clone(), Context::new(precision)));
         }
 
@@ -410,10 +408,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         }
         let repr = Repr::new(signif, exp);
         // precision is set so that ulp == BASE^exp
-        let precision = repr
-            .exponent
-            .abs_diff(exp)
-            .saturating_add(repr.digits());
+        let precision = repr.exponent.abs_diff(exp).saturating_add(repr.digits());
         Inexact(FBig::new(repr, Context::new(precision)), adjust)
     }
 }

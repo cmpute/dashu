@@ -412,6 +412,32 @@ impl<const B: Word> Repr<B> {
         }
     }
 
+    /// Create a normalized `Repr` for `significand · B^exponent` (nonzero significand) from an
+    /// exponent that is not yet confined to the `isize` range, as the difference or sum of two
+    /// operand exponents is. The range check runs on the *normalized* exponent — trailing zero
+    /// digits of the significand are folded in first — so a value is reported out of range
+    /// only when it really is: [`FpError::Overflow`] when the exponent reaches `isize::MAX`,
+    /// [`FpError::Underflow`] when it reaches `isize::MIN` (the sentinel exponents).
+    pub(crate) fn new_wide(significand: IBig, exponent: i128) -> Result<Self, FpError> {
+        debug_assert!(!significand.is_zero());
+        let sign = significand.sign();
+        let Repr {
+            significand,
+            exponent: folded,
+        } = Self::new(significand, 0);
+        let exponent = exponent + folded as i128;
+        if exponent >= isize::MAX as i128 {
+            Err(FpError::Overflow(sign))
+        } else if exponent <= isize::MIN as i128 {
+            Err(FpError::Underflow(sign))
+        } else {
+            Ok(Repr {
+                significand,
+                exponent: exponent as isize,
+            })
+        }
+    }
+
     /// Create the `Repr` for a signed infinity from the mathematical sign of a result that
     /// overflowed.
     #[inline]
@@ -786,6 +812,36 @@ impl<R: Round> Context<R> {
             Inexact(result, adjust)
         } else {
             Exact(repr)
+        }
+    }
+
+    /// Round the exact value `significand · B^exponent` (nonzero significand, exponent not yet
+    /// confined to the `isize` range) to the desired precision, and only then check the
+    /// exponent range (see [`Repr::new_wide`]). Checking the unrounded exponent instead
+    /// misreports a wide exact value whose lowest digit lies below the range while its
+    /// *rounded* form lies inside it (`15 · 2^isize::MIN` at one digit is `2^(isize::MIN + 4)`).
+    pub(crate) fn repr_round_wide<const B: Word>(
+        &self,
+        significand: IBig,
+        exponent: i128,
+    ) -> FpResult<Repr<B>> {
+        debug_assert!(!significand.is_zero());
+        // strip trailing zero digits first, so the split below sees a genuine low part
+        let Repr {
+            significand,
+            exponent: folded,
+        } = Repr::<B>::new(significand, 0);
+        let exponent = exponent + folded as i128;
+
+        let digits = digit_len::<B>(&significand);
+        if self.is_limited() && digits > self.precision {
+            let shift = digits - self.precision;
+            let (signif_hi, signif_lo) = split_digits::<B>(significand, shift);
+            let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
+            let repr = Repr::new_wide(signif_hi + adjust, exponent + shift as i128)?;
+            Ok(Inexact(repr, adjust))
+        } else {
+            Ok(Exact(Repr::new_wide(significand, exponent)?))
         }
     }
 

@@ -90,9 +90,7 @@ impl<const B: Word> Add<&Repr<B>> for &Repr<B> {
         // Result exponent is min(lhs, rhs); shift the larger-exponent significand up (appending
         // trailing base-`B` zero-digits is lossless) and add. `IBig` add handles opposite signs.
         match self.exponent.cmp(&rhs.exponent) {
-            Ordering::Equal => {
-                exact_sum_repr(&self.significand + &rhs.significand, self.exponent)
-            }
+            Ordering::Equal => exact_sum_repr(&self.significand + &rhs.significand, self.exponent),
             Ordering::Greater => exact_sum_repr(
                 shl_digits::<B>(&self.significand, self.exponent.abs_diff(rhs.exponent))
                     + &rhs.significand,
@@ -153,9 +151,7 @@ impl<const B: Word> Sub<&Repr<B>> for &Repr<B> {
 
         // Mirror `Add`: align to the smaller exponent, then subtract significands.
         match self.exponent.cmp(&rhs.exponent) {
-            Ordering::Equal => {
-                exact_sum_repr(&self.significand - &rhs.significand, self.exponent)
-            }
+            Ordering::Equal => exact_sum_repr(&self.significand - &rhs.significand, self.exponent),
             Ordering::Greater => exact_sum_repr(
                 shl_digits::<B>(&self.significand, self.exponent.abs_diff(rhs.exponent))
                     - &rhs.significand,

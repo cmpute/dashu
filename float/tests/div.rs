@@ -451,8 +451,12 @@ mod triage {
                             .div(a.repr(), b.repr())
                             .unwrap();
                         assert_eq!(via_context.value_ref().repr(), expected.value_ref());
-                        for got in [&a / &b, a.clone() / &b, &a / b.clone(), a.clone() / b.clone()]
-                        {
+                        for got in [
+                            &a / &b,
+                            a.clone() / &b,
+                            &a / b.clone(),
+                            a.clone() / b.clone(),
+                        ] {
                             assert_eq!(got.precision(), precision);
                             assert!(got.repr().digits() <= precision);
                             assert_eq!(
@@ -478,9 +482,13 @@ mod triage {
         fn check<R: Round, const B: Word>() {
             for precision in [0usize, 20, 50, 100, 500] {
                 // (dividend, divisor) pairs that divide exactly, at assorted exponent gaps
-                for (a, a_exp, b, b_exp) in
-                    [(6, 0, 3, 0), (25, -1, 5, -1), (3, 4, 3, 0), (3, 4, 1, 2), (12, -2, 3, -3)]
-                {
+                for (a, a_exp, b, b_exp) in [
+                    (6, 0, 3, 0),
+                    (25, -1, 5, -1),
+                    (3, 4, 3, 0),
+                    (3, 4, 1, 2),
+                    (12, -2, 3, -3),
+                ] {
                     for (a_sign, b_sign) in [(1, 1), (1, -1), (-1, 1), (-1, -1)] {
                         let x = fbig::<R, B>(a_sign * a, a_exp, precision);
                         let y = fbig::<R, B>(b_sign * b, b_exp, precision);
@@ -497,8 +505,12 @@ mod triage {
                     }
                 }
                 let three = fbig::<R, B>(3, 0, precision);
-                assert!((-fbig::<R, B>(0, 0, precision) % &three).repr().is_neg_zero());
-                assert!((fbig::<R, B>(0, 0, precision) % &three).repr().is_pos_zero());
+                assert!((-fbig::<R, B>(0, 0, precision) % &three)
+                    .repr()
+                    .is_neg_zero());
+                assert!((fbig::<R, B>(0, 0, precision) % &three)
+                    .repr()
+                    .is_pos_zero());
             }
         }
         check::<mode::Zero, 2>();
@@ -715,5 +727,93 @@ mod triage {
             check_rem_against_integers::<mode::HalfEven, 2>(5, (a, a_exp), (b, b_exp), precision);
             check_rem_against_integers::<mode::HalfEven, 3>(5, (a, a_exp), (b, b_exp), precision);
         }
+    }
+}
+
+mod triage_range {
+    use dashu_base::{Approximation::*, Sign};
+    use dashu_float::{
+        round::{mode, Round, Rounding},
+        Context, FBig, FpError, Repr, Word,
+    };
+
+    fn repr<const B: Word>(sig: i128, exp: isize) -> Repr<B> {
+        Repr::new(sig.into(), exp)
+    }
+
+    /// The exponent range of a quotient is judged on the scaled and rounded result, not on
+    /// the difference of the operand exponents: `2 / (3·2^(isize::MIN+1))` is about
+    /// `0.67·2^isize::MAX`, i.e. `1·2^(isize::MAX−1)` at one bit, but used to be reported as an
+    /// overflow because `1 − (isize::MIN + 1)` does not fit an `isize`.
+    #[test]
+    fn test_div_exponent_range_is_checked_after_rounding() {
+        fn check<R: Round, const B: Word>() {
+            let (min, max) = (isize::MIN, isize::MAX);
+            for precision in [1usize, 20, 50, 100, 500] {
+                let ctx = Context::<R>::new(precision);
+                for (a_sig, b_sig) in [(2i128, 3i128), (1, 3), (-7, 3), (1, 1), (12, -4), (1, 1023)]
+                {
+                    // the quotient at ordinary exponents is the reference
+                    let reference = ctx.div(&repr::<B>(a_sig, 0), &repr::<B>(b_sig, 0)).unwrap();
+                    let (ref_exact, reference) = (matches!(reference, Exact(_)), reference.value());
+                    let ref_exp = reference.repr().exponent() as i128;
+                    let sign = reference.sign();
+                    // (the significands are normalized: a trailing zero digit moves into the
+                    // exponent, which the reference shares)
+                    for (a_exp, b_exp) in [
+                        (1isize, min + 1),
+                        (0, min + 1),
+                        (0, min + 2),
+                        (max - 1, -1),
+                        (max - 1, -(precision as isize) - 20),
+                        (min + 1, 1),
+                        (min + 1, 0),
+                        (min + precision as isize + 20, 2),
+                        (min / 2, max / 2),
+                        (max / 2, min / 2),
+                    ] {
+                        let (a, b) = (repr::<B>(a_sig, a_exp), repr::<B>(b_sig, b_exp));
+                        let a_fold = a.exponent() as i128 - a_exp as i128;
+                        let b_fold = b.exponent() as i128 - b_exp as i128;
+                        let ref_fold = repr::<B>(a_sig, 0).exponent() as i128
+                            - repr::<B>(b_sig, 0).exponent() as i128;
+                        let exponent = ref_exp - ref_fold + (a_exp as i128 + a_fold)
+                            - (b_exp as i128 + b_fold);
+                        let got = ctx.div(&a, &b);
+                        if exponent >= max as i128 {
+                            assert_eq!(got, Err(FpError::Overflow(sign)), "{a:?} / {b:?}");
+                        } else if exponent <= min as i128 {
+                            assert_eq!(got, Err(FpError::Underflow(sign)), "{a:?} / {b:?}");
+                        } else {
+                            let got = got.unwrap();
+                            assert_eq!(matches!(got, Exact(_)), ref_exact);
+                            let got = got.value();
+                            assert_eq!(got.repr().significand(), reference.repr().significand());
+                            assert_eq!(got.repr().exponent() as i128, exponent, "{a:?} / {b:?}");
+                            // the operator agrees (for operands that fit the precision)
+                            if a.digits() <= precision && b.digits() <= precision {
+                                let x = FBig::<R, B>::from_repr(a.clone(), ctx);
+                                let y = FBig::<R, B>::from_repr(b.clone(), ctx);
+                                assert_eq!(x / y, got);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 2>();
+        check::<mode::Up, 10>();
+        check::<mode::HalfAway, 10>();
+
+        // the reported case
+        let ctx = Context::<mode::HalfEven>::new(1);
+        let got = ctx.div(&repr::<2>(1, 1), &repr::<2>(3, isize::MIN + 1));
+        let expected = FBig::from_repr(repr::<2>(1, isize::MAX - 1), ctx);
+        assert_eq!(got, Ok(Inexact(expected.clone(), Rounding::NoOp)));
+        let x = FBig::<mode::HalfEven, 2>::from_repr(repr(1, 1), ctx);
+        let y = FBig::<mode::HalfEven, 2>::from_repr(repr(3, isize::MIN + 1), ctx);
+        assert_eq!(&x / &y, expected);
+        assert_eq!((&x / &y).sign(), Sign::Positive);
     }
 }

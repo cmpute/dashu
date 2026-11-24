@@ -320,10 +320,9 @@ impl<R: Round> Context<R> {
     /// opposite-infinity direction) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the
     /// all-`(B−1)` significand at the max exponent, mirroring MPFR's `mpfr_setmax` (which fills the
     /// significand with all 1-bits *at the output precision* — the significand is `p` digits, not
-    /// the value's magnitude). The largest finite is ill-defined at unlimited precision, so this
-    /// panics when `precision == 0`.
+    /// the value's magnitude). The largest finite is ill-defined at unlimited precision, so the
+    /// inward modes panic when `precision == 0` (the infinite endpoint needs no precision).
     pub(crate) fn overflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
-        assert_limited_precision(self.precision);
         let adj = if sign == Sign::Positive {
             R::round_low_part(&IBig::ONE, Sign::Positive, || Ordering::Greater)
         } else {
@@ -334,6 +333,7 @@ impl<R: Round> Context<R> {
             SubOne => Inexact(FBig::new(Repr::infinity_with_sign(Sign::Negative), *self), SubOne),
             _ => {
                 // Largest finite at this precision: (B^p − 1) × B^{isize::MAX}.
+                assert_limited_precision(self.precision);
                 let max_mag = Repr::<B>::BASE.pow(self.precision) - UBig::ONE;
                 Inexact(
                     FBig::new(Repr::new(IBig::from_parts(sign, max_mag), isize::MAX), *self),
