@@ -319,6 +319,16 @@ impl<R: ErrorBounds> Context<R> {
         if e.is_infinite() {
             return false;
         }
+        // A radius at least as large as the candidate cannot fit a preimage, which is at most an
+        // ulp wide. Deciding that on the exponents alone keeps a wildly over-wide radius (an
+        // attempt whose working precision cannot resolve the input yet, e.g. `exp` of a ball
+        // millions wide) away from the exact interval arithmetic below, which would materialize
+        // the whole exponent gap between the radius and the value.
+        let e_lower = e.exponent as i128 + e.digits_lb() as i128 - 1; // e ≥ B^e_lower
+        let y_upper = y.repr.exponent as i128 + y.repr.digits_ub() as i128; // |y| < B^y_upper
+        if e_lower >= y_upper {
+            return false;
+        }
         let gap = a - &y.repr;
         let gap = if gap.sign() == Sign::Negative {
             -gap
@@ -496,7 +506,8 @@ mod tests {
                     ln_retries <= MAX_RETRIES,
                     "ln({x}) at p={p} took {ln_retries} retries (expected <= {MAX_RETRIES})"
                 );
-                LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
+                // (reset to 0: a tiny argument is rounded directly, without entering the loop)
+                LAST_ZIV_RETRIES.with(|c| c.set(0));
                 let _ = x.exp();
                 let exp_retries = LAST_ZIV_RETRIES.with(|c| c.get());
                 assert!(
