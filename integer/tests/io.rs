@@ -529,3 +529,71 @@ fn test_string_roundtrip() {
         assert_eq!(IBig::from_str_radix(format!("{:#}", case.in_radix(36)).as_str(), 36), Ok(case));
     }
 }
+
+#[test]
+fn test_from_str_underscores_only() {
+    // an underscore is a digit separator, a string without any digit is invalid
+    for s in ["_", "___", "+_", "-_", "+", "-", ""] {
+        for radix in [2, 8, 10, 16, 36] {
+            assert_eq!(
+                IBig::from_str_radix(s, radix),
+                Err(ParseError::NoDigits),
+                "{:?} radix {}",
+                s,
+                radix
+            );
+        }
+    }
+    for s in ["_", "___", "+_", "+___"] {
+        for radix in [2, 8, 10, 16, 36] {
+            assert_eq!(UBig::from_str_radix(s, radix), Err(ParseError::NoDigits));
+        }
+    }
+    for s in ["_", "0x_", "0b__", "0o_", "0x", "+0x_"] {
+        assert_eq!(IBig::from_str_with_radix_prefix(s), Err(ParseError::NoDigits), "{:?}", s);
+        assert_eq!(UBig::from_str_with_radix_prefix(s), Err(ParseError::NoDigits), "{:?}", s);
+    }
+    assert_eq!(IBig::from_str_with_radix_prefix("-0x_"), Err(ParseError::NoDigits));
+    assert_eq!("_".parse::<UBig>(), Err(ParseError::NoDigits));
+    assert_eq!("-_".parse::<IBig>(), Err(ParseError::NoDigits));
+
+    // underscores next to digits are still accepted
+    assert_eq!(UBig::from_str_radix("_0", 10), Ok(ubig!(0)));
+    assert_eq!(UBig::from_str_radix("0_", 10), Ok(ubig!(0)));
+    assert_eq!(UBig::from_str_radix("_1_", 10), Ok(ubig!(1)));
+    assert_eq!(IBig::from_str_radix("-1_000", 10), Ok(ibig!(-1000)));
+    assert_eq!(UBig::from_str_with_radix_prefix("0x_f_f"), Ok((ubig!(255), 16)));
+}
+
+#[test]
+fn test_from_str_with_radix_default_unsupported_radix() {
+    for radix in [0u8, 1, 37, 64, 255] {
+        for s in ["0", "1", "10", "", "+1", "0x1f", "0b1"] {
+            assert_eq!(
+                UBig::from_str_with_radix_default(s, radix),
+                Err(ParseError::UnsupportedRadix),
+                "UBig {:?} radix {}",
+                s,
+                radix
+            );
+            assert_eq!(
+                IBig::from_str_with_radix_default(s, radix),
+                Err(ParseError::UnsupportedRadix),
+                "IBig {:?} radix {}",
+                s,
+                radix
+            );
+        }
+        assert_eq!(
+            IBig::from_str_with_radix_default("-1", radix),
+            Err(ParseError::UnsupportedRadix)
+        );
+    }
+    for radix in 2..=36u8 {
+        assert_eq!(UBig::from_str_with_radix_default("10", radix), Ok((UBig::from(radix), radix)));
+        assert_eq!(
+            IBig::from_str_with_radix_default("-10", radix),
+            Ok((-IBig::from(radix), radix))
+        );
+    }
+}

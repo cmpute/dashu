@@ -90,6 +90,10 @@ impl UBig {
         src: &str,
         default_radix: Digit,
     ) -> Result<(UBig, Digit), ParseError> {
+        if !is_radix_valid(default_radix) {
+            return Err(ParseError::UnsupportedRadix);
+        }
+
         if let Some(bin) = src.strip_prefix("0b") {
             UBig::from_str_radix_no_sign(bin, 2).map(|v| (v, 2))
         } else if let Some(oct) = src.strip_prefix("0o") {
@@ -104,7 +108,8 @@ impl UBig {
     /// Convert an unsigned string to [UBig].
     fn from_str_radix_no_sign(mut src: &str, radix: Digit) -> Result<UBig, ParseError> {
         debug_assert!(radix::is_radix_valid(radix));
-        if src.is_empty() {
+        // the underscores are only separators, at least one digit is required
+        if src.bytes().all(|byte| byte == b'_') {
             return Err(ParseError::NoDigits);
         }
 
