@@ -995,7 +995,8 @@ mod threshold_tests {
         // Larger sizes (through the Toom-4 and transform ranges): sampled shapes within
         // the caps, including the operands-at-most-n-words square used by the modular
         // multiplications.
-        let ntt = threshold::ntt();
+        // (there is no transform-based multiplication with 16-bit words)
+        let ntt = threshold::ntt().min(4000);
         let totals = [
             900,
             1500,
