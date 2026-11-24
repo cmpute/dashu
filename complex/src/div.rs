@@ -364,8 +364,8 @@ mod tests {
         assert!(q_neg == q_pos); // both are +∞ + i·0
     }
 
-    // `div` at unlimited precision panics via the float layer (`work_context` → `self.float()` →
-    // float `div`, which rejects unlimited: a quotient isn't exactly representable in general).
+    // `div` at unlimited precision panics via the float layer (the exact numerators are divided
+    // by float `div`, which rejects unlimited: a quotient isn't exactly representable in general).
     #[test]
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_div_unlimited_panics() {

@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(p2.re().significand(), &6.into());
     }
 
-    // At unlimited precision `mul`/`sqr` are exact (`work_context` uses `self.float()`), so this
+    // At unlimited precision `mul`/`sqr` are exact (the exact sum of products is not rounded), so this
     // must NOT panic (unlike the transcendentals). i·i = −1 exactly.
     #[test]
     fn mul_at_unlimited_is_exact() {

@@ -95,10 +95,10 @@ impl<R: Round> Context<R> {
         self.0
     }
 
-    /// The work context for an arithmetic op: a finite `p + g` guard-digit context at limited
-    /// precision, or the exact `self.float()` (precision 0) when the context is unlimited. So
-    /// `mul`/`sqr`/`norm` are exact at unlimited; `div`/`inv` still panic there via the float
-    /// layer's own check (a quotient isn't exactly representable in general).
+    /// The work context of the guard-digit division fallback: a finite `p + g` context at limited
+    /// precision, or the exact `self.float()` (precision 0) when the context is unlimited —
+    /// where `div`/`inv` panic via the float layer's own check (a quotient isn't exactly
+    /// representable in general).
     #[inline]
     pub(crate) fn work_context(&self, g: usize) -> FloatCtxt<R> {
         if self.precision() != 0 {
