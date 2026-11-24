@@ -173,9 +173,13 @@ macro_rules! impl_num_ord_ubig_with_float {
 
                 // step4: decode the float and compare the bits
                 let (man, exp) = other.decode().unwrap();
-                let other_bits = man.bit_len() as isize + exp as isize;
-                if other_bits < 0 {
-                    return Some(Ordering::Greater);
+                let other_bits = man.bit_len() as isize + exp as isize; // i.e. floor(log2(x)) + 1
+                if other_bits <= 0 {
+                    // the float is in the range (0, 1)
+                    return match self.is_zero() {
+                        true => Some(Ordering::Less),
+                        false => Some(Ordering::Greater)
+                    };
                 } else if self_bits > other_bits as usize {
                     return Some(Ordering::Greater);
                 } else if self_bits < other_bits as usize {
@@ -224,9 +228,9 @@ macro_rules! impl_num_ord_ibig_with_float {
                     (Sign::Negative, Sign::Negative) => Sign::Negative,
                 };
 
-                // step2: compare with infinity and 0
+                // step2: compare with infinity (which has the same sign as the integer here)
                 if other.is_infinite() {
-                    return Some(-sign * Ordering::Less);
+                    return Some(sign * Ordering::Less);
                 }
 
                 // step3: test if the integer is bigger than the max float value
@@ -237,9 +241,14 @@ macro_rules! impl_num_ord_ibig_with_float {
 
                 // step4: decode the float and compare the bits
                 let (man, exp) = other.decode().unwrap();
-                let other_bits = man.bit_len() as isize + exp as isize; // i.e. log2(x) + 1
-                if other_bits < 0 {
-                    return Some(sign * Ordering::Greater);
+                let other_bits = man.bit_len() as isize + exp as isize; // i.e. floor(log2(|x|)) + 1
+                if other_bits <= 0 {
+                    // the magnitude of the float is in the range (0, 1)
+                    return match self.is_zero() {
+                        // zero is positive, so the float is positive as well
+                        true => Some(Ordering::Less),
+                        false => Some(sign * Ordering::Greater)
+                    };
                 } else if self_bits > other_bits as usize {
                     return Some(sign * Ordering::Greater);
                 } else if self_bits < other_bits as usize {
