@@ -549,3 +549,153 @@ mod triage {
         assert_eq!(Sign::Positive, DBig::ONE.quantize(isize::MIN).value().sign());
     }
 }
+
+// An unlimited-precision value is exact, so its error bounds are zero under every mode. The
+// directed modes `Down` and `Up` used to ask for its ulp, which panics.
+#[test]
+fn test_error_bounds_unlimited_precision() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        FBig, Repr,
+    };
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        for repr in [
+            Repr::<B>::one(),
+            Repr::neg_one(),
+            Repr::zero(),
+            Repr::neg_zero(),
+            Repr::new(7.into(), 0),
+            Repr::new((-7).into(), -3),
+        ] {
+            let f = FBig::<R, B>::from_repr(repr, dashu_float::Context::new(0));
+            let (l, r, incl_l, incl_r) = R::error_bounds(&f);
+            assert!(l.repr().is_pos_zero() && r.repr().is_pos_zero());
+            assert!(incl_l && incl_r);
+        }
+    }
+    check::<mode::Zero, 2>();
+    check::<mode::Away, 2>();
+    check::<mode::Down, 2>();
+    check::<mode::Up, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::Down, 10>();
+    check::<mode::Up, 10>();
+    check::<mode::Down, 3>();
+    check::<mode::Up, 3>();
+}
+
+// The error bounds describe the values that round to a float, so rounding either end of the
+// reported interval (or anything just inside it) at the float's precision must give the float
+// back. In an odd base half an ulp has no finite expansion, and the round-to-nearest bounds
+// used to be rounded *up* to the next digit (2/3 of an ulp in base 3), reaching into the
+// neighbors' territory.
+#[test]
+fn test_error_bounds_round_back() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, FBig,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        let exact = Context::<R>::new(0);
+        for precision in [1usize, 2, 3, 20, 50, 100, 500] {
+            let context = Context::<R>::new(precision);
+            // significands with `precision` digits, at a few exponents and both signs; they
+            // include the power of the base, below which the floats are denser
+            let top = IBig::from(B).pow(precision);
+            let low = IBig::from(B).pow(precision - 1);
+            let mut sigs = vec![
+                top.clone() - 1,
+                low.clone() + 1,
+                (top.clone() + low.clone()) / 2,
+                low.clone(),
+            ];
+            if precision == 1 {
+                sigs = (1..B as i32).map(IBig::from).collect();
+            }
+            for sig in sigs {
+                for exp in [-7isize, 0, 5] {
+                    for sign in [1, -1] {
+                        let f = FBig::<R, B>::from_repr(
+                            dashu_float::Repr::new(sig.clone() * sign, exp),
+                            context,
+                        );
+                        let (l, r, incl_l, incl_r) = R::error_bounds(&f);
+                        let ulp = f.ulp();
+                        // a point 1/B^3 of an ulp inside each bound, and the bound itself if
+                        // it is included
+                        let step = dashu_float::Repr::new(IBig::ONE, ulp.repr().exponent() - 3);
+                        let lower = exact.sub(f.repr(), l.repr()).unwrap().value();
+                        let upper = exact.add(f.repr(), r.repr()).unwrap().value();
+                        let mut points = Vec::new();
+                        if !l.repr().is_pos_zero() {
+                            points.push(exact.add(lower.repr(), &step).unwrap().value());
+                        }
+                        if !r.repr().is_pos_zero() {
+                            points.push(exact.sub(upper.repr(), &step).unwrap().value());
+                        }
+                        if incl_l {
+                            points.push(lower.clone());
+                        }
+                        if incl_r {
+                            points.push(upper.clone());
+                        }
+                        for x in points {
+                            let rounded = x.clone().with_precision(precision).value();
+                            assert_eq!(rounded, f, "base {B}, precision {precision}: {x:?}");
+                        }
+                        // and the bounds are not needlessly narrow: together they span at
+                        // least 99% of an ulp (away from the powers of the base, where the
+                        // side facing zero is shorter)
+                        if sig == low {
+                            continue;
+                        }
+                        let width = exact.add(l.repr(), r.repr()).unwrap().value();
+                        let hundred = dashu_float::Repr::new(100.into(), 0);
+                        let ninety_nine = dashu_float::Repr::new(99.into(), 0);
+                        assert!(
+                            exact.mul(width.repr(), &hundred).unwrap().value()
+                                >= exact.mul(ulp.repr(), &ninety_nine).unwrap().value(),
+                            "base {B}, precision {precision}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    check::<mode::HalfAway, 3>();
+    check::<mode::HalfEven, 3>();
+    check::<mode::HalfAway, 7>();
+    check::<mode::HalfEven, 7>();
+    check::<mode::HalfAway, 35>();
+    check::<mode::HalfEven, 35>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 10>();
+    check::<mode::HalfEven, 10>();
+    check::<mode::Zero, 3>();
+    check::<mode::Away, 3>();
+    check::<mode::Down, 3>();
+    check::<mode::Up, 3>();
+    check::<mode::Down, 10>();
+    check::<mode::Up, 2>();
+
+    // the reported case: in base 3 at one digit, 44/27 = 1.6296... rounds to 2, so it must
+    // lie outside the interval reported for 1
+    let one = FBig::<mode::HalfAway, 3>::from_repr(dashu_float::Repr::one(), Context::new(1));
+    let (_, r, _, _) = mode::HalfAway::error_bounds(&one);
+    let x = FBig::<mode::HalfAway, 3>::from_parts(IBig::from(44), -3);
+    assert!(x > exact_sum(&one, &r));
+    fn exact_sum<const B: dashu_int::Word>(
+        a: &FBig<mode::HalfAway, B>,
+        b: &FBig<mode::HalfAway, B>,
+    ) -> FBig<mode::HalfAway, B> {
+        Context::<mode::HalfAway>::new(0)
+            .add(a.repr(), b.repr())
+            .unwrap()
+            .value()
+    }
+}

@@ -447,3 +447,73 @@ fn test_simplest_from_float_roundtrip() {
         }
     }
 }
+
+// An unlimited-precision float is exact, so the simplest rational that rounds to it is the
+// float itself. Under `Down` and `Up` this used to panic while asking for its ulp.
+#[test]
+fn test_from_float_unlimited_precision() {
+    use dashu_float::{round::ErrorBounds, Context, FBig, Repr};
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        let exact =
+            |n: i32, exp: isize| FBig::<R, B>::from_repr(Repr::new(n.into(), exp), Context::new(0));
+        assert_eq!(RBig::simplest_from_float(&exact(1, 0)), Some(rbig!(1)));
+        assert_eq!(RBig::simplest_from_float(&exact(-1, 0)), Some(rbig!(-1)));
+        assert_eq!(RBig::simplest_from_float(&exact(7, 0)), Some(rbig!(7)));
+        assert_eq!(RBig::simplest_from_float(&exact(0, 0)), Some(rbig!(0)));
+        let base = RBig::from(B);
+        assert_eq!(RBig::simplest_from_float(&exact(-7, 1)), Some(rbig!(-7) * &base));
+        assert_eq!(RBig::simplest_from_float(&exact(5, -2)), Some(rbig!(5) / (&base * &base)));
+    }
+    check::<Zero, 2>();
+    check::<Away, 2>();
+    check::<Down, 2>();
+    check::<Up, 2>();
+    check::<HalfEven, 2>();
+    check::<HalfAway, 2>();
+    check::<Down, 10>();
+    check::<Up, 10>();
+    check::<Down, 3>();
+    check::<Up, 3>();
+    assert_eq!(RBig::simplest_from_float(&dashu_float::FBig::<Down, 2>::ONE), Some(rbig!(1)));
+    assert_eq!(
+        RBig::simplest_from_float(&dashu_float::FBig::<Up, 10>::NEG_ONE),
+        Some(rbig!(-1))
+    );
+}
+
+// The simplest rational in the rounding interval of a float rounds back to that float. In an
+// odd base the round-to-nearest interval used to be reported a third wider than it is.
+#[test]
+fn test_from_float_rounds_back() {
+    use dashu_float::{round::ErrorBounds, Context, Repr};
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        for precision in [1usize, 2, 3, 20, 50, 100] {
+            let context = Context::<R>::new(precision);
+            for (num, den) in [(1, 3), (2, 7), (-5, 9), (22, 7), (-355, 113), (1, 1000)] {
+                let f = context
+                    .div::<B>(&Repr::new(num.into(), 0), &Repr::new(den.into(), 0))
+                    .unwrap()
+                    .value();
+                let simplest = RBig::simplest_from_float(&f).unwrap();
+                // round it back with one correctly rounded float division
+                let (n, d) = simplest.into_parts();
+                let back = context
+                    .div::<B>(&Repr::new(n, 0), &Repr::new(d.into(), 0))
+                    .unwrap()
+                    .value();
+                assert_eq!(back, f, "{num}/{den} in base {B} at precision {precision}");
+            }
+        }
+    }
+    check::<HalfAway, 3>();
+    check::<HalfEven, 3>();
+    check::<HalfAway, 7>();
+    check::<HalfEven, 2>();
+    check::<HalfAway, 10>();
+    check::<Zero, 3>();
+    check::<Down, 10>();
+    check::<Up, 3>();
+    check::<Away, 2>();
+}

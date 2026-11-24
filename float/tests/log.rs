@@ -319,3 +319,49 @@ fn test_log2_bounds_large_exponent() {
     }
     assert_eq!(DBig::ZERO.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
 }
+
+// Correct rounding in an odd base under the round-to-nearest modes. The certification of a
+// rounded result relied on a "half ulp" that was rounded up to 2/3 of an ulp in base 3, so a
+// result up to 1/6 of an ulp on the wrong side of a midpoint was accepted: ln(1296) =
+// 7.16703787... lies above the midpoint 43/6 of 7 and 22/3, yet came out as 7.
+#[test]
+fn test_ln_odd_base_nearest() {
+    use dashu_float::round::mode::{HalfAway, HalfEven};
+    use dashu_int::IBig;
+
+    let x = FBig::<HalfAway, 3>::from_parts(IBig::from(1296), 0)
+        .with_precision(3)
+        .value();
+    assert_eq!(x.ln(), FBig::<HalfAway, 3>::from_parts(IBig::from(22), -1));
+    let x = FBig::<HalfEven, 3>::from_parts(IBig::from(1296), 0)
+        .with_precision(3)
+        .value();
+    assert_eq!(x.ln(), FBig::<HalfEven, 3>::from_parts(IBig::from(22), -1));
+
+    // against the same logarithm computed with many more digits and rounded once
+    fn sweep<R: dashu_float::round::ErrorBounds, const B: Word>() {
+        for precision in [1usize, 2, 3, 5, 13, 32, 63] {
+            for n in (2..400).step_by(7).chain([1296, 59049, 1_000_003]) {
+                let x = FBig::<R, B>::from_parts(IBig::from(n), 0)
+                    .with_precision(0)
+                    .value();
+                let got = x.clone().with_precision(precision + 20).value();
+                let got = dashu_float::Context::<R>::new(precision)
+                    .ln(got.repr(), None)
+                    .unwrap()
+                    .value();
+                let reference = dashu_float::Context::<R>::new(precision + 40)
+                    .ln(x.repr(), None)
+                    .unwrap()
+                    .value()
+                    .with_precision(precision)
+                    .value();
+                assert_eq!(got, reference, "ln({n}) in base {B} at precision {precision}");
+            }
+        }
+    }
+    sweep::<HalfAway, 3>();
+    sweep::<HalfEven, 3>();
+    sweep::<HalfAway, 5>();
+    sweep::<HalfEven, 7>();
+}
