@@ -176,6 +176,58 @@ fn test_acosh_one_is_zero() {
     assert!(r.repr().is_pos_zero());
 }
 
+/// `acosh` just above 1 under a context narrower than the argument: `x − 1` is all rounding
+/// error at the first working precision, which used to trip a debug assertion in the ball
+/// square root (`1 + 5/4096` at 1 bit, `1 + 11e-43` at 11 digits).
+#[test]
+fn test_acosh_just_above_one_wide_argument() {
+    let x = Repr::<2>::new(IBig::from(4101), -12); // 1 + 5/4096, acosh ≈ 0.0494
+    let r = Context::<mode::HalfEven>::new(1)
+        .acosh(&x, None)
+        .unwrap()
+        .value();
+    assert_eq!(r.repr(), &Repr::<2>::new(IBig::ONE, -4));
+    let r = Context::<mode::HalfEven>::new(2)
+        .acosh(&x, None)
+        .unwrap()
+        .value();
+    assert_eq!(r.repr(), &Repr::<2>::new(IBig::from(3), -6));
+
+    // 1 + 11e-43: acosh(1 + δ) = √(2δ)·(1 − δ/12 + …) = √22·1e-21.5
+    let sig: IBig = "10000000000000000000000000000000000000000011"
+        .parse()
+        .unwrap();
+    let x = Repr::<10>::new(sig, -43);
+    let r11 = Context::<mode::HalfEven>::new(11)
+        .acosh(&x, None)
+        .unwrap()
+        .value();
+    let r12 = Context::<mode::HalfEven>::new(12)
+        .acosh(&x, None)
+        .unwrap()
+        .value();
+    assert_eq!(r12.repr(), &Repr::<10>::new(IBig::from(148323969742u64), -32));
+    assert_eq!(r11.repr(), &Repr::<10>::new(IBig::from(14832396974u64), -31));
+
+    // a small sweep against a precision that holds the argument exactly, rounded once more
+    for p in [20usize, 50, 100] {
+        for k in [p + 10, 2 * p + 1, 3 * p - 1] {
+            for m in [1u8, 3, 5, 7] {
+                let x = Repr::<2>::new((IBig::ONE << k) + IBig::from(m), -(k as isize));
+                let narrow = Context::<mode::HalfEven>::new(p)
+                    .acosh(&x, None)
+                    .unwrap()
+                    .value();
+                let wide = Context::<mode::HalfEven>::new(p + k + 80)
+                    .acosh(&x, None)
+                    .unwrap()
+                    .value();
+                assert_eq!(narrow, wide.with_precision(p).value(), "p={p} k={k} m={m}");
+            }
+        }
+    }
+}
+
 #[test]
 fn test_atanh_one_is_infinity() {
     let ctx = Context::<mode::HalfEven>::new(30);

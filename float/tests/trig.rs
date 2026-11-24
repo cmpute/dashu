@@ -2,8 +2,8 @@ use core::str::FromStr;
 
 use dashu_base::Approximation::Inexact;
 use dashu_float::ops::Abs;
-use dashu_float::round::Rounding::NoOp;
 use dashu_float::round::mode::{Away, Down, HalfAway, HalfEven, Up, Zero};
+use dashu_float::round::Rounding::NoOp;
 use dashu_float::{round, Context, DBig, FBig, Repr, Word};
 use dashu_int::IBig;
 
@@ -299,6 +299,43 @@ fn test_sin_next_to_multiple_of_pi_is_not_zero() {
     assert!(!r28.repr().significand().is_zero());
     // the 28-digit result is the 40-digit one rounded up once more
     assert_eq!(r28, r40.with_precision(28).value());
+}
+
+/// `acos` / `asin` of `1 − m·2^-k` held exactly, under a context much narrower than the
+/// argument: at the first working precision `1 − x²` is all rounding error, which used to trip
+/// a debug assertion in the ball square root (`x = 1 − 3·2^-77` at 26 bits).
+#[test]
+fn test_acos_asin_next_to_one_wide_argument() {
+    let x = FBig::<HalfAway>::from_parts((IBig::ONE << 77) - IBig::from(3u8), -77);
+    let ctx = Context::<HalfAway>::new(26);
+    // acos(1 − δ) = √(2δ)·(1 + δ/12 + …) with δ = 3·2^-77
+    let acos = ctx.acos(x.repr(), None).unwrap().value();
+    let want = (6.0f64).sqrt() * (2.0f64).powf(-38.5);
+    assert!((acos.to_f64().value() / want - 1.0).abs() < 1e-7, "acos = {acos:?}");
+    let asin = ctx.asin(x.repr(), None).unwrap().value();
+    assert!((asin.to_f64().value() - (core::f64::consts::FRAC_PI_2 - want)).abs() < 1e-7);
+
+    // A small sweep against the same function at a precision that holds the argument exactly
+    // (so the first attempt already takes the general path), rounded once more.
+    for p in [20usize, 26, 50, 100] {
+        for k in [p + 10, 2 * p + 1, 3 * p - 1] {
+            for m in [1u8, 3, 5, 7] {
+                let x = Repr::<2>::new((IBig::ONE << k) - IBig::from(m), -(k as isize));
+                let wide = Context::<HalfEven>::new(p + k + 80);
+                let narrow = Context::<HalfEven>::new(p);
+                let acos = narrow.acos(&x, None).unwrap().value();
+                let asin = narrow.asin(&x, None).unwrap().value();
+                let acos_wide = wide.acos(&x, None).unwrap().value();
+                let asin_wide = wide.asin(&x, None).unwrap().value();
+                assert_eq!(acos, acos_wide.with_precision(p).value(), "acos p={p} k={k} m={m}");
+                assert_eq!(asin, asin_wide.with_precision(p).value(), "asin p={p} k={k} m={m}");
+                // and the mirror image at −1
+                let neg = -x.clone();
+                let asin_neg = narrow.asin(&neg, None).unwrap().value();
+                assert_eq!(asin_neg, -asin, "asin(-x) p={p} k={k} m={m}");
+            }
+        }
+    }
 }
 
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`
