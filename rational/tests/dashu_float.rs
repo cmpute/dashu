@@ -287,3 +287,163 @@ fn test_to_float_correctly_rounded() {
         }
     }
 }
+
+#[test]
+fn test_simplest_from_float_power_of_base() {
+    use dashu_float::FBig;
+
+    // Below a power of the base the floats are denser, so the rounding interval is
+    // narrower on that side: [9.5, 15) for 10 at one digit.
+    let f = DBig::from(10).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(10)));
+    let f = DBig::from(-10).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-10)));
+    let f = DBig::from(20).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(15)));
+    // [99995000, 100050000)
+    let f = DBig::from(100_000_000).with_precision(4).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(99995000)));
+    // (0.9, 1] rounds up to 1 at one digit
+    let f = FBig::<Up, 10>::from(1).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1)));
+    // [0.1, 0.2) rounds down to 0.1 at one digit, [0.1, 0.11) at two digits
+    let f = FBig::<Down, 10>::from_parts(1.into(), -1)
+        .with_precision(1)
+        .value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1 / 6)));
+    let f = FBig::<Down, 10>::from_parts(1.into(), -1)
+        .with_precision(2)
+        .value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1 / 10)));
+    // (0.09, 0.1] is rounded away from zero to 0.1, and so is [-0.1, -0.09) to -0.1
+    let f = FBig::<Away, 10>::from_parts((-1).into(), -1)
+        .with_precision(1)
+        .value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-1 / 10)));
+    let f = FBig::<Away, 10>::from_parts((-1).into(), -1)
+        .with_precision(2)
+        .value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-1 / 10)));
+    // 1024 = 10_2 * 2^9: [896, 1280] with both ends included (even significand)
+    let f = FBig::<HalfEven, 2>::from(1024).with_precision(2).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(896)));
+    // 1536 = 11_2 * 2^9: (1280, 1792) with both ends excluded (odd significand)
+    let f = FBig::<HalfEven, 2>::from(1536).with_precision(2).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1281)));
+}
+
+#[test]
+fn test_simplest_from_float_included_endpoint() {
+    use dashu_float::FBig;
+
+    // [1, 2) is truncated to 1 at one digit, and 1 is its simplest element
+    let f = FBig::<Zero, 10>::from(1).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1)));
+    let f = FBig::<Zero, 10>::from(-1).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-1)));
+    let f = FBig::<Down, 10>::from(-2).with_precision(1).value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-2)));
+    // the binary float converted from 1.0f64 (53 bits, truncating)
+    let f = FBin::try_from(1.0f64).unwrap();
+    assert_eq!(f.precision(), 53);
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(1)));
+    let f = FBin::try_from(-0.75f32).unwrap();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(-3 / 4)));
+
+    // numbers with unlimited precision are exact, under every rounding mode
+    assert_eq!(RBig::simplest_from_float(&FBig::<Up, 2>::ONE), Some(rbig!(1)));
+    assert_eq!(RBig::simplest_from_float(&FBig::<Down, 10>::NEG_ONE), Some(rbig!(-1)));
+    let f = FBig::<HalfEven, 10>::from_parts(314159.into(), -5)
+        .with_precision(0)
+        .value();
+    assert_eq!(RBig::simplest_from_float(&f), Some(rbig!(314159 / 100000)));
+    // both zeros
+    let zero = DBig::ZERO.with_precision(5).value();
+    assert_eq!(RBig::simplest_from_float(&zero), Some(rbig!(0)));
+    assert_eq!(RBig::simplest_from_float(&-zero), Some(rbig!(0)));
+}
+
+/// Check `simplest_from_float` on the float nearest to `x`: the result rounds back to the
+/// float, and (with `exhaustive`) no simpler number does.
+fn check_simplest_from_float<R: dashu_float::round::ErrorBounds, const B: dashu_int::Word>(
+    x: &RBig,
+    precision: usize,
+    exhaustive: bool,
+) {
+    let f = x.to_float::<R, B>(precision).value();
+    let exact = RBig::try_from(f.clone()).unwrap();
+    let r = RBig::simplest_from_float(&f).unwrap();
+    let context = || {
+        format!(
+            "{exact} at {precision} digits in base {B} ({}) -> {r}",
+            core::any::type_name::<R>()
+        )
+    };
+
+    // the result is inside the rounding interval of the float
+    assert_eq!(r.to_float::<R, B>(precision).value(), f, "{}", context());
+    // the float itself is in the interval, so it can't be simpler than the result
+    assert!(!exact.is_simpler_than(&r), "{}", context());
+    assert_eq!(r > rbig!(0), exact > rbig!(0), "{}", context());
+
+    let small_denominator = r.denominator() <= &dashu_int::UBig::from(2000u16);
+    if exhaustive && small_denominator {
+        // every number that is simpler than the result is rounded to something else
+        let rounds_to_f = |n: &dashu_int::IBig, d: u32| {
+            let candidate = RBig::from_parts(n.clone(), d.into());
+            candidate.to_float::<R, B>(precision).value() == f
+        };
+        let den: u32 = r.denominator().try_into().unwrap();
+        for d in 1..den {
+            // the numbers n/d around the float
+            let n = (&exact * RBig::from(d)).floor();
+            for delta in -1..=2 {
+                let n = &n + dashu_int::IBig::from(delta);
+                assert!(!rounds_to_f(&n, d), "{}: {n}/{d} is simpler", context());
+            }
+        }
+        // same denominator: a numerator of a smaller magnitude
+        let toward_zero = if r > rbig!(0) { -1 } else { 1 };
+        let n = r.numerator() + dashu_int::IBig::from(toward_zero);
+        assert!(!rounds_to_f(&n, den), "{}: {n}/{den} is simpler", context());
+    }
+}
+
+#[test]
+fn test_simplest_from_float_roundtrip() {
+    let mut values = Vec::new();
+    for den in [1u64, 3, 7, 10, 16, 1024] {
+        for num in [1u64, 2, 3, 5, 9, 10, 16, 27, 99, 101, 128, 1000] {
+            values.push(RBig::from_parts(num.into(), den.into()));
+            values.push(RBig::from_parts((-(num as i64)).into(), den.into()));
+        }
+    }
+    for x in &values {
+        for precision in [1usize, 2, 3] {
+            check_simplest_from_float::<Zero, 2>(x, precision, true);
+            check_simplest_from_float::<Away, 2>(x, precision, true);
+            check_simplest_from_float::<Down, 2>(x, precision, true);
+            check_simplest_from_float::<Up, 2>(x, precision, true);
+            check_simplest_from_float::<HalfEven, 2>(x, precision, true);
+            check_simplest_from_float::<HalfAway, 2>(x, precision, true);
+            check_simplest_from_float::<Zero, 10>(x, precision, true);
+            check_simplest_from_float::<Away, 10>(x, precision, true);
+            check_simplest_from_float::<Down, 10>(x, precision, true);
+            check_simplest_from_float::<Up, 10>(x, precision, true);
+            check_simplest_from_float::<HalfEven, 10>(x, precision, true);
+            check_simplest_from_float::<HalfAway, 10>(x, precision, true);
+            // odd bases: the midpoints are not representable with one more digit
+            check_simplest_from_float::<HalfEven, 3>(x, precision, true);
+            check_simplest_from_float::<HalfAway, 3>(x, precision, true);
+            check_simplest_from_float::<Up, 7>(x, precision, true);
+        }
+        // the precisions matching f32 / f64 / u128 significands and beyond
+        for precision in [20usize, 50, 100, 500] {
+            check_simplest_from_float::<Zero, 2>(x, precision, false);
+            check_simplest_from_float::<Up, 2>(x, precision, false);
+            check_simplest_from_float::<HalfEven, 2>(x, precision, false);
+            check_simplest_from_float::<HalfAway, 10>(x, precision, false);
+            check_simplest_from_float::<Down, 10>(x, precision, false);
+        }
+    }
+}

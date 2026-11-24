@@ -198,6 +198,15 @@ impl RBig {
         self.0.to_float(precision)
     }
 
+    /// Find the simplest rational number in the rounding interval of the [FBig] number.
+    ///
+    /// The rounding interval is the set of the numbers that are rounded to `f` at the
+    /// precision of `f` under its rounding mode, so that converting the result back with
+    /// [RBig::to_float] gives `f` again. A number with unlimited precision is converted
+    /// exactly. This method returns [None] when the floating point value is infinite.
+    ///
+    /// See [RBig::simplest_in] for the definition of `simplicity`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -214,28 +223,79 @@ impl RBig {
     /// # Ok::<(), ParseError>(())
     /// ```
     pub fn simplest_from_float<R: ErrorBounds, const B: Word>(f: &FBig<R, B>) -> Option<Self> {
-        if f.repr().is_infinite() {
+        let repr = f.repr();
+        if repr.is_infinite() {
             return None;
-        } else if f.repr().is_pos_zero() {
+        } else if repr.significand().is_zero() {
             return Some(Self::ZERO);
         }
 
-        // calculate lower and upper bound
-        let (l, r, incl_l, incl_r) = R::error_bounds(f);
-        let lb = f - l.with_precision(f.precision() + 1).unwrap();
-        let rb = f + r.with_precision(f.precision() + 1).unwrap();
+        let exact = Self::try_from(repr.clone()).unwrap();
+        if f.precision() == 0 {
+            // nothing else is rounded to a number with unlimited precision
+            return Some(exact);
+        }
+
+        // The search is done on the magnitudes, the sign is restored at last.
+        let sign = exact.sign();
+        let magnitude = Self(exact.0.clone().abs());
+
+        // The adjacent float away from zero is one unit in the last place apart. So is the
+        // adjacent one towards zero, unless the magnitude is a power of the base: the
+        // floats below it are B times denser.
+        let digits = repr.digits();
+        let precision = f.precision().max(digits); // a guard digit might be present
+        let base = UBig::from_word(B);
+        let ulp =
+            Self::from(base.clone()).pow(repr.exponent() + digits as isize - precision as isize);
+        let is_power = repr.significand().abs_cmp(&base.pow(digits - 1)).is_eq();
+        let (outer_gap, inner_gap) = if is_power {
+            (&ulp, &ulp / Self::from(base))
+        } else {
+            (&ulp, ulp.clone())
+        };
+
+        // The rounding interval is located by rounding probes, which makes the result
+        // consistent with `to_float` under any rounding mode by construction. On each side
+        // of f the interval can reach the adjacent float (which is excluded, the rounding
+        // is directed), the midpoint to it (included or not depending on the tie-breaking
+        // rule), or nowhere (the rounding is directed the other way and f is the endpoint).
+        let rounds_to_f = |x: &Self| {
+            let x = Self(sign * x.0.clone());
+            let rounded = x.to_float::<R, B>(precision).value();
+            Self::try_from(rounded.into_repr()).unwrap() == exact
+        };
+        let endpoint = |gap: &Self, outwards: bool| {
+            let at = |quarters: u8| {
+                let offset = gap * Self::from_parts(quarters.into(), 4u8.into());
+                if outwards {
+                    &magnitude + offset
+                } else {
+                    &magnitude - offset
+                }
+            };
+            if rounds_to_f(&at(3)) {
+                (at(4), false)
+            } else if rounds_to_f(&at(1)) {
+                let midpoint = at(2);
+                let inclusive = rounds_to_f(&midpoint);
+                (midpoint, inclusive)
+            } else {
+                (magnitude.clone(), true)
+            }
+        };
+        let (inner, incl_inner) = endpoint(&inner_gap, false);
+        let (outer, incl_outer) = endpoint(outer_gap, true);
 
         // select the simplest in this range
-        let left = Self::try_from(lb).unwrap();
-        let right = Self::try_from(rb).unwrap();
-        let mut simplest = Self::simplest_in(left.clone(), right.clone());
-        if incl_l && left.is_simpler_than(&simplest) {
-            simplest = left;
+        let mut simplest = Self::simplest_in(inner.clone(), outer.clone());
+        if incl_inner && inner.is_simpler_than(&simplest) {
+            simplest = inner;
         }
-        if incl_r && right.is_simpler_than(&simplest) {
-            simplest = right;
+        if incl_outer && outer.is_simpler_than(&simplest) {
+            simplest = outer;
         }
-        Some(simplest)
+        Some(Self(sign * simplest.0))
     }
 }
 
