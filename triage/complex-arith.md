@@ -310,3 +310,8 @@ Fix: the empty product is `CachedCBig::from(CBig::ONE)`.
   commit.
 - E191 depends on `FBig::from(IBig)` semantics (float-convert); if that changes, the pinned test
   and the doc comment need the same change.
+- **Fuzz differentials (MPC via `rug`, run in release with `--ignored`)**: `fuzz/tests/cmplx_random.rs`
+  (`cbig_mul_div_sqr_fuzz`) passes; `fuzz/tests/cmplx_transcendental.rs` passes 21 of 22.
+  `cbig_tan_fuzz` fails under `mode::Down` (e.g. `tan[down] zre=5.0575 zim=61.408 prec=50`, the
+  imaginary part saturating just below 1) — it fails the same way on the unmodified base commit,
+  so it is a pre-existing complex-trans issue, not caused by these changes.
