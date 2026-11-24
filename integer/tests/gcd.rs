@@ -221,3 +221,84 @@ fn test_gcd_random_bounded() {
         }
     }
 }
+
+/// Check `gcd_ext` in both operand orders against `gcd` and the Bezout identity.
+fn check_gcd_ext(a: &dashu_int::UBig, b: &dashu_int::UBig) {
+    use dashu_int::IBig;
+    for (x, y) in [(a, b), (b, a)] {
+        let g = x.gcd(y);
+        let (g_ext, s, t) = x.gcd_ext(y);
+        assert_eq!(g_ext, g, "gcd of {x:?} and {y:?}");
+        assert_eq!(
+            s * IBig::from(x.clone()) + t * IBig::from(y.clone()),
+            IBig::from(g),
+            "Bezout identity for {x:?} and {y:?}"
+        );
+    }
+}
+
+#[test]
+fn test_gcd_ext_large_cofactor_shapes() {
+    use dashu_int::{UBig, Word};
+
+    // Pseudo-random operand with `n` 64-bit words.
+    fn words(seed: u64, n: usize) -> UBig {
+        let mut s = seed;
+        let mut bytes = Vec::new();
+        for _ in 0..n {
+            s = s.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = s;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            bytes.extend_from_slice(&(z ^ (z >> 31)).to_le_bytes());
+        }
+        *bytes.last_mut().unwrap() |= 0x80;
+        UBig::from_le_bytes(&bytes)
+    }
+
+    // A large common factor makes the Bezout coefficients much shorter than the operands,
+    // so the products and divisions recovering them are unbalanced.
+    for (g_len, x_len, y_len) in [
+        (1, 96, 96),
+        (30, 96, 96),
+        (48, 96, 96),
+        (49, 96, 96),
+        (50, 96, 96),
+        (60, 96, 96),
+        (50, 95, 95),
+        (50, 95, 96),
+        (49, 97, 97),
+        (100, 150, 149),
+        (200, 110, 100),
+        (120, 300, 290),
+    ] {
+        let g = words(0x1234, g_len);
+        check_gcd_ext(&(&g * words(1, x_len)), &(&g * words(2, y_len)));
+    }
+    // cofactors differing by 2
+    let x = (words(7, 96) << 1) + UBig::ONE;
+    for g_len in [30, 49] {
+        let g = words(0x1234, g_len);
+        check_gcd_ext(&(&g * (&x + UBig::from(2u8))), &(&g * &x));
+    }
+
+    // sparse operands with long runs of zero words
+    let one = UBig::ONE;
+    let three = UBig::from(3u8);
+    check_gcd_ext(&(&one << 7360), &((&three << 5184) + (&one << 3712) + (&one << 3392)));
+    check_gcd_ext(&(&one << 7360), &((&three << 5184) + (&one << 3712)));
+    check_gcd_ext(&(&one << 9216), &((&three << 3136) + (&three << 9216)));
+    check_gcd_ext(&(&one << 640), &((&three << 64) + (&one << 640)));
+    // a quotient of 1 applied to a coefficient that is longer than the other one
+    check_gcd_ext(&(&one << (64 * 35)), &((&three << (64 * 18)) + (&one << (64 * 17)) + &one));
+    check_gcd_ext(
+        &(&one << (64 * 39)),
+        &((&three << (64 * 22)) + (&one << (64 * 21)) + (&one << 256)),
+    );
+    let w = Word::BITS as usize;
+    for (hi, mid, lo) in [(115, 81, 58), (115, 81, 53), (144, 49, 0), (200, 130, 61)] {
+        let b = (&three << (mid * w)) + (&one << (lo * w)) + (&one << (lo * w / 2));
+        check_gcd_ext(&(&one << (hi * w)), &b);
+        check_gcd_ext(&((&one << (hi * w)) + &b), &(&b * &three));
+    }
+}

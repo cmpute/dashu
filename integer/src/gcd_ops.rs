@@ -277,9 +277,15 @@ mod repr {
             // temporary space to store residue
             memory::array_layout::<Word>(lhs_len + rhs_len),
             memory::max_layout(
-                // memory required for post processing: one multiplication + one division
-                mul::memory_requirement_exact(lhs_len + rhs_len, rhs_len),
-                div::memory_requirement_exact(lhs_len + rhs_len + 1, rhs_len),
+                // memory required for post processing: one multiplication + one division.
+                //
+                // The multiplication is rhs * b, where the coefficient b can have any
+                // length up to lhs_len: its exact shape is not known in advance, and the
+                // multiplication budget is not monotone in the operand lengths.
+                mul::memory_chain_budget_envelope(lhs_len + rhs_len, rhs_len),
+                // The division is by lhs, with a dividend of at most lhs_len + rhs_len + 1
+                // words.
+                div::memory_requirement_exact(lhs_len + rhs_len + 1, lhs_len),
             ),
         );
         let mut allocation = MemoryAllocation::new(memory::add_layout(
