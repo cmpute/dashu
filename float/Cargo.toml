@@ -92,6 +92,10 @@ name = "serde"
 required-features = ["serde"]
 
 [[test]]
+name = "num_traits"
+required-features = ["num-traits_v02"]
+
+[[test]]
 name = "num_order"
 required-features = ["num-order", "dashu-int/num-order"]
 

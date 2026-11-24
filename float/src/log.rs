@@ -51,7 +51,10 @@ impl<const B: Word> EstimatedLog2 for Repr<B> {
             let scaled = exponent as f64 * log_base as f64;
             let sum = log_signif as f64 + scaled;
             let magnitude = |x: f64| if x < 0.0 { -x } else { x };
-            (sum, (magnitude(log_signif as f64) + magnitude(scaled)) * (1.0 / (1u64 << 50) as f64))
+            (
+                sum,
+                (magnitude(log_signif as f64) + magnitude(scaled)) * (1.0 / (1u64 << 50) as f64),
+            )
         }
         let ((lb, lb_slack), (ub, ub_slack)) = if self.exponent >= 0 {
             (bound(logs_lb, self.exponent, logb_lb), bound(logs_ub, self.exponent, logb_ub))

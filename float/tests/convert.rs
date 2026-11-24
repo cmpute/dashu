@@ -1098,23 +1098,6 @@ fn test_base_change_narrow_precision() {
     }
 }
 
-#[cfg(feature = "num-traits_v02")]
-#[test]
-fn test_num_traits_from_subnormal_float() {
-    use num_traits_v02::FromPrimitive;
-
-    for bits in 1u64..=8 {
-        let d = DBig::from_f64(f64::from_bits(bits)).unwrap();
-        assert!(d > DBig::ZERO, "bits {bits}");
-        assert!(DBig::from_f64(-f64::from_bits(bits)).unwrap() < DBig::ZERO);
-    }
-    for bits in 1u32..=8 {
-        assert!(DBig::from_f32(f32::from_bits(bits)).unwrap() > DBig::ZERO, "bits {bits}");
-    }
-    assert!(DBig::from_f64(-0.0).unwrap().repr().is_neg_zero());
-    assert!(DBig::from_f32(0.0).unwrap().repr().is_pos_zero());
-}
-
 // A zero converts to a zero of the same sign in every base, at every precision. Negative zero
 // used to panic (unlimited precision) or come back positive, depending on the pair of bases.
 #[test]
