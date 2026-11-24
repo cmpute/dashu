@@ -856,7 +856,9 @@ fn test_to_float_below_smallest_subnormal() {
         let d = DBig::from_str(s).unwrap();
         assert_eq!(d.to_f64().value().to_bits(), want.to_bits(), "DBig {s}");
     }
-    for s in ["7e-46", "8e-46", "1e-45", "1.4e-45", "1.5e-45", "2e-45", "3e-45"] {
+    for s in [
+        "7e-46", "8e-46", "1e-45", "1.4e-45", "1.5e-45", "2e-45", "3e-45",
+    ] {
         let want: f32 = s.parse().unwrap();
         let he = FBig::<HalfEven, 10>::from_str(s).unwrap();
         assert_eq!(he.to_f32().value().to_bits(), want.to_bits(), "HalfEven {s}");
@@ -901,7 +903,9 @@ fn test_to_float_just_above_max() {
     for quarters in [1, 2, 3] {
         let m = f64_at(quarters);
         assert_eq!(
-            FBig::<HalfAway, 2>::from_parts(m.clone(), 969).to_f64().value(),
+            FBig::<HalfAway, 2>::from_parts(m.clone(), 969)
+                .to_f64()
+                .value(),
             if quarters == 1 {
                 f64::MAX
             } else {
@@ -995,4 +999,407 @@ fn test_negative_zero_to_int() {
     assert_eq!(DBig::ZERO.to_int(), Exact(IBig::ZERO));
     assert_eq!(u8::try_from(DBig::from_str("-1").unwrap()), Err(OutOfBounds));
     assert_eq!(i8::try_from(DBig::from_str("-0.5").unwrap()), Err(LossOfPrecision));
+}
+
+// `with_base` documents its precision as the largest p with NewB^p <= B^old, which the old
+// floating point estimate missed by one whenever B^old was an exact power of NewB (binary
+// precision 128 gave 31 hex digits) and rounded down to 0 — "unlimited", a panic — whenever
+// the old significand was narrower than one digit of the new base.
+#[test]
+fn test_with_base_precision() {
+    fn check<const B: dashu_int::Word, const NEWB: dashu_int::Word>() {
+        for precision in (1usize..=140).chain([255, 256, 257, 500, 1000]) {
+            let x = FBig::<Zero, B>::ONE.with_precision(precision).value();
+            let got = x.with_base::<NEWB>().value().precision();
+            // the largest p with NEWB^p <= B^precision, but at least one digit
+            let limit = UBig::from(B).pow(precision);
+            let mut expected = 0;
+            let mut power = UBig::from(NEWB);
+            while power <= limit {
+                expected += 1;
+                power *= UBig::from(NEWB);
+            }
+            assert_eq!(got, expected.max(1), "base {B} -> {NEWB} at precision {precision}");
+        }
+        // unlimited precision stays unlimited (the value 1 converts exactly)
+        assert_eq!(FBig::<Zero, B>::ONE.with_base::<NEWB>().value().precision(), 0);
+    }
+    check::<2, 2>();
+    check::<2, 10>();
+    check::<10, 2>();
+    check::<2, 16>();
+    check::<16, 2>();
+    check::<4, 8>();
+    check::<8, 4>();
+    check::<3, 10>();
+    check::<10, 3>();
+    check::<10, 100>();
+    check::<100, 10>();
+    check::<7, 36>();
+
+    // the reported cases
+    let x = FBig::<Zero, 2>::ONE.with_precision(128).value();
+    assert_eq!(x.clone().with_base::<2>().value().precision(), 128);
+    assert_eq!(x.with_base::<16>().value().precision(), 32);
+    let y = FBig::<Zero, 2>::from_parts(IBig::from(u128::MAX), 0);
+    assert_eq!(y.precision(), 128);
+    assert_eq!(
+        y.clone().with_base::<16>(),
+        Exact(FBig::<Zero, 16>::from_parts(IBig::from(u128::MAX), 0))
+    );
+    assert_eq!(y.clone().with_base::<2>(), Exact(y));
+}
+
+// A binary float with one to three bits of precision used to get zero decimal digits, that is
+// unlimited precision, and then panicked because the value was not exactly convertible.
+#[test]
+fn test_base_change_narrow_precision() {
+    for (sig, exp) in [
+        (1i64, -1isize),
+        (5, -1),
+        (3, -2),
+        (7, 0),
+        (-1, -3),
+        (1, -1074),
+        (7, -1074),
+    ] {
+        let a = FBig::<Zero, 2>::from_parts(IBig::from(sig), exp);
+        assert!((1..=3).contains(&a.precision()));
+        let d = a.clone().with_base::<10>().value();
+        assert_eq!(d.precision(), 1);
+        assert_eq!(d.repr().digits(), 1);
+        // one digit, rounded towards zero: within a factor of two of the input
+        let back = d.with_base_and_precision::<2>(60).value();
+        let (lo, hi) = if sig > 0 {
+            (a.clone() >> 1, a.clone())
+        } else {
+            (a.clone(), a.clone() >> 1)
+        };
+        assert!(lo <= back && back <= hi, "{sig} * 2^{exp}");
+        assert_eq!(a.to_decimal().value().precision(), 1);
+    }
+    assert_eq!(
+        FBig::<Zero, 2>::from_parts(IBig::from(5), -1).with_base::<10>(),
+        Inexact(FBig::<Zero, 10>::from_parts(IBig::from(2), 0), NoOp)
+    );
+    assert_eq!(
+        FBig::<HalfAway, 2>::from_parts(IBig::ONE, -1).with_base::<10>(),
+        Exact(dbig!(5e-1))
+    );
+    // the smallest subnormals, as produced by the float conversions
+    for bits in 1u64..=8 {
+        let f = FBig::<HalfEven, 2>::try_from(f64::from_bits(bits)).unwrap();
+        let d = f.to_decimal().value();
+        assert!(d > DBig::ZERO && d.repr().digits() <= d.precision().max(1), "bits {bits}");
+    }
+    for bits in 1u32..=8 {
+        let f = FBig::<HalfEven, 2>::try_from(f32::from_bits(bits)).unwrap();
+        assert!(f.to_decimal().value() > DBig::ZERO, "bits {bits}");
+    }
+}
+
+#[cfg(feature = "num-traits_v02")]
+#[test]
+fn test_num_traits_from_subnormal_float() {
+    use num_traits_v02::FromPrimitive;
+
+    for bits in 1u64..=8 {
+        let d = DBig::from_f64(f64::from_bits(bits)).unwrap();
+        assert!(d > DBig::ZERO, "bits {bits}");
+        assert!(DBig::from_f64(-f64::from_bits(bits)).unwrap() < DBig::ZERO);
+    }
+    for bits in 1u32..=8 {
+        assert!(DBig::from_f32(f32::from_bits(bits)).unwrap() > DBig::ZERO, "bits {bits}");
+    }
+    assert!(DBig::from_f64(-0.0).unwrap().repr().is_neg_zero());
+    assert!(DBig::from_f32(0.0).unwrap().repr().is_pos_zero());
+}
+
+// A zero converts to a zero of the same sign in every base, at every precision. Negative zero
+// used to panic (unlimited precision) or come back positive, depending on the pair of bases.
+#[test]
+fn test_base_change_zero() {
+    use dashu_float::{Context, Repr};
+
+    fn check<const B: dashu_int::Word, const NEWB: dashu_int::Word>() {
+        for precision in [0usize, 1, 20, 50, 100, 500] {
+            for target in [1usize, 20, 50, 100, 500] {
+                let neg = FBig::<Zero, B>::from_repr(Repr::neg_zero(), Context::new(precision));
+                let r = neg.clone().with_base_and_precision::<NEWB>(target);
+                assert!(matches!(r, Exact(_)), "{B} -> {NEWB}");
+                assert!(r.value().repr().is_neg_zero(), "{B} -> {NEWB}");
+                let r = neg.with_base::<NEWB>();
+                assert!(matches!(r, Exact(_)), "{B} -> {NEWB}");
+                assert!(r.value().repr().is_neg_zero(), "{B} -> {NEWB}");
+
+                let pos = FBig::<Zero, B>::from_repr(Repr::zero(), Context::new(precision));
+                let r = pos.with_base_and_precision::<NEWB>(target);
+                assert!(matches!(r, Exact(_)), "{B} -> {NEWB}");
+                assert!(r.value().repr().is_pos_zero(), "{B} -> {NEWB}");
+            }
+        }
+    }
+    check::<2, 2>();
+    check::<2, 3>();
+    check::<2, 4>();
+    check::<2, 10>();
+    check::<16, 2>();
+    check::<12, 2>();
+    check::<10, 2>();
+    check::<4, 8>();
+    check::<3, 7>();
+
+    for mode_neg_zero in [-0.0f64, -0.0f32 as f64] {
+        let f = FBig::<HalfAway, 2>::try_from(mode_neg_zero).unwrap();
+        assert_eq!(f.precision(), 0);
+        let d = f.to_decimal();
+        assert!(matches!(d, Exact(_)));
+        assert!(d.value().repr().is_neg_zero());
+    }
+    let z = FBig::<HalfEven, 2>::try_from(-0.0f32).unwrap();
+    assert!(z.to_decimal().value().repr().is_neg_zero());
+    assert!(DBig::from_str("-0.0000000")
+        .unwrap()
+        .to_binary()
+        .value()
+        .repr()
+        .is_neg_zero());
+    assert!(FBig::<Zero, 2>::try_from(0.0f64)
+        .unwrap()
+        .to_decimal()
+        .value()
+        .repr()
+        .is_pos_zero());
+}
+
+// Converting to the same base only changes the precision, so it has to round like
+// `with_precision` does; it used to hand the significand back unrounded and flagged exact.
+#[test]
+fn test_base_change_same_base() {
+    let x = DBig::from_str("11").unwrap();
+    assert_eq!(x.clone().with_base_and_precision::<10>(1), Inexact(dbig!(1e1), NoOp));
+    assert_eq!(x.clone().with_base_and_precision::<10>(1), x.clone().with_precision(1));
+    assert_eq!(x.clone().with_base_and_precision::<10>(2), Exact(x.clone()));
+    assert_eq!(x.clone().with_base_and_precision::<10>(0), Exact(x.clone()));
+    assert_eq!(x.clone().with_base::<10>(), Exact(x));
+    assert_eq!(
+        DBig::from_str("-19")
+            .unwrap()
+            .with_base_and_precision::<10>(1),
+        Inexact(dbig!(-2e1), SubOne)
+    );
+
+    for precision in [20usize, 50, 100, 500] {
+        // 2^(precision + 3) - 1 does not fit: the three low bits are rounded off
+        let x = FBig::<Zero, 2>::from_parts((IBig::ONE << (precision + 3)) - 1, -7);
+        let r = x.clone().with_base_and_precision::<2>(precision);
+        assert_eq!(r, x.clone().with_precision(precision));
+        assert!(matches!(r, Inexact(_, NoOp)));
+        let v = r.value();
+        assert_eq!(v.precision(), precision);
+        assert_eq!(v.repr().digits(), precision);
+        let x = x.with_rounding::<Up>();
+        let r = x.clone().with_base_and_precision::<2>(precision);
+        assert_eq!(r, x.with_precision(precision));
+        assert!(matches!(r, Inexact(_, AddOne)));
+    }
+
+    // infinities stay exact in the same base
+    assert_eq!(DBig::INFINITY.with_base_and_precision::<10>(3), Exact(DBig::INFINITY));
+}
+
+// Bases that are powers of a common root (but not of each other) convert exactly at every
+// exponent, in particular the negative ones that used to go through the inexact path.
+#[test]
+fn test_base_change_common_root() {
+    for exp in [-1000isize, -65, -39, -3, -2, -1, 0, 1, 2, 3, 40, 1001] {
+        for sig in [1i32, -3, 7] {
+            // sig * 4^exp = sig * 2^(2 exp) = (sig * 2^r) * 8^q with 2 exp = 3 q + r
+            let (q, r) = ((2 * exp).div_euclid(3), (2 * exp).rem_euclid(3));
+            let x = FBig::<Zero, 4>::from_parts(IBig::from(sig), exp);
+            let expected = FBig::<Zero, 8>::from_parts(IBig::from(sig) << r as usize, q);
+            assert_eq!(x.clone().with_base_and_precision::<8>(4), Exact(expected.clone()));
+            // unlimited precision is fine as well, the conversion is lossless
+            let x0 = x.with_precision(0).value();
+            assert_eq!(x0.clone().with_base::<8>(), Exact(expected.clone()));
+            // and back
+            assert_eq!(expected.with_base_and_precision::<4>(4), Exact(x0));
+        }
+    }
+    // rounding still applies when the target precision is short
+    let x = FBig::<Zero, 4>::from_parts(IBig::from(0x3f), -50); // six bits set
+    assert!(matches!(x.with_base_and_precision::<8>(1), Inexact(_, NoOp)));
+}
+
+// Base conversion for exponents beyond what fits a double word (|e| > 38 on 64-bit) estimated
+// the result from logarithms at twice the *target* precision, which is nowhere near enough
+// when the target precision is short: 2^-39 came out as 4e-12. It is now correctly rounded,
+// and reports exactness, at every exponent. The oracles here are exact: the value is built
+// directly in the target base when it has a finite expansion there, and obtained from a
+// single correctly rounded division otherwise.
+#[test]
+fn test_base_change_large_exponent() {
+    use dashu_float::{
+        round::{mode::Down, Round},
+        Context, Repr,
+    };
+
+    // base 2 -> base 10: m * 2^e is the decimal m * 5^-e * 10^e, or the integer m * 2^e
+    fn bin_to_dec<R: Round>(m: i64, e: isize, precision: usize) {
+        let exact = if e < 0 {
+            FBig::<R, 10>::from_parts(IBig::from(m) * IBig::from(5u8).pow((-e) as usize), e)
+        } else {
+            FBig::<R, 10>::from_parts(IBig::from(m) << e as usize, 0)
+        };
+        let expected = exact.with_precision(0).value().with_precision(precision);
+        let got =
+            FBig::<R, 2>::from_parts(IBig::from(m), e).with_base_and_precision::<10>(precision);
+        assert_eq!(got, expected, "{m} * 2^{e} to {precision} decimal digits");
+        assert!(got.value().repr().digits() <= precision);
+    }
+    // base B -> base NEWB through an integer or a single division
+    fn by_division<R: Round, const B: dashu_int::Word, const NEWB: dashu_int::Word>(
+        m: i64,
+        e: isize,
+        precision: usize,
+    ) {
+        let context = Context::<R>::new(precision);
+        let power = Repr::<NEWB>::new(UBig::from(B).pow(e.unsigned_abs()).into(), 0);
+        let m_repr = Repr::<NEWB>::new(IBig::from(m), 0);
+        let expected = if e < 0 {
+            context.div(&m_repr, &power)
+        } else {
+            context.mul(&m_repr, &power)
+        }
+        .unwrap();
+        let got =
+            FBig::<R, B>::from_parts(IBig::from(m), e).with_base_and_precision::<NEWB>(precision);
+        assert_eq!(got, expected, "{m} * {B}^{e} to {precision} digits of base {NEWB}");
+    }
+    fn sweep<R: Round>() {
+        for precision in [1usize, 2, 3, 20, 50, 100, 500] {
+            for e in [
+                -20000isize,
+                -5000,
+                -1000,
+                -333,
+                -100,
+                -65,
+                -64,
+                -40,
+                -39,
+                -38,
+                -1,
+                0,
+                1,
+                38,
+                39,
+                40,
+                64,
+                65,
+                100,
+                333,
+                1000,
+                5000,
+                20000,
+            ] {
+                for m in [1i64, -1, 7, 11, 12345, -0x1f_ffff_ffff_ffff] {
+                    bin_to_dec::<R>(m, e, precision);
+                    by_division::<R, 2, 10>(m, e, precision);
+                    by_division::<R, 10, 2>(m, e, precision);
+                }
+                by_division::<R, 3, 10>(5, e, precision);
+                by_division::<R, 10, 3>(-5, e, precision);
+                by_division::<R, 12, 18>(7, e, precision);
+            }
+        }
+    }
+    sweep::<Zero>();
+    sweep::<HalfAway>();
+    sweep::<HalfEven>();
+    sweep::<Up>();
+    sweep::<Down>();
+
+    // the reported cases: 2^-39 = 1.8189...e-12
+    type FDec = FBig<Zero, 10>;
+    let x = FBin::from_parts(IBig::ONE, -39);
+    assert_eq!(
+        x.clone().with_base_and_precision::<10>(1),
+        Inexact(FDec::from_str("1e-12").unwrap(), NoOp)
+    );
+    // ... which is exactly 1818989403545856475830078125e-39: 28 digits hold it, and with 27
+    // digits the dropped digit is a tie, which rounds away from zero under HalfAway
+    assert_eq!(
+        x.clone().with_base_and_precision::<10>(28),
+        Exact(FDec::from_str("1818989403545856475830078125e-39").unwrap())
+    );
+    assert_eq!(
+        x.with_rounding::<HalfAway>()
+            .with_base_and_precision::<10>(27),
+        Inexact(DBig::from_str("181898940354585647583007813e-38").unwrap(), AddOne)
+    );
+    assert_eq!(
+        FBin::from_parts(IBig::from(7), -39).with_base_and_precision::<10>(29),
+        Exact(FDec::from_str("12732925824820995330810546875e-39").unwrap())
+    );
+    // 1e-39 = 5.44... * 2^-132
+    let d = DBig::from_str("1e-39").unwrap();
+    assert_eq!(d.to_binary(), Inexact(FBin::from_parts(IBig::from(5), -132), NoOp));
+    assert_eq!(
+        d.with_rounding::<Zero>().with_base_and_precision::<2>(4),
+        Inexact(FBin::from_parts(IBig::from(10), -133), NoOp)
+    );
+    // 3^39 = 4052555153018976267
+    assert_eq!(
+        FBig::<Zero, 3>::from_parts(IBig::ONE, 39).with_base_and_precision::<10>(1),
+        Inexact(FDec::from_str("4e18").unwrap(), NoOp)
+    );
+}
+
+// Exponents far too large for the power of the base to be written out are converted by
+// bracketing, in time that depends on the precision and not on the exponent.
+#[test]
+fn test_base_change_huge_exponent() {
+    use dashu_float::round::mode::Down;
+
+    for precision in [1usize, 20, 50, 100, 500] {
+        for e in [
+            1_000_000_000_000isize,
+            -1_000_000_000_000,
+            123_456_789_012_345,
+        ] {
+            let down = FBig::<Down, 2>::from_parts(IBig::from(3), e)
+                .with_base_and_precision::<10>(precision);
+            let up = FBig::<Up, 2>::from_parts(IBig::from(3), e)
+                .with_base_and_precision::<10>(precision);
+            let near = FBig::<HalfEven, 2>::from_parts(IBig::from(3), e)
+                .with_base_and_precision::<10>(precision);
+            assert!(matches!(down, Inexact(_, NoOp)));
+            assert!(matches!(up, Inexact(_, AddOne)));
+            let (down, near) = (down.value(), near.value().with_rounding::<Down>());
+            let up = up.value().with_rounding::<Down>();
+            // the two directed results are neighbors, and the nearest one is one of them
+            assert!(down.repr().digits() <= precision);
+            assert_eq!(down.clone() + down.ulp(), up);
+            assert!(near == down || near == up);
+            // log10(3 * 2^e) = e * log10(2) + log10(3)
+            let expected = (e as f64) * core::f64::consts::LOG10_2 + 3f64.log10();
+            let got = down.repr().exponent() as f64 + down.repr().digits() as f64;
+            assert!((got - expected).abs() <= 1.0 + expected.abs() * 1e-12);
+        }
+    }
+
+    // beyond the exponent range of the target base the result saturates
+    let huge = FBig::<Zero, 10>::from_parts(IBig::ONE, isize::MAX / 2);
+    assert!(huge
+        .with_base_and_precision::<2>(20)
+        .value()
+        .repr()
+        .is_infinite());
+    let tiny = FBig::<Zero, 10>::from_parts(IBig::NEG_ONE, isize::MIN / 2);
+    assert!(tiny
+        .with_base_and_precision::<2>(20)
+        .value()
+        .repr()
+        .is_neg_zero());
 }

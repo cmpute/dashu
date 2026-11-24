@@ -12,15 +12,44 @@ use dashu_int::{IBig, UBig, Word};
 use crate::{
     error::{assert_finite, panic_unlimited_precision, FpError, FpResult},
     fbig::FBig,
-    math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr},
     round::{
-        mode::{HalfAway, HalfEven, Zero},
-        Round, Rounded, Rounding,
+        mode::{Down, HalfAway, HalfEven, Up, Zero},
+        ErrorBounds, Round, Rounded, Rounding,
         Rounding::*,
     },
-    utils::{factor_base, ilog_exact, shl_digits, shl_digits_in_place, shr_digits},
+    utils::{
+        common_root, factor_base, ilog_exact, log2_base, shl_digits, shl_digits_in_place,
+        shr_digits,
+    },
 };
+
+/// The precision [`FBig::with_base`] gives its result: the largest `p` such that
+/// `NewB^p <= B^precision`, but at least one digit (a limited precision must stay limited —
+/// zero digits would mean *unlimited*). An unlimited precision (0) stays unlimited.
+#[allow(non_upper_case_globals)]
+fn converted_precision<const B: Word, const NewB: Word>(precision: usize) -> usize {
+    if precision == 0 || NewB == B {
+        return precision;
+    }
+
+    let root = common_root(B, NewB);
+    let digits = if root != 0 {
+        // B = root^i and NewB = root^j: the bound is exactly floor(precision * i / j)
+        let (i, j) = (ilog_exact(B, root), ilog_exact(NewB, root));
+        UBig::from(precision) * i / j
+    } else {
+        // log2(B) / log2(NewB) is irrational, so precision * log2(B) / log2(NewB) is never an
+        // integer and its floor is decided by fixed-point brackets of the two logarithms.
+        // Should the brackets disagree (only possible at astronomical precisions), the lower
+        // one is kept: it still satisfies the bound.
+        let (log_b, frac_b) = log2_base::<B>();
+        let (log_newb, frac_newb) = log2_base::<NewB>();
+        (UBig::from(precision) * log_b << frac_newb as usize)
+            / (UBig::from(log_newb + 1) << frac_b as usize)
+    };
+    usize::try_from(digits).unwrap_or(usize::MAX).max(1)
+}
 
 impl<R: Round> Context<R> {
     /// Convert an [IBig] instance to a [FBig] instance with precision
@@ -270,6 +299,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// `NewB ^ new_precision <= B ^ old_precision`
     ///
+    /// The new precision is at least one digit, even when a single digit of the new base is
+    /// already wider than the whole old significand (for example a binary number with three
+    /// bits of precision converted to base 10). An unlimited precision stays unlimited.
+    ///
     /// If any rounding happens during the conversion, it follows the rounding mode specified
     /// by the generic parameter.
     ///
@@ -307,20 +340,22 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     #[allow(non_upper_case_globals)]
     pub fn with_base<const NewB: Word>(self) -> Rounded<FBig<R, NewB>> {
-        // if self.context.precision is zero, then precision is also zero
-        let precision =
-            Repr::<B>::BASE.pow(self.context.precision).log2_bounds().0 / NewB.log2_bounds().1;
-        self.with_base_and_precision(precision as usize)
+        let precision = converted_precision::<B, NewB>(self.context.precision);
+        self.with_base_and_precision(precision)
     }
 
     /// Explicitly change the base of the float number with given precision (under the new base).
     ///
     /// Infinities are mapped to infinities inexactly, the error will be [Rounding::NoOp].
+    /// Zeros are mapped to zeros exactly, keeping their sign. When the new base is the same as
+    /// the old one, this is the same as [with_precision][Self::with_precision].
     ///
     /// Conversion for float numbers with unlimited precision is only allowed in following cases:
-    /// - The number is infinite
+    /// - The number is infinite or zero
     /// - The new base NewB is a power of B
     /// - B is a power of the new base NewB
+    /// - B and NewB are both powers of some other integer
+    /// - The number is an integer (its exponent is not negative)
     ///
     /// # Examples
     ///
@@ -366,7 +401,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ) -> Rounded<FBig<R, NewB>> {
         let context = Context::<R>::new(precision);
         context
-            .convert_base(self.repr, None)
+            .convert_base(self.repr)
             .map(|repr| FBig::new(repr, context))
     }
 
@@ -550,7 +585,7 @@ fn round_below_subnormal<R: Round>(v: &Repr<2>, subnormal_exp: isize) -> Roundin
 #[allow(non_upper_case_globals)]
 fn convert_base_odd<const B: Word>(repr: Repr<B>, width: usize) -> Repr<2> {
     const GUARD: usize = 24;
-    match Context::<Zero>::new(width + GUARD).convert_base::<B, 2>(repr, None) {
+    match Context::<Zero>::new(width + GUARD).convert_base::<B, 2>(repr) {
         Exact(v) => v,
         Inexact(v, _) if v.significand.is_zero() => v,
         Inexact(v, _) => {
@@ -696,17 +731,18 @@ impl<R: Round> Context<R> {
 
     // Convert the [Repr] from base B to base NewB, with the precision under the target base from this context.
     #[allow(non_upper_case_globals)]
-    fn convert_base<const B: Word, const NewB: Word>(
-        &self,
-        repr: Repr<B>,
-        mut cache: Option<&mut ConstCache>,
-    ) -> Rounded<Repr<NewB>> {
-        // shortcut if NewB is the same as B
+    fn convert_base<const B: Word, const NewB: Word>(&self, repr: Repr<B>) -> Rounded<Repr<NewB>> {
+        // shortcut if NewB is the same as B: only the precision changes
         if NewB == B {
-            return Exact(Repr {
+            let repr = Repr {
                 significand: repr.significand,
                 exponent: repr.exponent,
-            });
+            };
+            return if repr.is_infinite() {
+                Exact(repr)
+            } else {
+                self.repr_round(repr)
+            };
         }
 
         // shortcut for infinities, no rounding happens but the result is inexact
@@ -718,6 +754,12 @@ impl<R: Round> Context<R> {
                 },
                 Rounding::NoOp,
             );
+        }
+
+        // A zero is a zero in every base, and keeps its sign. (This must come before the
+        // exponent arithmetic below: the sign of `-0` lives in a `-1` exponent sentinel.)
+        if repr.significand.is_zero() {
+            return Exact(Repr::<NewB>::zero_with_sign(repr.sign()));
         }
 
         if NewB > B {
@@ -742,6 +784,48 @@ impl<R: Round> Context<R> {
                 // the two-digit binary 0b11) — round it like every other path does.
                 return self.repr_round(Repr::new(repr.significand, exp));
             }
+        }
+
+        // shortcut if B and NewB are both powers of a common root (e.g. 4 and 8): with
+        // B = root^i and NewB = root^j, B^exp = root^(i*exp) = root^rem * NewB^quot exactly
+        let root = common_root(B, NewB);
+        if root != 0 {
+            let (i, j) = (ilog_exact(B, root) as isize, ilog_exact(NewB, root) as isize);
+            let (exp, rem) = match repr.exponent.checked_mul(i) {
+                Some(e) => e.div_rem_euclid(j),
+                None => return converted_overflow_repr::<NewB>(repr.exponent > 0, repr.sign()),
+            };
+            let signif = repr.significand * UBig::from_word(root).pow(rem as usize);
+            return self.repr_round(Repr::new(signif, exp));
+        }
+
+        // The exponent magnitude up to which a power of the base surely fits in a double word
+        // (word bits * 2 / log2(10) for base 10); a floor for the exact-evaluation range.
+        const THRESHOLD_SMALL_EXP: usize = (Word::BITS as f32 * 0.60206) as usize;
+
+        // From here on the bases are multiplicatively independent, so a number that is exactly
+        // representable in the new base needs a significand that grows exponentially with the
+        // magnitude of its exponent in the old base. Write the value as m * NewB^k with m not
+        // divisible by NewB: for some prime q of the bases, m carries at least
+        // |exponent| / log2(NewB) - log2|significand| factors of q. So an exponent beyond
+        // `exact_limit` rules out a result that fits in `precision + 1` digits, which covers
+        // both the exact results and the exact ties, and the conversion is then decided by
+        // interval evaluation without ever building B^|exponent|. Up to the limit, the value
+        // is evaluated exactly (the cost is proportional to the precision and the input size).
+        // With unlimited precision only an exact conversion can succeed, so it is always tried.
+        let far = self.precision != 0 && {
+            let newb_bits = (Word::BITS - NewB.leading_zeros()) as usize;
+            let exact_limit = self
+                .precision
+                .saturating_add(2)
+                .saturating_mul(newb_bits)
+                .saturating_add(repr.significand.bit_len())
+                .saturating_mul(newb_bits)
+                .max(THRESHOLD_SMALL_EXP);
+            repr.exponent.unsigned_abs() > exact_limit
+        };
+        if far {
+            return self.convert_base_far(repr);
         }
 
         // Shortcut: when B and NewB share common factors, factor out the common part.
@@ -782,92 +866,94 @@ impl<R: Round> Context<R> {
             return self.repr_round(new_repr);
         }
 
-        // if the base cannot be converted losslessly, the precision must be set
-        if self.precision == 0 {
+        // If the value cannot be converted losslessly, the precision must be set. (An integer
+        // is an integer in every base, so a non-negative exponent is always lossless.)
+        if self.precision == 0 && repr.exponent < 0 {
             panic_unlimited_precision();
         }
 
-        // choose a exponent threshold such that number with exponent smaller than this value
-        // will be converted by directly evaluating the power. The threshold here is chosen such
-        // that the power under base 10 will fit in a double word.
-        const THRESHOLD_SMALL_EXP: isize = (Word::BITS as f32 * 0.60206) as isize; // word bits * 2 / log2(10)
-        if repr.exponent.abs() <= THRESHOLD_SMALL_EXP {
-            // if the exponent is small enough, directly evaluate the exponent
-            if repr.exponent >= 0 {
-                let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
-                // The exact integer may carry more digits than the target precision allows
-                // (e.g. 2·2³ = 16 is the three-digit base-3 number 121), so it still goes
-                // through the rounding step.
-                self.repr_round(Repr::new(signif, 0))
-            } else {
-                let den: Repr<NewB> =
-                    Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
-                // `repr_div_any_width` bounds an over-wide dividend itself (exactly — the
-                // dropped low digits are kept as rounding information), so no pre-shrinking
-                // here: rounding the dividend before the division would lie about exactness
-                // and could break tie decisions.
-                let num: Repr<NewB> = Repr::new(repr.significand, 0);
-                match self.repr_div_any_width(num, den) {
-                    Ok(v) => v.map(|r: Repr<NewB>| Repr {
-                        significand: r.significand,
-                        exponent: r.exponent,
-                    }),
-                    Err(FpError::Overflow(sign)) => {
-                        Inexact(Repr::<NewB>::infinity_with_sign(sign), Rounding::NoOp)
-                    }
-                    Err(FpError::Underflow(sign)) => {
-                        Inexact(Repr::<NewB>::zero_with_sign(sign), Rounding::NoOp)
-                    }
-                    Err(_) => unreachable!(),
-                }
-            }
+        // Evaluate the value exactly: an integer for a non-negative exponent, a correctly
+        // rounded division by the integer B^|exponent| otherwise.
+        if repr.exponent >= 0 {
+            let signif = repr.significand * Repr::<B>::BASE.pow(repr.exponent as usize);
+            // The exact integer may carry more digits than the target precision allows
+            // (e.g. 2·2³ = 16 is the three-digit base-3 number 121), so it still goes
+            // through the rounding step.
+            self.repr_round(Repr::new(signif, 0))
         } else {
-            // if the exponent is large, then we first estimate the result exponent as floor(exponent * log(B) / log(NewB)),
-            // then the fractional part is multiplied with the original significand
-            let work_context = Context::<R>::new(2 * self.precision); // double the precision to get the precise logarithm
-                                                                      // ln(old base) and ln(new base) — near-correct is sufficient for the exponent estimate,
-                                                                      // and using the near-correct `ln_compute`/`ln_base` (R: Round) keeps base conversion
-                                                                      // off the `ErrorBounds` bound. Both are computed in base NewB so the euclidean division
-                                                                      // has matching bases.
-            let new_exp = repr.exponent
-                * work_context
-                    .ln_compute::<NewB>(
-                        &Repr::new(Repr::<B>::BASE.into(), 0),
-                        work_context.precision,
-                        false,
-                        reborrow_cache(&mut cache),
-                    )
-                    .expect("ln(BASE) cannot range-error (the base fits the exponent range)")
-                    .to_value_radius::<R>(&work_context)
-                    .0;
-            let (exponent, rem) =
-                new_exp.div_rem_euclid(work_context.ln_base::<NewB>(reborrow_cache(&mut cache)));
-            let exponent_sign = exponent.sign();
-            let exponent: isize = match exponent.try_into() {
-                Ok(v) => v,
-                Err(_) => {
-                    return converted_overflow_repr::<NewB>(
-                        exponent_sign == Sign::Positive,
-                        repr.sign(),
-                    );
+            let den: Repr<NewB> = Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
+            // `repr_div_any_width` bounds an over-wide dividend itself (exactly — the
+            // dropped low digits are kept as rounding information), so no pre-shrinking
+            // here: rounding the dividend before the division would lie about exactness
+            // and could break tie decisions.
+            let num: Repr<NewB> = Repr::new(repr.significand, 0);
+            match self.repr_div_any_width(num, den) {
+                Ok(v) => v.map(|r: Repr<NewB>| Repr {
+                    significand: r.significand,
+                    exponent: r.exponent,
+                }),
+                Err(FpError::Overflow(sign)) => {
+                    Inexact(Repr::<NewB>::infinity_with_sign(sign), Rounding::NoOp)
                 }
+                Err(FpError::Underflow(sign)) => {
+                    Inexact(Repr::<NewB>::zero_with_sign(sign), Rounding::NoOp)
+                }
+                Err(_) => unreachable!(),
+            }
+        }
+    }
+
+    // Convert a nonzero finite `repr` whose exponent is too large in magnitude for the value to
+    // be exactly representable (or an exact tie) at this context's precision in base NewB; see
+    // the `far` test in `convert_base`. The magnitude `|significand| · B^exponent` is bracketed
+    // from below and above by correctly rounded directed operations at a working precision, and
+    // the bracket is tightened until both ends round to the same result with the same rounding
+    // flag: rounding is monotone, so the true value then rounds that way as well.
+    #[allow(non_upper_case_globals)]
+    fn convert_base_far<const B: Word, const NewB: Word>(
+        &self,
+        repr: Repr<B>,
+    ) -> Rounded<Repr<NewB>> {
+        debug_assert!(self.precision != 0 && repr.is_finite() && !repr.significand.is_zero());
+        let sign = repr.sign();
+        let large = repr.exponent > 0;
+        let exponent = IBig::from(repr.exponent);
+        let (_, magnitude) = repr.significand.into_parts();
+        let magnitude: Repr<NewB> = Repr::new(magnitude.into(), 0);
+        let base: Repr<NewB> = Repr::new(Repr::<B>::BASE.into(), 0);
+
+        // one end of the bracket, with the result's sign applied
+        fn end<R: ErrorBounds, const NewB: Word>(
+            context: Context<R>,
+            magnitude: &Repr<NewB>,
+            base: &Repr<NewB>,
+            exponent: &IBig,
+            sign: Sign,
+        ) -> Result<Repr<NewB>, FpError> {
+            let power = context.powi(base, exponent.clone())?.value().into_repr();
+            let product = context.mul(magnitude, &power)?.value().into_repr();
+            Ok(match sign {
+                Sign::Positive => product,
+                Sign::Negative => -product,
+            })
+        }
+
+        // about 32 bits beyond the target precision to start with
+        let mut guard = 32 / (Word::BITS - 1 - NewB.leading_zeros()) as usize + 2;
+        loop {
+            let work = self.precision.saturating_add(guard);
+            let low = end(Context::<Down>::new(work), &magnitude, &base, &exponent, sign);
+            let high = end(Context::<Up>::new(work), &magnitude, &base, &exponent, sign);
+            let (low, high) = match (low, high) {
+                (Ok(low), Ok(high)) => (low, high),
+                // B^exponent left the exponent range of the new base
+                _ => return converted_overflow_repr::<NewB>(large, sign),
             };
-            // exp(fractional exponent) — near-correct is sufficient (it scales the significand),
-            // so use `exp_compute` (R: Round) and stay off the `ErrorBounds` bound.
-            let n = 1usize << (work_context.precision.bit_len() / 2);
-            let exp_rem = work_context
-                .exp_compute::<NewB>(
-                    &rem.repr,
-                    work_context.precision,
-                    false,
-                    n,
-                    reborrow_cache(&mut cache),
-                )
-                .expect("exp(reduced rem) cannot overflow (|rem| < B^-n)")
-                .mid;
-            let significand = &repr.significand * exp_rem.significand();
-            let repr = Repr::new(significand, exponent + exp_rem.exponent());
-            self.repr_round(repr)
+            let (low, high) = (self.repr_round(low), self.repr_round(high));
+            if low == high || work == usize::MAX {
+                return low;
+            }
+            guard = guard.saturating_mul(2);
         }
     }
 }
