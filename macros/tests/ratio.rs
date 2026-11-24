@@ -13,6 +13,13 @@ fn test_rbig() {
     assert_eq!(rbig!(0xc / d), RBig::from_str_radix("c/d", 16).unwrap());
     assert_eq!(rbig!(c/d base 16), RBig::from_str_radix("c/d", 16).unwrap());
     assert_eq!(rbig!(c/d base 32), RBig::from_str_radix("c/d", 32).unwrap());
+
+    // the denominator can be omitted together with an explicit base
+    assert_eq!(rbig!(a base 16), RBig::from_str_radix("a", 16).unwrap());
+    assert_eq!(rbig!(-a base 16), RBig::from_str_radix("-a", 16).unwrap());
+    assert_eq!(rbig!(a/1 base 16), rbig!(a base 16));
+    assert_eq!(rbig!(0 base 2), RBig::ZERO);
+    assert_eq!(rbig!(~c base 32), Relaxed::from_str_radix("c", 32).unwrap());
     assert_eq!(rbig!(-12_34 / 56_78), RBig::from_str("-1234/5678").unwrap());
     assert_eq!(rbig!(-12_34 / -56_78), RBig::from_str("1234/5678").unwrap());
     assert_eq!(
