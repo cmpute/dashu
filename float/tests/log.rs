@@ -456,3 +456,125 @@ fn test_exact_shortcuts_keep_precision() {
     // an unlimited-precision one still has its exact logarithm
     assert_eq!(DBig::ONE.ln(), DBig::ZERO);
 }
+
+/// `log2` of an exact power of two and `log10` of an exact power of ten are the exact integer in
+/// every base and every rounding mode. Regression: in base 10 a negative power of two
+/// (`0.5 = 5·10⁻¹`, `0.25`, `0.125`) was not recognized, and the certification loop cannot
+/// terminate on an exactly representable result under `Down`/`Up`/`Zero`.
+#[test]
+fn test_log_exact_integer_results() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let exact = Context::<R>::new(0);
+        let int = |k: i32| Exact(FBig::<R, B>::from(k).with_precision(p).value());
+        let (two, ten) = (Repr::<B>::new(2.into(), 0), Repr::<B>::new(10.into(), 0));
+        for k in 1..=12 {
+            // 2^k and 10^k are integers in every base
+            let pow2 = exact.powi(&two, k.into()).unwrap().value();
+            assert_eq!(ctx.log2(pow2.repr(), None), Ok(int(k)), "log2(2^{k}) in base {B}");
+            let pow10 = exact.powi(&ten, k.into()).unwrap().value();
+            assert_eq!(ctx.log10(pow10.repr(), None), Ok(int(k)), "log10(10^{k}) in base {B}");
+            // negative powers are representable when the base has the prime factors
+            if B % 2 == 0 {
+                let x = Context::<R>::new(200).powi(&two, (-k).into()).unwrap();
+                assert!(matches!(x, Exact(_)));
+                let got = ctx.log2(x.value().repr(), None);
+                assert_eq!(got, Ok(int(-k)), "log2(2^-{k}) in base {B}");
+            }
+            if B == 10 {
+                let x = Repr::<B>::new(IBig::ONE, -(k as isize));
+                assert_eq!(ctx.log10(&x, None), Ok(int(-k)), "log10(10^-{k}) in base {B}");
+            }
+        }
+    }
+    fn check_all_modes<const B: Word>(p: usize) {
+        check::<mode::Zero, B>(p);
+        check::<mode::Away, B>(p);
+        check::<mode::Down, B>(p);
+        check::<mode::Up, B>(p);
+        check::<mode::HalfEven, B>(p);
+        check::<mode::HalfAway, B>(p);
+    }
+    for p in [5, 20, 50, 100, 500] {
+        check_all_modes::<2>(p);
+        check_all_modes::<10>(p);
+    }
+    check_all_modes::<3>(8);
+    check_all_modes::<16>(8);
+    check_all_modes::<30>(8);
+
+    // the reported calls
+    let half = Repr::<10>::new(5.into(), -1);
+    let got = Context::<mode::Down>::new(5).log2(&half, None);
+    assert_eq!(got, Ok(Exact(FBig::from(-1))));
+    let quarter = Repr::<10>::new(25.into(), -2);
+    let got = Context::<mode::Up>::new(5).log2(&quarter, None);
+    assert_eq!(got, Ok(Exact(FBig::from(-2))));
+    let eighth = Repr::<10>::new(125.into(), -3);
+    let got = Context::<mode::Zero>::new(5).log2(&eighth, None);
+    assert_eq!(got, Ok(Exact(FBig::from(-3))));
+    // near misses stay inexact
+    let x = Repr::<10>::new(126.into(), -3);
+    assert!(matches!(Context::<mode::Zero>::new(5).log2(&x, None), Ok(Inexact(..))));
+    let x = Repr::<10>::new(5.into(), -2);
+    assert!(matches!(Context::<mode::Down>::new(5).log2(&x, None), Ok(Inexact(..))));
+    // base 30: 0.1 = 3·30⁻¹
+    let tenth = Repr::<30>::new(3.into(), -1);
+    let got = Context::<mode::Down>::new(5).log10(&tenth, None);
+    assert_eq!(got, Ok(Exact(FBig::from(-1))));
+}
+
+/// The logarithms accept the whole exponent range. Regression: `ln(1·2^isize::MIN)` — the value
+/// a directed-mode underflow of `exp` saturates to — panicked ("attempt to negate with overflow"
+/// in debug builds, "out of memory" in release builds).
+#[test]
+fn test_ln_extreme_exponents() {
+    use dashu_float::{round::mode, Context, Repr};
+    use dashu_int::IBig;
+
+    fn check<const B: Word>(p: usize, e: isize) {
+        let ctx = Context::<mode::HalfEven>::new(p);
+        // ln(B^e) = e·ln(B): compare with the product computed at a higher precision
+        let x = Repr::<B>::new(IBig::ONE, e);
+        let got = ctx.ln(&x, None).unwrap().value();
+        let hi = Context::<mode::HalfEven>::new(p + 40);
+        let ln_base = hi.ln(&Repr::<B>::new(B.into(), 0), None).unwrap().value();
+        let want = hi
+            .mul(ln_base.repr(), &Repr::new(e.into(), 0))
+            .unwrap()
+            .value();
+        assert_eq!(got, want.with_precision(p).value(), "ln({B}^{e}) at {p} digits");
+    }
+    for e in [
+        isize::MIN,
+        isize::MIN + 1,
+        isize::MIN / 2,
+        isize::MAX - 1,
+        isize::MAX,
+    ] {
+        for p in [20, 50, 100, 500] {
+            check::<2>(p, e);
+        }
+        check::<10>(2, e);
+        check::<10>(30, e);
+        check::<3>(30, e);
+    }
+
+    // exp(-2^63) under Up saturates to the smallest positive value; its logarithm is finite
+    let x = FBig::<mode::Up, 2>::from_parts(IBig::from(-1), 63)
+        .with_precision(53)
+        .value()
+        .exp();
+    assert_eq!(x.repr().exponent(), isize::MIN);
+    let f = x.ln().to_f64().value();
+    let expected = isize::MIN as f64 * core::f64::consts::LN_2;
+    assert!(((f - expected) / expected).abs() < 1e-12);
+    // log2 of the same value is the exact integer
+    assert_eq!(x.log2().to_f64().value(), isize::MIN as f64);
+}

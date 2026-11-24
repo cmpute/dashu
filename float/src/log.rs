@@ -1,9 +1,9 @@
 use dashu_base::{
     utils::{next_down, next_up},
     Approximation::*,
-    BitTest, EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
+    BitTest, EstimatedLog2, Sign, UnsignedAbs,
 };
-use dashu_int::{IBig, UBig};
+use dashu_int::IBig;
 
 use crate::{
     ball::{ulps, Ball},
@@ -14,6 +14,7 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round},
+    utils::Factored,
 };
 use core::cmp::Ordering;
 
@@ -376,7 +377,11 @@ impl<R: Round> Context<R> {
             let (e_base, x1) = if e >= 2 || e <= -2 {
                 let d = x_ball.mid.digits_ub() as isize - 1;
                 let e_base = e.saturating_add(d);
-                (e_base, x_ball.shift(-e_base)) // value sig·B^(−d) ∈ [B^(−2), B)
+                // value sig·B^(−d) ∈ [B^(−2), B). The shift is applied in two halves: `−e_base`
+                // itself overflows for the lowest exponent (`e_base = isize::MIN`, e.g. the
+                // `1·B^isize::MIN` a directed-mode underflow saturates to).
+                let half = e_base / 2;
+                (e_base, x_ball.shift(-half).shift(-(e_base - half)))
             } else {
                 (0, x_ball)
             };
@@ -705,20 +710,12 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // Exact power-of-two shortcut: if x = 2^k for an integer k, log2(x) = k. This is *required*
-        // for directed rounding — the Ziv loop below cannot certify an exactly-representable
-        // result whose true value sits on a rounding boundary (its shrinking error interval
-        // always straddles the boundary), so without this shortcut log2(2^-159) under `Up` would
-        // exhaust the retry cap and return k + 1 ulp instead of the exact k.
-        //
-        // log2(x) = log2(significand) + exponent·log2(B). With significand = 2^m this is an exact
-        // integer whenever log2(B) is integral (B a power of two), or — for a non-power-of-two
-        // base — when the exponent is zero.
-        let mag = (&x.significand).unsigned_abs();
-        if mag.is_power_of_two() && (x.exponent == 0 || B.is_power_of_two()) {
-            let m = mag.trailing_zeros().unwrap(); // = log2(significand)
-            let log2_b = B.trailing_zeros() as isize;
-            let k = IBig::from(m) + IBig::from(x.exponent) * IBig::from(log2_b);
-            return Ok(self.convert_int::<B>(k));
+        // — the Ziv loop below cannot certify an exactly-representable result whose true value
+        // sits on a rounding boundary (its shrinking error interval always straddles the
+        // boundary). A power of two is recognized in any base, whatever the sign of its
+        // exponent: in base 10, `0.5 = 5·10⁻¹`, `0.25 = 25·10⁻²`, … are powers of two too.
+        if let Some(k) = exact_int_log::<B>(&x.significand, x.exponent, &[2]) {
+            return Ok(self.convert_int::<B>(IBig::from(k)));
         }
 
         assert_limited_precision(self.precision);
@@ -827,39 +824,31 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-/// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`; otherwise `None`.
+/// If `x = sig·B^e` (`sig` nonzero, `x > 0` in magnitude) is exactly `t^m` for some integer `m`,
+/// where `t` is the product of the distinct primes `target` (`[2]` for a power of two, `[2, 5]`
+/// for a power of ten), return `m`; otherwise `None`.
 ///
-/// `10^m = 2^m·5^m`, so `x` is a power of ten iff the 2-valuation and 5-valuation of `sig·B^e`
-/// coincide and `x` has no other prime factor. [`UBig::remove_word`] divides out all 2s and 5s from
-/// both the base and the significand, returning each valuation as the removed exponent (and leaving
-/// any non-{2,5} prime factor behind as a cofactor ≠ 1). The base `B = 2^p·5^q·s` (with `s` coprime
-/// to 10) contributes `p·e` to the 2-valuation and `q·e` to the 5-valuation, and `s` must not
-/// appear (unless `e = 0`). The valuations may be negative (`x` a negative power of ten).
+/// Decided on prime valuations ([`Factored`]): `x` is a power of `t` iff every prime of `t`
+/// carries the same exponent `m`, every other prime of the base the exponent zero, and no other
+/// prime factor is left. The valuations include the base's contribution `multiplicity · e`, so a
+/// negative exponent is handled like any other (`0.5 = 5·10⁻¹ = 2⁻¹`) and no power of the base
+/// is ever built.
+fn exact_int_log<const B: Word>(sig: &IBig, e: isize, target: &[Word]) -> Option<i128> {
+    let factored = Factored::new::<B>(&sig.unsigned_abs(), e, target);
+    if !factored.cofactor.is_one() {
+        return None;
+    }
+    let m = factored.exponent_of(target[0]);
+    factored
+        .primes
+        .iter()
+        .all(|&(q, exp)| exp == if target.contains(&q) { m } else { 0 })
+        .then_some(m)
+}
+
+/// If `x = sig·B^e` is exactly `10^m` for some integer `m` that fits `isize`, return `m`.
 fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
-    // base: divide out all 2s and 5s, getting (p, q, leftover)
-    let mut rest = UBig::from_word(B);
-    let p = rest.remove_word(2)? as isize; // B ≥ 2, so never None
-    let q = rest.remove_word(5).unwrap() as isize;
-    // the leftover would give `x` a non-{2,5} prime factor when e ≠ 0
-    if !rest.is_one() && e != 0 {
-        return None;
-    }
-
-    // significand: divide out all 2s and 5s, getting (v2, v5, cofactor)
-    let mut sig_abs = sig.unsigned_abs();
-    let v2_sig = sig_abs.remove_word(2)? as isize; // non-zero upstream, so never None
-    let v5 = sig_abs.remove_word(5).unwrap() as isize;
-    // after removing every 2 and 5 the significand must be 1 (no other prime factor)
-    if sig_abs != UBig::ONE {
-        return None;
-    }
-
-    // `p*e` / `q*e` can overflow `isize` for an exotic base (B a large power of 2) at extreme
-    // exponents on 32-bit; the true log10 would not fit `isize` then, so bail rather than compare
-    // wrapped values that could falsely match.
-    let v2 = v2_sig.checked_add(p.checked_mul(e)?)?;
-    let v5 = v5.checked_add(q.checked_mul(e)?)?;
-    (v2 == v5).then_some(v2)
+    exact_int_log::<B>(sig, e, &[2, 5]).and_then(|m| isize::try_from(m).ok())
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use dashu_base::{BitTest, DivRem, Sign};
 use dashu_int::{DoubleWord, IBig, UBig, Word};
 
@@ -33,6 +34,68 @@ pub(crate) fn short_window_words<const B: Word>(precision: usize, err_ulps: usiz
         .saturating_mul(b_ub as usize)
         .saturating_add((2 * b_ub + err_bits + 1) as usize + 2 * word_bits);
     need_bits / word_bits + 1
+}
+
+/// A positive value `sig · B^exponent` factored over a set of primes:
+/// `value = cofactor · Π primeᵢ^expᵢ`, with `cofactor` a positive integer coprime to every
+/// listed prime. The exponents are signed (a negative `exponent` contributes negative powers
+/// of the base's primes) and exact — `i128` holds `valuation + multiplicity · exponent` for any
+/// `isize` exponent.
+///
+/// This is what decides whether a power or a logarithm is *exactly* representable (e.g. whether
+/// `0.5 = 5·10⁻¹` is a power of two, or `x` a perfect `d`-th power) without ever materializing
+/// `B^|exponent|`.
+pub(crate) struct Factored {
+    /// `(prime, exponent)`: the primes of the base first, then the requested extra primes.
+    pub primes: Vec<(Word, i128)>,
+    pub cofactor: UBig,
+}
+
+impl Factored {
+    /// Factor `sig · B^exponent` (`sig` nonzero) over the primes of `B` and the `extra` primes.
+    ///
+    /// The base is factored by trial division up to `2^16`; a remaining factor is kept as a
+    /// single atom (it is prime for every base below `2^32`).
+    pub fn new<const B: Word>(sig: &UBig, exponent: isize, extra: &[Word]) -> Self {
+        debug_assert!(!sig.is_zero());
+        let mut cofactor = sig.clone();
+        let mut primes = Vec::new();
+        let mut push = |q: Word, multiplicity: u32, cofactor: &mut UBig| {
+            let valuation = cofactor.remove_word(q).unwrap_or(0) as i128;
+            primes.push((q, valuation + multiplicity as i128 * exponent as i128));
+        };
+
+        let mut rest = B;
+        let mut q: Word = 2;
+        while q <= 0xFFFF && q * q <= rest {
+            if rest % q == 0 {
+                let mut multiplicity = 0;
+                while rest % q == 0 {
+                    rest /= q;
+                    multiplicity += 1;
+                }
+                push(q, multiplicity, &mut cofactor);
+            }
+            q += 1;
+        }
+        if rest > 1 {
+            push(rest, 1, &mut cofactor);
+        }
+        for &q in extra {
+            if B % q != 0 {
+                push(q, 0, &mut cofactor);
+            }
+        }
+        Self { primes, cofactor }
+    }
+
+    /// The exponent of `prime` (zero when it is not one of the listed primes).
+    pub fn exponent_of(&self, prime: Word) -> i128 {
+        self.primes
+            .iter()
+            .find(|(q, _)| *q == prime)
+            .map_or(0, |(_, e)| *e)
+    }
 }
 
 #[inline]
