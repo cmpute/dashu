@@ -5,7 +5,7 @@ use core::{
 
 use dashu_base::{
     AbsOrd, Approximation::*, BitTest, ConversionError, DivExact, DivRemEuclid, EstimatedLog2,
-    FloatEncoding, Sign, Signed,
+    FloatEncoding, PowerOfTwo, Sign, Signed, UnsignedAbs,
 };
 use dashu_int::{IBig, UBig, Word};
 
@@ -446,7 +446,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        match Context::<R>::convert_to_f32(self.repr.clone()) {
+        match Context::<R>::convert_to_f32(self.repr.clone(), false) {
             Ok(rounded) => rounded,
             Err(err) => f32_directed_endpoint::<R>(err),
         }
@@ -468,7 +468,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        match Context::<R>::convert_to_f64(self.repr.clone()) {
+        match Context::<R>::convert_to_f64(self.repr.clone(), false) {
             Ok(rounded) => rounded,
             Err(err) => f64_directed_endpoint::<R>(err),
         }
@@ -502,6 +502,30 @@ fn significand_bits(v: &Repr<2>, max_bits: usize, subnormal_exp: isize) -> usize
     }
     let msb = v.exponent + v.digits() as isize - 1;
     (msb - subnormal_exp + 1).clamp(1, max_bits as isize) as usize
+}
+
+/// Round a nonzero value lying strictly inside `(0, 2^subnormal_exp)` in magnitude — below the
+/// smallest subnormal — to either a signed zero or the smallest subnormal of its sign.
+///
+/// Such a value keeps no significand bit of the target format, so it cannot go through the
+/// "round the significand, then encode" pipeline: rounding it to one bit first and letting the
+/// encoder round again double-rounds (`1.25·2^-150` would become `2^-150`, a tie, then `0`). The
+/// decision is instead made once, on the exact magnitude relative to half the smallest subnormal.
+/// `v` is the round-to-odd image of the source, which compares against that power of two exactly
+/// like the source does.
+fn round_below_subnormal<R: Round>(v: &Repr<2>, subnormal_exp: isize) -> Rounding {
+    let msb = v.exponent + v.digits() as isize - 1;
+    debug_assert!(msb < subnormal_exp);
+    R::round_low_part(&IBig::ZERO, v.sign(), || {
+        if msb < subnormal_exp - 1 {
+            core::cmp::Ordering::Less
+        } else if v.significand.clone().unsigned_abs().is_power_of_two() {
+            // exactly 2^(subnormal_exp - 1): the tie
+            core::cmp::Ordering::Equal
+        } else {
+            core::cmp::Ordering::Greater
+        }
+    })
 }
 
 /// Convert `repr` to base 2 and reduce to a `width`-bit round-to-odd value: the top `width` bits
@@ -555,7 +579,13 @@ impl<R: Round> Context<R> {
     // the caller decides whether to saturate that to the directed endpoint (`to_f64`) or report it
     // as a conversion error (`TryFrom`). This makes `into_f64_internal` the single source of truth
     // for "is this value in range", shared by both APIs.
-    fn convert_to_f64<const B: Word>(repr: Repr<B>) -> FpResult<f64> {
+    //
+    // `strict_range` selects what "outside the finite range" means just above `f64::MAX`. With it
+    // set (the `TryFrom` contract) every value beyond MAX is `Err(Overflow)`, whatever the mode.
+    // Without it (`to_f64`) only `|x| ≥ 2^1024` is rejected up front: a value in `(MAX, 2^1024)`
+    // is rounded by the mode like any other, so it lands on MAX when the mode rounds it down
+    // (including round-to-nearest below `MAX + ½ulp`) and overflows only when it rounds up.
+    fn convert_to_f64<const B: Word>(repr: Repr<B>, strict_range: bool) -> FpResult<f64> {
         if repr.is_infinite() {
             return Ok(Inexact(repr.sign() * f64::INFINITY, Rounding::NoOp));
         }
@@ -580,11 +610,22 @@ impl<R: Round> Context<R> {
         let (lb, ub) = odd.log2_bounds();
         if lb > 1024.0
             || (ub >= 1024.0
-                && odd
-                    .abs_cmp(&(UBig::from(0x1FFFFFFFFFFFFFu64) << 971))
-                    .is_gt())
+                && if strict_range {
+                    odd.abs_cmp(&(UBig::from(0x1FFFFFFFFFFFFFu64) << 971))
+                        .is_gt()
+                } else {
+                    odd.abs_cmp(&(UBig::ONE << 1024)).is_ge()
+                })
         {
             return Err(FpError::Overflow(odd.sign()));
+        }
+        if !odd.significand.is_zero() && odd.exponent + (odd.digits() as isize) - 1 < -1074 {
+            let adj = round_below_subnormal::<R>(&odd, -1074);
+            let v = match adj {
+                Rounding::NoOp => odd.sign() * 0f64,
+                _ => odd.sign() * f64::from_bits(1),
+            };
+            return Ok(Inexact(v, adj));
         }
         let bits = significand_bits(&odd, 53, -1074);
         // The base conversion's rounding flag must propagate: `1e20 → f64` is inexact at the
@@ -602,7 +643,7 @@ impl<R: Round> Context<R> {
     }
 
     // [convert_to_f64] for f32.
-    fn convert_to_f32<const B: Word>(repr: Repr<B>) -> FpResult<f32> {
+    fn convert_to_f32<const B: Word>(repr: Repr<B>, strict_range: bool) -> FpResult<f32> {
         if repr.is_infinite() {
             return Ok(Inexact(repr.sign() * f32::INFINITY, Rounding::NoOp));
         }
@@ -618,8 +659,23 @@ impl<R: Round> Context<R> {
         // See `convert_to_f64`: unified range check on the base-2 `odd`, before the significand
         // rounding. f32::MAX = (2^24 − 1) × 2^104 ≈ 2^128.
         let (lb, ub) = odd.log2_bounds();
-        if lb > 128.0 || (ub >= 128.0 && odd.abs_cmp(&(UBig::from(0xFFFFFFu64) << 104)).is_gt()) {
+        if lb > 128.0
+            || (ub >= 128.0
+                && if strict_range {
+                    odd.abs_cmp(&(UBig::from(0xFFFFFFu64) << 104)).is_gt()
+                } else {
+                    odd.abs_cmp(&(UBig::ONE << 128)).is_ge()
+                })
+        {
             return Err(FpError::Overflow(odd.sign()));
+        }
+        if !odd.significand.is_zero() && odd.exponent + (odd.digits() as isize) - 1 < -149 {
+            let adj = round_below_subnormal::<R>(&odd, -149);
+            let v = match adj {
+                Rounding::NoOp => odd.sign() * 0f32,
+                _ => odd.sign() * f32::from_bits(1),
+            };
+            return Ok(Inexact(v, adj));
         }
         let bits = significand_bits(&odd, 24, -149);
         let rounded = Context::<R>::new(bits).repr_round(odd);
@@ -846,7 +902,7 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f32(&self) -> Rounded<f32> {
-        match Context::<HalfEven>::convert_to_f32(self.clone()) {
+        match Context::<HalfEven>::convert_to_f32(self.clone(), false) {
             Ok(rounded) => rounded,
             Err(err) => f32_directed_endpoint::<HalfEven>(err),
         }
@@ -887,7 +943,7 @@ impl<const B: Word> Repr<B> {
     /// ```
     #[inline]
     pub fn to_f64(&self) -> Rounded<f64> {
-        match Context::<HalfEven>::convert_to_f64(self.clone()) {
+        match Context::<HalfEven>::convert_to_f64(self.clone(), false) {
             Ok(rounded) => rounded,
             Err(err) => f64_directed_endpoint::<HalfEven>(err),
         }
@@ -1160,7 +1216,7 @@ macro_rules! impl_from_fbig_for_float {
                 // Range detection is shared with `to_f32`/`to_f64` via `convert_to_f*`: it returns
                 // `Err(Overflow)` for a value beyond the largest finite `$t`, so `OutOfBounds` is
                 // reported the same way under every rounding mode (Repr uses HalfEven here).
-                match Context::<HalfEven>::$convert(value) {
+                match Context::<HalfEven>::$convert(value, true) {
                     Ok(Exact(v)) => Ok(v),
                     Ok(Inexact(_, _)) => Err(ConversionError::LossOfPrecision),
                     Err(FpError::Overflow(_)) => Err(ConversionError::OutOfBounds),
@@ -1183,7 +1239,7 @@ macro_rules! impl_from_fbig_for_float {
                 // reports that range condition as `Err(Overflow)` regardless of mode — so
                 // `Err(OutOfBounds)` reliably means "beyond the finite range", unlike the old
                 // result-infiniteness check (which flipped LossOfPrecision/OutOfBounds with the mode).
-                match Context::<R>::$convert(value.repr) {
+                match Context::<R>::$convert(value.repr, true) {
                     Ok(Exact(v)) => Ok(v),
                     Ok(Inexact(_, _)) => Err(ConversionError::LossOfPrecision),
                     Err(FpError::Overflow(_)) => Err(ConversionError::OutOfBounds),

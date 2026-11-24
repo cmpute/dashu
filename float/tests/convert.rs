@@ -769,3 +769,183 @@ fn test_to_f64_high_precision() {
         );
     }
 }
+
+// A value strictly between half the smallest subnormal and the smallest subnormal keeps no
+// significand bit of the target format. It used to be rounded to a single bit first (landing
+// on the half-way point) and then rounded again by the encoder, so anything in
+// `(2^-1075, 1.5·2^-1075)` came out as zero under round-to-nearest.
+#[test]
+fn test_to_float_below_smallest_subnormal() {
+    use dashu_float::round::mode::Down;
+
+    // (significand, exponent, f64 bits under nearest)
+    let f64_cases: [(i64, isize, u64); 8] = [
+        (1, -1076, 0), // 1/4: below half
+        (3, -1077, 0), // 3/8: below half
+        (5, -1077, 1), // 5/8 of the smallest subnormal: above half
+        (3, -1076, 1), // 3/4
+        (7, -1077, 1), // 7/8
+        (1, -1074, 1), // the smallest subnormal itself
+        (5, -1076, 1), // 1.25 subnormals
+        (3, -1075, 2), // 1.5 subnormals: a tie, to even
+    ];
+    for (m, e, want) in f64_cases {
+        for sign in [1i64, -1] {
+            let want = want | if sign < 0 { 1 << 63 } else { 0 };
+            let he = FBig::<HalfEven, 2>::from_parts(IBig::from(sign * m), e);
+            assert_eq!(he.to_f64().value().to_bits(), want, "HalfEven {sign}*{m}*2^{e}");
+            assert_eq!(he.repr().to_f64().value().to_bits(), want, "Repr {sign}*{m}*2^{e}");
+            if (m, e) != (3, -1075) {
+                let ha = FBig::<HalfAway, 2>::from_parts(IBig::from(sign * m), e);
+                assert_eq!(ha.to_f64().value().to_bits(), want, "HalfAway {sign}*{m}*2^{e}");
+            }
+        }
+    }
+    let f32_cases: [(i32, isize, u32); 6] = [
+        (1, -151, 0),
+        (3, -152, 0),
+        (5, -152, 1),
+        (3, -151, 1),
+        (5, -151, 1),
+        (3, -150, 2),
+    ];
+    for (m, e, want) in f32_cases {
+        for sign in [1i32, -1] {
+            let want = want | if sign < 0 { 1 << 31 } else { 0 };
+            let he = FBig::<HalfEven, 2>::from_parts(IBig::from(sign * m), e);
+            assert_eq!(he.to_f32().value().to_bits(), want, "HalfEven {sign}*{m}*2^{e}");
+            assert_eq!(he.repr().to_f32().value().to_bits(), want, "Repr {sign}*{m}*2^{e}");
+        }
+    }
+
+    // the exact half-way point is a tie: to even gives zero, away from zero the subnormal
+    assert_eq!(FBig::<HalfEven, 2>::from_parts(IBig::ONE, -1075).to_f64(), Inexact(0.0, NoOp));
+    assert_eq!(
+        FBig::<HalfAway, 2>::from_parts(IBig::ONE, -1075).to_f64(),
+        Inexact(f64::from_bits(1), AddOne)
+    );
+    assert_eq!(
+        FBig::<HalfAway, 2>::from_parts(IBig::NEG_ONE, -1075).to_f64(),
+        Inexact(-f64::from_bits(1), SubOne)
+    );
+    assert_eq!(
+        FBig::<HalfAway, 2>::from_parts(IBig::ONE, -150).to_f32(),
+        Inexact(f32::from_bits(1), AddOne)
+    );
+    // the rounding flag says which way the value moved
+    let x = FBig::<HalfEven, 2>::from_parts(IBig::from(5), -1077);
+    assert_eq!(x.to_f64(), Inexact(f64::from_bits(1), AddOne));
+    let x = FBig::<HalfEven, 2>::from_parts(IBig::from(3), -1077);
+    assert_eq!(x.to_f64(), Inexact(0.0, NoOp));
+    // directed modes
+    let up = FBig::<Up, 2>::from_parts(IBig::from(3), -1077);
+    assert_eq!(up.to_f64(), Inexact(f64::from_bits(1), AddOne));
+    let down = FBig::<Down, 2>::from_parts(IBig::from(7), -1077);
+    assert_eq!(down.to_f64(), Inexact(0.0, NoOp));
+    let zero = FBig::<Zero, 2>::from_parts(IBig::from(-7), -152);
+    assert_eq!(zero.to_f32().value().to_bits(), 1 << 31);
+
+    // decimal sources agree with the correctly rounded `str::parse`
+    for s in [
+        "2e-324", "2.4e-324", "2.5e-324", "3e-324", "4e-324", "4.9e-324", "5e-324", "7e-324",
+        "8e-324",
+    ] {
+        let want: f64 = s.parse().unwrap();
+        let he = FBig::<HalfEven, 10>::from_str(s).unwrap();
+        assert_eq!(he.to_f64().value().to_bits(), want.to_bits(), "HalfEven {s}");
+        let d = DBig::from_str(s).unwrap();
+        assert_eq!(d.to_f64().value().to_bits(), want.to_bits(), "DBig {s}");
+    }
+    for s in ["7e-46", "8e-46", "1e-45", "1.4e-45", "1.5e-45", "2e-45", "3e-45"] {
+        let want: f32 = s.parse().unwrap();
+        let he = FBig::<HalfEven, 10>::from_str(s).unwrap();
+        assert_eq!(he.to_f32().value().to_bits(), want.to_bits(), "HalfEven {s}");
+        let d = DBig::from_str(s).unwrap();
+        assert_eq!(d.to_f32().value().to_bits(), want.to_bits(), "DBig {s}");
+    }
+    // 2^-1075 + 10^-1075: a wide decimal significand a hair above the half-way point
+    let wide = UBig::from(5u8).pow(1075) + UBig::ONE;
+    for prec in [0usize, 800] {
+        let d = DBig::from_parts(wide.clone().into(), -1075);
+        let d = if prec == 0 {
+            d
+        } else {
+            d.with_precision(prec).value()
+        };
+        assert_eq!(d.to_f64().value().to_bits(), 1, "precision {prec}");
+    }
+
+    // an inexact conversion is still not a lossless `TryFrom`
+    let x = FBig::<HalfEven, 2>::from_parts(IBig::from(5), -1077);
+    assert_eq!(f64::try_from(x), Err(LossOfPrecision));
+}
+
+// Between `MAX` and `MAX + ½ulp` round-to-nearest gives `MAX`; only at the half-way point (a
+// tie whose even neighbor is `2^emax`) and beyond does the conversion overflow. The range
+// check used to send everything above `MAX` to the overflow endpoint.
+#[test]
+fn test_to_float_just_above_max() {
+    use dashu_float::round::mode::{Away, Down};
+
+    // f64::MAX = (2^53 - 1)·2^971; in units of 2^969 that is 2^55 - 4
+    let f64_at = |quarters: i64| IBig::from((1i64 << 55) - 4 + quarters);
+    let he = |quarters: i64| FBig::<HalfEven, 2>::from_parts(f64_at(quarters), 969);
+    assert_eq!(he(-1).to_f64(), Inexact(f64::MAX, AddOne));
+    assert_eq!(he(0).to_f64(), Exact(f64::MAX));
+    assert_eq!(he(1).to_f64(), Inexact(f64::MAX, NoOp));
+    assert_eq!(he(2).to_f64(), Inexact(f64::INFINITY, AddOne)); // the tie
+    assert_eq!(he(3).to_f64(), Inexact(f64::INFINITY, AddOne));
+    assert_eq!(he(1).repr().to_f64(), Inexact(f64::MAX, NoOp));
+    assert_eq!((-he(1)).to_f64(), Inexact(f64::MIN, NoOp));
+    assert_eq!((-he(2)).to_f64(), Inexact(f64::NEG_INFINITY, SubOne));
+    for quarters in [1, 2, 3] {
+        let m = f64_at(quarters);
+        assert_eq!(
+            FBig::<HalfAway, 2>::from_parts(m.clone(), 969).to_f64().value(),
+            if quarters == 1 {
+                f64::MAX
+            } else {
+                f64::INFINITY
+            }
+        );
+        assert_eq!(FBig::<Zero, 2>::from_parts(m.clone(), 969).to_f64().value(), f64::MAX);
+        assert_eq!(FBig::<Down, 2>::from_parts(m.clone(), 969).to_f64().value(), f64::MAX);
+        assert_eq!(FBig::<Up, 2>::from_parts(m.clone(), 969).to_f64().value(), f64::INFINITY);
+        assert_eq!(FBig::<Away, 2>::from_parts(m.clone(), 969).to_f64().value(), f64::INFINITY);
+        // out of range for the lossless conversion under every mode
+        assert_eq!(
+            f64::try_from(FBig::<HalfEven, 2>::from_parts(m.clone(), 969)),
+            Err(OutOfBounds)
+        );
+        assert_eq!(f64::try_from(FBig::<Zero, 2>::from_parts(m.clone(), 969)), Err(OutOfBounds));
+        assert_eq!(f64::try_from(FBig::<Up, 2>::from_parts(m, 969)), Err(OutOfBounds));
+    }
+
+    // f32::MAX = (2^24 - 1)·2^104; in units of 2^102 that is 2^26 - 4
+    let f32_at = |quarters: i64| IBig::from((1i64 << 26) - 4 + quarters);
+    let he = |quarters: i64| FBig::<HalfEven, 2>::from_parts(f32_at(quarters), 102);
+    assert_eq!(he(-1).to_f32(), Inexact(f32::MAX, AddOne));
+    assert_eq!(he(1).to_f32(), Inexact(f32::MAX, NoOp));
+    assert_eq!(he(2).to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(he(1).repr().to_f32(), Inexact(f32::MAX, NoOp));
+    assert_eq!(FBig::<Up, 2>::from_parts(f32_at(1), 102).to_f32().value(), f32::INFINITY);
+    assert_eq!(f32::try_from(he(1)), Err(OutOfBounds));
+
+    // decimal sources agree with the correctly rounded `str::parse`
+    for s in [
+        "1.79769313486231570e308",
+        "1.79769313486231571e308",
+        "1.79769313486231580e308",
+        "1.79769313486231581e308",
+        "1.8e308",
+    ] {
+        let want: f64 = s.parse().unwrap();
+        let d = DBig::from_str(s).unwrap();
+        assert_eq!(d.to_f64().value(), want, "DBig {s}");
+        assert_eq!(d.repr().to_f64().value(), want, "Repr {s}");
+    }
+    for s in ["3.40282346e38", "3.40282356e38", "3.40282357e38", "3.5e38"] {
+        let want: f32 = s.parse().unwrap();
+        assert_eq!(DBig::from_str(s).unwrap().to_f32().value(), want, "DBig {s}");
+    }
+}
