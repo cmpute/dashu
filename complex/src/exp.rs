@@ -16,6 +16,14 @@ use dashu_float::{Ball, Repr};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
 use dashu_int::{IBig, UBig, Word};
 
+/// An exact signed zero at the float context `f`.
+fn zero_part<R: ErrorBounds, const B: Word>(
+    sign: Sign,
+    f: FloatCtxt<R>,
+) -> dashu_base::Approximation<FBig<R, B>, dashu_float::round::Rounding> {
+    dashu_base::Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(sign), f))
+}
+
 /// Guard digits (base-B) for `exp`. Composes a real `exp`, a `sin_cos`, and two products.
 const EXP_GUARD: usize = 14;
 
@@ -314,12 +322,32 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
+        // The shortcuts above are exact and need no precision; everything below is a
+        // limited-precision technique.
+        self.assert_limited();
+        let (x, y) = (z.re(), z.im());
+        let fctx = self.float();
+        // On the axes the result is a single real kernel per part, correctly rounded by the
+        // float layer: `exp(x ± 0i) = e^x ± 0i` and `exp(±0 + iy) = cos y + i·sin y`. (The
+        // composition below cannot certify these next to their closed forms — `cos y` for a
+        // tiny `y` is one ulp-fraction below 1 — without a working precision that grows with
+        // the exponent of the argument.)
+        if y.significand().is_zero() {
+            let re = fctx.exp(x, reborrow_cache(&mut cache))?;
+            return Ok(combine_parts(re, zero_part(y.sign(), fctx)));
+        }
+        if x.significand().is_zero() {
+            let (sin, cos) = fctx.sin_cos(y, reborrow_cache(&mut cache));
+            return Ok(combine_parts(cos?, sin?));
+        }
+        if let Some(result) = self.exp_tiny(z) {
+            return result;
+        }
+
         // `e^x·(cos y + i·sin y)` through the ball composition (`CBall::exp`): the float
         // `exp`/`sin_cos` kernels run on the midpoints and the input radii (zero here — the
-        // entry is exact) propagate mechanically through the two tracked products. The Ziv
-        // driver asserts a limited context (the special-value shortcuts above are exact and
-        // need no precision); overflow from a large real part propagates from the closure
-        // with `?`.
+        // entry is exact) propagate mechanically through the two tracked products. Overflow
+        // from a large real part propagates from the closure with `?`.
         let p = self.precision();
         let [re, im] = self.ziv(EXP_GUARD, |guard| {
             let pw = p + guard;
@@ -329,6 +357,48 @@ impl<R: ErrorBounds> Context<R> {
             Ok(out.to_parts_radius(&gctx))
         })?;
         Ok(combine_parts(re, im))
+    }
+
+    /// `exp(x + iy)` for nonzero `x` and `y` that are both tiny: `Some` when both parts are
+    /// decided here.
+    ///
+    /// `Re = 1 + c` and `Im = y·(1 + c')` with
+    /// `c = (x − y²/2) + r`, `c' = (x − y²/6) + r'` and `|r|, |r'| <= x² + |x|·y² + y⁴/12`.
+    /// When `c` and `c'` are below everything the precision can show next to `1` and `y`, each
+    /// part is its closed form displaced by an invisible amount, and only the side matters:
+    /// the sign of `2x − y²` (resp. `6x − y²`), found exactly, when it dominates the
+    /// remainder. If it vanishes (`y² = 2x`, resp. `y² = 6x`) the remainder is `−x²/3` (resp.
+    /// `−x²/5`) to leading order, so the side is below. Left to the general path — which then
+    /// needs a working precision proportional to the exponents — only when the leading term
+    /// neither vanishes nor dominates.
+    fn exp_tiny<const B: Word>(&self, z: &CBig<R, B>) -> Option<CfpResult<R, B>> {
+        let (x, y) = (z.re(), z.im());
+        let fctx = self.float();
+        let p = self.precision();
+        // `|x| < B^tx`, `|y| < B^ty`
+        let tx = x.exponent() as i128 + x.digits_ub() as i128;
+        let ty = y.exponent() as i128 + y.digits_ub() as i128;
+        // `|c|, |c'| < 2|x| + y² < B^bound`, which has to be invisible next to `1` (padded to
+        // `p + 1` digits) and, relatively, next to `y` (padded to at least its own digits)
+        let bound = (tx + 1).max(2 * ty) + 1;
+        if bound > -((p + 1).max(y.digits()) as i128) - 2 {
+            return None;
+        }
+        // `2|r|, 6|r'| < B^remainder`
+        let remainder = (2 * tx).max(tx + 2 * ty).max(4 * ty) + 4;
+        let side = |factor: u8| {
+            let factor = Repr::<B>::new(IBig::from(factor), 0);
+            let leading = [(&factor, x, Sign::Positive), (y, y, Sign::Negative)];
+            match crate::wide::sign_and_magnitude(&leading) {
+                None => Some(Sign::Negative),
+                Some((sign, magnitude)) if magnitude > remainder => Some(sign),
+                Some(_) => None,
+            }
+        };
+        let (re_side, im_side) = (side(2)?, side(6)?);
+        let re = crate::wide::round_sticky(&fctx, &Repr::one(), re_side);
+        let im = crate::wide::round_sticky(&fctx, y, im_side * y.sign());
+        Some(crate::repr::combine_results(re, im))
     }
 
     /// Raise `base` to a complex power under this context (context layer): `exp(w·log base)` on the

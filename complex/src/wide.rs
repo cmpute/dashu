@@ -206,6 +206,44 @@ fn with_offset<R: Round, const B: Word>(
     }
 }
 
+/// The sign of `Σ signᵢ·aᵢ·bᵢ` for finite operands, with a lower bound `e` on its magnitude
+/// (`|Σ| >= B^e`); `None` if the sum is zero.
+pub(crate) fn sign_and_magnitude<const B: Word>(terms: &[Term<'_, B>]) -> Option<(Sign, i128)> {
+    // The sticky form at one digit has the sign of the sum, and differs from it by less than
+    // three units four digits below its lowest one — far less than a factor `B`.
+    let sum = sticky_sum(products(terms), 1)?;
+    Some((sum.sign(), sum.top_lb() - 1))
+}
+
+/// Round `v + δ` to the (limited) precision of `ctx`, for a perturbation `δ` of the sign
+/// `sticky` that is too small to be visible next to the finite nonzero `v`: with
+/// `pad = max(0, precision + 1 − digits(v))`, it must satisfy `|δ| <= B^(v.exponent − pad − 2)`.
+///
+/// Every rounding boundary near `v` (a representable value or a midpoint between two) is a
+/// multiple of half a unit in the last place of the `precision + 1`-digit grid `v` is padded
+/// to, so none lies strictly between `v` and `v + δ`, and `v + δ` rounds like `v` with one
+/// extra unit two digits further down. This is how a function whose value is a known closed
+/// form plus a negligible tail is rounded directly — a Ziv loop would need a working
+/// precision proportional to `log(1/|δ|)` to see the tail. The result is always inexact.
+pub(crate) fn round_sticky<R: Round, const B: Word>(
+    ctx: &FloatCtxt<R>,
+    v: &Repr<B>,
+    sticky: Sign,
+) -> FpResult<FBig<R, B>> {
+    let p = ctx.precision();
+    debug_assert!(p != 0 && v.is_finite() && !v.significand().is_zero());
+    let pad = (p + 1).saturating_sub(v.digits()) + 2;
+    let padded = v.significand() * IBig::from(UBig::from(B).pow(pad)) + IBig::ONE * sticky;
+    // rounded in a frame whose exponent is zero: the padded exponent can lie below the range
+    let rounded =
+        FBig::<R, B>::from_repr(Repr::new(padded, 0), FloatCtxt::new(0)).with_precision(p);
+    let offset = v.exponent() as i128 - pad as i128;
+    Ok(match rounded {
+        Exact(r) => Exact(with_offset(r.into_repr(), offset, ctx)?),
+        Inexact(r, rnd) => Inexact(with_offset(r.into_repr(), offset, ctx)?, rnd),
+    })
+}
+
 /// The correctly rounded value of `Σ signᵢ·aᵢ·bᵢ` under `ctx` (of limited precision) for finite
 /// operands, where a product may leave the exponent range: only a *result* outside the range
 /// is reported as [`FpError::Overflow`] / [`FpError::Underflow`].
@@ -472,6 +510,51 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn sticky_rounding() {
+        let one = r(1, 0);
+        let value = |r: FpResult<FBig<_, 2>>| r.unwrap().value().into_repr();
+        for p in [1usize, 20, 53] {
+            let down = FloatCtxt::<mode::Down>::new(p);
+            let up = FloatCtxt::<mode::Up>::new(p);
+            let even = FloatCtxt::<mode::HalfEven>::new(p);
+            // just below 1: the largest number below 1 under Down, 1 otherwise
+            let below = Repr::<2>::new((IBig::ONE << p) - IBig::ONE, -(p as isize));
+            assert_eq!(value(round_sticky(&down, &one, Negative).map(|v| v.map(retag))), below);
+            assert_eq!(value(round_sticky(&up, &one, Negative).map(|v| v.map(retag))), one);
+            assert_eq!(value(round_sticky(&even, &one, Negative)), one);
+            assert!(matches!(round_sticky(&even, &one, Positive), Ok(Inexact(..))));
+            // a midpoint is decided by the sticky part, not by the tie rule
+            let mid = Repr::<2>::new((IBig::ONE << p) + IBig::ONE, -(p as isize));
+            let above = Repr::<2>::new((IBig::ONE << (p - 1)) + IBig::ONE, 1 - p as isize);
+            if p > 1 {
+                assert_eq!(value(round_sticky(&even, &mid, Positive)), above);
+                assert_eq!(value(round_sticky(&even, &mid, Negative)), one);
+            }
+            // at the bottom of the exponent range
+            let tiny = r(-1, isize::MIN + 2 + p as isize);
+            let rounded = value(round_sticky(&up, &tiny, Positive).map(|v| v.map(retag)));
+            assert_eq!(rounded.exponent(), isize::MIN + 2);
+        }
+        // 2·x − y·y with its magnitude bound
+        let far: isize = 1 << 40;
+        let (two, x, y) = (r(2, 0), r(1, -100), r(1, -far));
+        let terms = [(&two, &x, Positive), (&y, &y, Negative)];
+        // 2^-99 less a negligible square: the bound is within a few digits of it
+        let (sign, bound) = sign_and_magnitude(&terms).unwrap();
+        assert!(sign == Positive && (-103..=-99).contains(&bound), "{bound}");
+        let y = r(1, -49);
+        let terms = [(&two, &x, Positive), (&y, &y, Negative)];
+        assert_eq!(sign_and_magnitude(&terms).map(|(s, _)| s), Some(Negative));
+        let (x, y) = (r(1, -101), r(1, -50));
+        assert_eq!(sign_and_magnitude(&[(&two, &x, Positive), (&y, &y, Negative)]), None);
+    }
+
+    /// The same value under the test's default mode.
+    fn retag<R: Round>(v: FBig<R, 2>) -> F {
+        F::from_repr(v.into_repr(), FloatCtxt::new(0))
     }
 
     #[test]

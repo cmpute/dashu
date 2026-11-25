@@ -49,6 +49,114 @@ fn exp_of_zero_keeps_precision_and_zero_sign() {
     assert!(z.exp().ln().is_zero());
 }
 
+/// `exp` of a tiny argument is its closed form (`1`, `y`) displaced by far less than the
+/// precision shows, so its rounding is decided by the side of the displacement alone — at a
+/// cost that does not grow with the exponent of the argument. (The directed modes used to
+/// need a working precision of twice that exponent: no answer within minutes at `2^-10⁷`.)
+#[test]
+fn exp_of_tiny_argument() {
+    use dashu_float::round::ErrorBounds;
+    use helpers::reround;
+
+    // `exp(x + iy)` against the same call at a precision that resolves the displacement
+    fn against_oracle<R: ErrorBounds>(p: usize, x: (i64, isize), y: (i64, isize)) {
+        let z: CBig<R, 2> = cb(x, y);
+        let depth = (-x.1.min(y.1)) as usize;
+        let hi = Context::<HalfEven>::new(p + 4 * depth + 80)
+            .exp(&retag_c(&z), None)
+            .unwrap()
+            .value();
+        let got = Context::<R>::new(p).exp(&z, None).unwrap();
+        assert!(flags(&got).is_some(), "exp({x:?} + {y:?}i) at {p}: tagged exact");
+        assert_rounds_from(&got.value(), &hi, p, &format!("exp({x:?} + {y:?}i) at {p}"));
+    }
+    // `(1 ± ε) + i·y·(1 ± ε)` for an argument far too tiny for an oracle
+    fn against_sides<R: ErrorBounds>(
+        p: usize,
+        x: (i64, isize),
+        y: (i64, isize),
+        (re_above, im_above): (bool, bool),
+    ) {
+        let eps = fb::<R, 2>(1, -(p as isize) - 5);
+        let near = |above: bool| {
+            if above {
+                fb::<R, 2>(1, 0) + eps.clone()
+            } else {
+                fb::<R, 2>(1, 0) - eps.clone()
+            }
+        };
+        let z: CBig<R, 2> = cb(x, y);
+        let got = Context::<R>::new(p).exp(&z, None).unwrap();
+        assert!(flags(&got).is_some());
+        let got = got.value();
+        let want_re: FBig<R, 2> = reround(&near(re_above), p);
+        assert_eq!(got.re(), want_re.repr(), "exp({x:?} + {y:?}i) at {p}: real part");
+        // y·(1 ± ε), exactly, rounded once (y has a couple of digits here)
+        let want_im: FBig<R, 2> = reround(&(near(im_above) * fb::<R, 2>(y.0, y.1)), p);
+        assert_eq!(got.im(), want_im.repr(), "exp({x:?} + {y:?}i) at {p}: imaginary part");
+    }
+    fn check<R: ErrorBounds>(p: usize) {
+        let k = (p + 40) as isize;
+        for (x, y) in [
+            ((0, 0), (1, -k)),
+            ((0, 0), (-1, -k)),
+            ((1, -k), (0, 0)),
+            ((-1, -k), (0, 0)),
+            ((1, -k), (1, -k)),
+            ((-1, -k), (-1, -k)),
+            ((1, -k), (-1, -k)),
+            ((-1, -k), (1, -k)),
+            ((1, -2 * k), (1, -k)),     // x = y²: x − y²/2 > 0
+            ((1, -2 * k - 1), (1, -k)), // y² = 2x: the real part's leading term vanishes
+            ((1, -2 * k - 2), (1, -k)), // x < y²/2, x > y²/6
+            ((3, -2 * k - 1), (3, -k)), // y² = 6x: the imaginary part's leading term vanishes
+            ((1, -2 * k - 3), (1, -k)), // x < y²/6
+            ((-1, -2 * k), (1, -k)),
+            ((1, -3 * k), (-1, -k)),
+            ((5, -k - 3), (7, -k - 9)),
+        ] {
+            against_oracle::<R>(p, x, y);
+        }
+        // far beyond what any working precision could resolve
+        for k in [10_000_000isize, 1 << 40, (1 << 61) + 5] {
+            against_sides::<R>(p, (0, 0), (1, -k), (false, false));
+            against_sides::<R>(p, (0, 0), (-1, -k), (false, false));
+            against_sides::<R>(p, (1, -k), (1, -k), (true, true));
+            against_sides::<R>(p, (-1, -k), (1, -k), (false, false));
+            against_sides::<R>(p, (1, -k), (-1, -k), (true, true));
+            against_sides::<R>(p, (1, -2 * k - 1), (1, -k), (false, true));
+            against_sides::<R>(p, (3, -2 * k - 1), (3, -k), (false, false));
+            against_sides::<R>(p, (1, -2 * k - 3), (-1, -k), (false, false));
+            // on the real axis: the real exponential
+            let got = Context::<R>::new(p)
+                .exp(&cb::<R, 2>((1, -k), (0, 0)), None)
+                .unwrap()
+                .value();
+            let above: FBig<R, 2> =
+                reround(&(fb::<R, 2>(1, 0) + fb::<R, 2>(1, -(p as isize) - 5)), p);
+            assert_eq!(got.re(), above.repr());
+            assert!(got.im().is_pos_zero());
+        }
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+        check::<Zero>(p);
+    }
+
+    // the reported case: exp(i·2^-10⁷) at 29 bits under `Zero`
+    let z: CBig<Zero, 2> = cb((0, 0), (1, -10_000_000));
+    let (re, im) = Context::<Zero>::new(29)
+        .exp(&z, None)
+        .unwrap()
+        .value()
+        .into_parts();
+    assert_eq!(re, fb::<Zero, 2>((1 << 29) - 1, -29));
+    assert_eq!(im, fb::<Zero, 2>((1 << 29) - 1, -10_000_000 - 29));
+}
+
 /// An argument wider than the working precision must not be rounded before it reaches `exp`:
 /// the rounding error of `1.19e15` held to 15 bits is ~2³⁵, and `e^(2³⁵)` times the result is
 /// an error bound that used to be aligned against the result bit for bit (an out-of-memory
