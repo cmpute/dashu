@@ -196,6 +196,87 @@ fn arg_of_imaginary_infinity_is_half_pi() {
     assert!(ctx().arg(&neg, None).unwrap().value() < F::ZERO);
 }
 
+/// The argument of a zero follows the C99 Annex G `atan2` table — `arg(+0 ± 0i) = ±0` and
+/// `arg(−0 ± 0i) = ±π` — instead of passing on the real `atan2`'s domain error. It is the
+/// imaginary part of `log` there.
+#[test]
+fn arg_of_signed_zeros() {
+    use dashu_base::Approximation::{Exact, Inexact};
+    use dashu_float::round::mode::{Down, Up, Zero};
+    use dashu_float::round::ErrorBounds;
+    use dashu_float::Repr;
+
+    fn check<R: ErrorBounds>() {
+        for p in [20usize, 50, 100, 500] {
+            let ctx = Context::<R>::new(p);
+            let zero = |negative: bool| {
+                let repr = if negative {
+                    Repr::<2>::neg_zero()
+                } else {
+                    Repr::zero()
+                };
+                FBig::<R, 2>::from_repr(repr, dashu_float::Context::new(p))
+            };
+            // π at p + 60 bits, re-rounded once (with its sign) under the mode
+            let wide_pi = FBig::<HalfEven, 2>::pi(p + 60).with_rounding::<R>();
+            for im_neg in [false, true] {
+                // +0 ± 0i: the exact signed zero
+                let z = CBig::from_parts(zero(false), zero(im_neg));
+                let arg = ctx.arg(&z, None).unwrap();
+                assert!(matches!(arg, Exact(_)));
+                let arg = arg.value();
+                assert!(if im_neg {
+                    arg.repr().is_neg_zero()
+                } else {
+                    arg.repr().is_pos_zero()
+                });
+                assert_eq!(z.arg().repr(), arg.repr());
+
+                // −0 ± 0i: ±π rounded once
+                let z = CBig::from_parts(zero(true), zero(im_neg));
+                let arg = ctx.arg(&z, None).unwrap();
+                assert!(matches!(arg, Inexact(..)));
+                let arg = arg.value();
+                let pi = if im_neg {
+                    -wide_pi.clone()
+                } else {
+                    wide_pi.clone()
+                };
+                assert_eq!(arg, pi.with_precision(p).value(), "p={p} im_neg={im_neg}");
+                assert_eq!(arg.precision(), p);
+                assert_eq!(z.arg(), arg);
+                let log = ctx.log(&z, None).unwrap().value();
+                assert_eq!(log.im(), arg.repr());
+            }
+        }
+    }
+    check::<HalfEven>();
+    check::<Zero>();
+    check::<Down>();
+    check::<Up>();
+
+    // f64::atan2 agrees
+    for (re, im) in [(0.0f64, 0.0f64), (-0.0, 0.0), (0.0, -0.0), (-0.0, -0.0)] {
+        let z = C::from_parts(
+            F::try_from(re).unwrap().with_precision(53).value(),
+            F::try_from(im).unwrap().with_precision(53).value(),
+        );
+        let want = F::try_from(im.atan2(re)).unwrap();
+        let got = z.arg();
+        assert_eq!(got, want, "arg({re:?} + {im:?}i)");
+        assert_eq!(got.sign(), want.sign(), "arg({re:?} + {im:?}i)");
+    }
+}
+
+/// At unlimited precision `π` has no representation: only the exact zero results are available.
+#[test]
+#[should_panic(expected = "precision cannot be 0")]
+fn arg_of_negative_zero_at_unlimited_precision_panics() {
+    let z = C::from_parts(-F::ZERO, F::ZERO);
+    assert!(z.re().is_neg_zero());
+    let _ = z.arg();
+}
+
 #[test]
 fn log_negative_real_branch_cut() {
     // log(-r ± i·0) = ln r ± i·π: the sign of the imaginary zero selects the side of the cut.

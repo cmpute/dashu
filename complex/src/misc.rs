@@ -151,11 +151,28 @@ impl<R: ErrorBounds> Context<R> {
 
     /// The argument `atan2(im, re)` (context layer). Delegates to `dashu-float`'s Annex-G `atan2`;
     /// the cache threads into it (the convenience layer passes `None`).
+    ///
+    /// The argument of a zero follows the C99 Annex G `atan2` table (the real `atan2` rejects two
+    /// zero arguments): `arg(+0 ± 0i) = ±0` exactly and `arg(-0 ± 0i) = ±π`, the same value as the
+    /// imaginary part of [`log`](Self::log) there.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited, unless the result is the exact zero.
     pub fn arg<const B: Word>(
         &self,
         z: &CBig<R, B>,
         cache: Option<&mut dashu_float::ConstCache>,
     ) -> FpResult<FBig<R, B>> {
+        if z.is_zero() {
+            return if z.re().is_neg_zero() {
+                // `±π` rounded once under this mode
+                self.round_pi_multiple(z.im().is_neg_zero(), false, cache)
+            } else {
+                let zero = Repr::zero_with_sign(z.im().sign());
+                Ok(dashu_base::Approximation::Exact(FBig::from_repr(zero, self.float())))
+            };
+        }
         self.float().atan2(z.im(), z.re(), cache)
     }
 }
@@ -174,7 +191,12 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     }
 
     /// The argument (phase) `atan2(im, re) ∈ ]-π, π]`. The branch cut lies on `]−∞, 0]`; signed zero
-    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`).
+    /// and infinities are handled per the C99 Annex G `atan2` table (reused from `dashu-float`),
+    /// including at zero: `arg(+0 ± 0i) = ±0` and `arg(-0 ± 0i) = ±π`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited, unless the result is the exact zero.
     #[inline]
     pub fn arg(&self) -> FBig<R, B> {
         self.context.float().unwrap_fp(self.context.arg(self, None))
