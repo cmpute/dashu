@@ -356,13 +356,11 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
         if seq.next_element::<de::IgnoredAny>()?.is_some() {
             Err(err_report())?
         } else {
-            let repr = Repr::new(significand, exponent);
+            let repr = Repr::from_encoded_parts(significand, exponent);
             if !repr.fits_precision(precision) {
                 return Err(de::Error::custom(ERR_TOO_MANY_DIGITS));
             }
             Ok(FBig {
-                repr: Repr::from_encoded_parts(significand, exponent),
-
                 repr,
                 context: Context::new(precision),
             })
@@ -399,13 +397,11 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
         let significand = signif.ok_or_else(|| de::Error::missing_field(KEY_SIGNIF))?;
         let exponent = exp.ok_or_else(|| de::Error::missing_field(KEY_EXPONENT))?;
         let precision = prec.ok_or_else(|| de::Error::missing_field(KEY_PREC))?;
-        let repr = Repr::new(significand, exponent);
+        let repr = Repr::from_encoded_parts(significand, exponent);
         if !repr.fits_precision(precision) {
             return Err(de::Error::custom(ERR_TOO_MANY_DIGITS));
         }
         Ok(FBig {
-            repr: Repr::from_encoded_parts(significand, exponent),
-
             repr,
             context: Context::new(precision),
         })

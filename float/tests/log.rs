@@ -719,6 +719,7 @@ fn test_log_exact_integer_past_isize() {
     let up = Context::<mode::Up>::new(3).log10(&x, None).unwrap();
     assert!(matches!(down, Inexact(_, NoOp)) && matches!(up, Inexact(_, AddOne)));
     assert!(down.value() < up.value());
+}
 
 // The logarithm of an infinity (taken on the magnitude) is +inf. It shares the zero
 // significand of a zero, whose logarithm is -inf, and used to get that answer.

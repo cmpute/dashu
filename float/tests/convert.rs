@@ -1431,7 +1431,9 @@ fn test_from_parts_zero_significand() {
     assert!(Repr::<10>::neg_zero().is_neg_zero());
     assert!(Repr::<10>::infinity().is_infinite());
     assert!(Repr::<10>::neg_infinity().is_infinite());
+}
 
+#[test]
 fn test_to_float_exponent_beyond_binary_range() {
     use dashu_float::round::mode::Down;
 
