@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 
 use dashu::base::Abs;
-use dashu::float::{DBig, FBig, Word, round::Round};
+use dashu::float::{Context, DBig, FBig, Word, round::Round};
 use dashu::integer::IBig;
 use num_order::NumOrd;
 use pyo3::{
@@ -373,13 +373,14 @@ impl FPy {
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_fpy()?;
-        let ctx = self.0.context();
+        // at the larger precision of the two operands, as for the arithmetic operators
+        let ctx = Context::max(self.0.context(), w.0.context());
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_fpy()?;
-        let ctx = self.0.context();
+        let ctx = Context::max(self.0.context(), x.0.context());
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
@@ -614,13 +615,14 @@ impl DPy {
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_dpy()?;
-        let ctx = self.0.context();
+        // at the larger precision of the two operands, as for the arithmetic operators
+        let ctx = Context::max(self.0.context(), w.0.context());
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_dpy()?;
-        let ctx = self.0.context();
+        let ctx = Context::max(self.0.context(), x.0.context());
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }

@@ -76,7 +76,11 @@ zeros. They share a module-wide constant cache (`dashu.Cache`) so repeated calls
 increasing precision reuse the precomputed constants.
 
 A module-level `math` API mirrors the common functions — `dashu.sin`, `dashu.sqrt`,
-`dashu.exp`, `dashu.gcd`, `dashu.lcm`, … — and likewise accepts plain Python numbers.
+`dashu.exp`, `dashu.gcd`, `dashu.lcm`, … — and likewise accepts plain Python numbers. An exact
+argument (an `int`, `UBig`/`IBig`, `RBig` or `Fraction`) is taken at the module default
+precision, so `dashu.sqrt(2) == dashu.sqrt(2.0)`. The functions of two arguments (`hypot`,
+`atan2`, `powf`, also as the `atan2`/`powf` methods) work at the larger precision of the two,
+like the arithmetic operators.
 
 ## Precision
 

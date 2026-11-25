@@ -2,10 +2,16 @@
 //! routes through the global `ConstCache` + the panic-free `Context` layer (via
 //! [`crate::cache::unwrap_float`]), so domain errors raise Python exceptions instead of
 //! aborting the session.
+//!
+//! The result has the precision of the operand, where an exact operand (an integer or a
+//! rational) counts as having the module default precision (see
+//! [`UniInput::into_math_fpy`]). The functions of two operands work at the larger of the two
+//! precisions, as the arithmetic operators do.
 
 use crate::cache::{unwrap_float, with_cache};
 use crate::types::{FPy, UPy, UniInput};
 use dashu::base::ring::{ExtendedGcd, Gcd};
+use dashu::float::Context;
 use dashu::integer::{IBig, UBig};
 use pyo3::prelude::*;
 
@@ -14,7 +20,7 @@ macro_rules! math_trans {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
-            let x = x.into_fpy()?;
+            let x = x.into_math_fpy()?;
             let ctx = x.0.context();
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             Ok(FPy(unwrap_float(res, ctx)?))
@@ -27,7 +33,7 @@ macro_rules! math_trans_pair {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<(FPy, FPy)> {
-            let x = x.into_fpy()?;
+            let x = x.into_math_fpy()?;
             let ctx = x.0.context();
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             let (a, b) = res;
@@ -44,7 +50,7 @@ macro_rules! math_root {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
-            let x = x.into_fpy()?;
+            let x = x.into_math_fpy()?;
             let ctx = x.0.context();
             Ok(FPy(unwrap_float(ctx.$ctx_method(x.0.repr()), ctx)?))
         }
@@ -84,32 +90,32 @@ math_root!(cbrt, cbrt);
 
 #[pyfunction]
 pub fn nth_root(x: UniInput<'_>, n: usize) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
+    let x = x.into_math_fpy()?;
     let ctx = x.0.context();
     Ok(FPy(unwrap_float(ctx.nth_root(n, x.0.repr()), ctx)?))
 }
 
 #[pyfunction]
 pub fn atan2(y: UniInput<'_>, x: UniInput<'_>) -> PyResult<FPy> {
-    let y = y.into_fpy()?;
-    let x = x.into_fpy()?;
-    let ctx = y.0.context();
+    let y = y.into_math_fpy()?;
+    let x = x.into_math_fpy()?;
+    let ctx = Context::max(y.0.context(), x.0.context());
     let res = with_cache(|c| ctx.atan2(y.0.repr(), x.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 
 #[pyfunction]
 pub fn powf(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
-    let y = y.into_fpy()?;
-    let ctx = x.0.context();
+    let x = x.into_math_fpy()?;
+    let y = y.into_math_fpy()?;
+    let ctx = Context::max(x.0.context(), y.0.context());
     let res = with_cache(|c| ctx.powf(x.0.repr(), y.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 
 #[pyfunction]
 pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
+    let x = x.into_math_fpy()?;
     let n = n.into_ibig()?;
     let ctx = x.0.context();
     Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n), ctx)?))
@@ -117,9 +123,9 @@ pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
 
 #[pyfunction]
 pub fn hypot(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
-    let y = y.into_fpy()?;
-    let ctx = x.0.context();
+    let x = x.into_math_fpy()?;
+    let y = y.into_math_fpy()?;
+    let ctx = Context::max(x.0.context(), y.0.context());
     Ok(FPy(unwrap_float(ctx.hypot(x.0.repr(), y.0.repr()), ctx)?))
 }
 

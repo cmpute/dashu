@@ -230,6 +230,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'py> {
     }
 }
 
+/// Raise the precision of an exactly converted number to `precision` (no rounding happens:
+/// the precision is only ever increased).
+fn exact_at_least(f: FBig, precision: usize) -> FBig {
+    if f.precision() < precision {
+        f.with_precision(precision).value()
+    } else {
+        f
+    }
+}
+
 impl<'a> UniInput<'a> {
     /// Whether the input is an exact number (an integer or a rational), as opposed to a float.
     pub fn is_exact(&self) -> bool {
@@ -308,6 +318,35 @@ impl<'a> UniInput<'a> {
             Self::OBRational(x) => FBig::try_from(x).map(FPy).map_err(conversion_error_to_py),
             Self::BDecimal(_) | Self::OBDecimal(_) => {
                 Err(PyTypeError::new_err(ERRMSG_DECIMAL_WITH_BINARY))
+            }
+        }
+    }
+
+    /// Conversion of the operand of a module-level math function (`dashu.sqrt(2)`) to a
+    /// binary float.
+    ///
+    /// An exact number (an integer or a rational) has no precision of its own, so it is taken
+    /// at the module default precision, or exactly if it has more digits than that: the
+    /// result of `dashu.sqrt(2)` is that of `dashu.sqrt(2.0)`, not a float rounded to the two
+    /// bits of the integer. A rational that is not a binary fraction is rounded to the default
+    /// precision first. Floats keep their own precision.
+    pub fn into_math_fpy(self) -> PyResult<FPy> {
+        let default = crate::utils::default_precision();
+        let rounded = |r: &RBig| match FBig::try_from(r.clone()) {
+            Ok(f) => exact_at_least(f, default),
+            Err(_) => r.to_float(default).value(),
+        };
+        match self {
+            Self::BRational(x) => Ok(FPy(rounded(&x.0))),
+            Self::OBRational(x) => Ok(FPy(rounded(&x))),
+            other => {
+                let exact = other.is_exact();
+                let f = other.into_fpy()?.0;
+                Ok(FPy(if exact {
+                    exact_at_least(f, default)
+                } else {
+                    f
+                }))
             }
         }
     }

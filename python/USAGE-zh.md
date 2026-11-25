@@ -72,7 +72,10 @@ UBig(3) - 5 == IBig(-2)   # UBig 相减得到负数时结果为 IBig
 （`dashu.Cache`），因此在不断提高精度的情况下重复调用时会复用预先计算的常数。
 
 模块级的 `math` API 镜像了常见函数——`dashu.sin`、`dashu.sqrt`、
-`dashu.exp`、`dashu.gcd`、`dashu.lcm`……——同样接受普通 Python 数值。
+`dashu.exp`、`dashu.gcd`、`dashu.lcm`……——同样接受普通 Python 数值。精确的参数（`int`、
+`UBig`/`IBig`、`RBig` 或 `Fraction`）按模块默认精度参与计算，因此
+`dashu.sqrt(2) == dashu.sqrt(2.0)`。二元函数（`hypot`、`atan2`、`powf`，以及 `atan2`/`powf`
+方法）与算术运算符一样，按两个操作数中较大的精度计算。
 
 ## 精度
 
