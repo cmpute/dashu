@@ -150,3 +150,42 @@ fn test_cached_ulp_unlimited_precision() {
     let x = CachedFBig::<mode::Zero, 2>::from_repr(Repr::one(), Context::new(0), cache);
     let _ = x.ulp();
 }
+
+/// Next to the ends of the exponent range the ulp is still `B^(e + len − precision)` whenever
+/// that exponent exists: the sum must not be saturated half way through.
+#[test]
+fn test_ulp_near_exponent_limits() {
+    type F = FBig<mode::HalfEven, 10>;
+    let sig = dashu_int::IBig::from(12345678901234567891u64); // 20 decimal places
+    for precision in [20usize, 25, 50, 100, 500] {
+        for e in [
+            isize::MAX - 30,
+            isize::MAX - 8,
+            isize::MAX - 1,
+            isize::MIN + 1000,
+        ] {
+            let x: F = fbig(Repr::new(sig.clone(), e), precision);
+            let expected = e as i128 + 20 - precision as i128;
+            assert_eq!(x.ulp().repr(), &Repr::new(1.into(), expected as isize), "{e} {precision}");
+            assert!(x.ulp_lb() < x.ulp(), "{e} {precision}");
+        }
+    }
+    // binary, with a one-word and a multi-word significand
+    for precision in [20usize, 50, 100, 500] {
+        for bits in [1usize, 19, 64, 100] {
+            if bits > precision {
+                continue;
+            }
+            let sig = (dashu_int::IBig::ONE << bits) - dashu_int::IBig::ONE;
+            let e = isize::MAX - 3;
+            let x: FBig<mode::Zero, 2> = fbig(Repr::new(sig, e), precision);
+            let expected = e as i128 + bits as i128 - precision as i128;
+            assert_eq!(x.ulp().repr(), &Repr::new(1.into(), expected as isize));
+            assert!(x.ulp_lb() < x.ulp());
+        }
+    }
+    // an ulp below the range still saturates at the smallest exponent instead of panicking
+    let x: F = fbig(Repr::new(sig, isize::MIN + 2), 25);
+    assert_eq!(x.ulp().repr().exponent(), isize::MIN);
+    assert_eq!(x.ulp_lb().repr().exponent(), isize::MIN);
+}

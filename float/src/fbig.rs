@@ -362,12 +362,22 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self
-                .magnitude_exponent()
-                .saturating_add(self.repr.digits() as isize)
-                .saturating_sub(self.context.precision as isize),
+            exponent: self.ulp_exponent(self.repr.digits(), 0),
         };
         Self::new(repr, self.context)
+    }
+
+    /// `magnitude_exponent + digits - precision - below`, the exponent of an ulp, saturated to
+    /// the `isize` range. The sum is formed in a wider type and saturated once at the end:
+    /// saturating the intermediate steps loses the part that the next step takes back (a
+    /// 20-digit significand at exponent `isize::MAX - 8` has its ulp at precision 25 well
+    /// inside the range, at `isize::MAX - 13`).
+    #[inline]
+    fn ulp_exponent(&self, digits: usize, below: usize) -> isize {
+        let exponent = self.magnitude_exponent() as i128 + digits as i128
+            - self.context.precision as i128
+            - below as i128;
+        exponent.clamp(isize::MIN as i128, isize::MAX as i128) as isize
     }
 
     /// The exponent to derive the ulp from: the stored exponent, except that a zero counts
@@ -405,11 +415,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self
-                .magnitude_exponent()
-                .saturating_add(self.repr.digits_lb() as isize)
-                .saturating_sub(self.context.precision as isize)
-                .saturating_sub(1),
+            exponent: self.ulp_exponent(self.repr.digits_lb(), 1),
         };
         Self::new(repr, self.context)
     }
