@@ -298,6 +298,31 @@ def test_integer_true_division_is_exact():
     assert isinstance(7.0 / UBig(2), FBig) and 7.0 / UBig(2) == 3.5
 
 
+def test_ubig_with_large_int_stays_ubig():
+    # the type of `UBig op int` depends on the signs only, not on whether the int fits in 63
+    # bits: with an int of 2**63 or more the result was an IBig even when it is not negative
+    import operator
+    ops = [operator.add, operator.sub, operator.mul, operator.or_, operator.xor, operator.and_]
+    ints = [0, 1, 2**63 - 1, 2**63, 2**64 - 1, 2**64, 2**100]
+    for a in ints:
+        for b in ints:
+            for op in ops:
+                want = op(a, b)
+                for r in (op(UBig(a), b), op(a, UBig(b)), op(UBig(a), UBig(b))):
+                    assert r == want, (op.__name__, a, b)
+                    assert type(r) is (UBig if want >= 0 else IBig), (op.__name__, a, b)
+                # an IBig operand keeps giving an IBig, and a negative int too
+                assert type(op(IBig(a), b)) is IBig or op is operator.and_
+                assert op(UBig(a), -b) == op(a, -b)
+    for a, b in [(UBig(2**64), 2**63), (2**64, UBig(1)), (UBig(2**100), 2**64)]:
+        assert isinstance(a - b, UBig) and int(a - b) == int(a) - int(b)
+    assert isinstance(UBig(1) - 2**64, IBig) and UBig(1) - 2**64 == 1 - 2**64
+    n = UBig(2**64)
+    n -= 2**63
+    assert isinstance(n, UBig) and n == 2**63
+    assert isinstance(UBig(1) + (-(2**64)), IBig)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -74,6 +74,11 @@ macro_rules! impl_binops {
                 UniInput::Int(x) => IPy((&lhs.0).$rs_method(IBig::from(x))).into_py_any(py)?,
                 UniInput::BUint(x) => $ty_variant((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
+                // an `int` beyond 63 bits: unsigned if it is not negative, like a smaller one
+                // (the subtraction from a `UBig` never gets here, see `upy_sub_any`)
+                UniInput::OBInt(x) if !x.is_negative() => {
+                    $ty_variant((&lhs.0).$rs_method(x.unsigned_abs())).into_py_any(py)?
+                }
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
                 other @ (UniInput::Float(_) | UniInput::BFloat(_)) => {
                     $fpy_op(&FPy(FBig::from(lhs.0.clone())), other, py)?
@@ -161,6 +166,9 @@ macro_rules! impl_ubig_bit_binops {
                 UniInput::BUint(x) => $ty_variant((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::Int(x) => IPy((&lhs.0).$rs_method(IBig::from(x))).into_py_any(py)?,
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
+                UniInput::OBInt(x) if !x.is_negative() => {
+                    $ty_variant((&lhs.0).$rs_method(x.unsigned_abs())).into_py_any(py)?
+                }
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
                 _ => return Err(PyTypeError::new_err(ERRMSG_BITOPS_TYPE)),
             };
@@ -192,8 +200,8 @@ fn ibig_div_mod_floor(a: &IBig, b: &IBig) -> PyResult<(IBig, IBig)> {
     }
 }
 
-/// `UBig - UBig` (also with a non-negative `int` on either side): the difference is a `UBig`
-/// when it is not negative, and an `IBig` otherwise (as when subtracting an `IBig`).
+/// `UBig - UBig` (also with a non-negative `int` of any size on either side): the difference is
+/// a `UBig` when it is not negative, and an `IBig` otherwise (as when subtracting an `IBig`).
 fn unsigned_sub(lhs: &UBig, rhs: &UBig, py: Python<'_>) -> PyResult<Py<PyAny>> {
     if lhs >= rhs {
         UPy(lhs - rhs).into_py_any(py)
@@ -205,6 +213,7 @@ fn upy_sub_any(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAn
     match rhs {
         UniInput::Uint(x) => unsigned_sub(&lhs.0, &UBig::from(x), py),
         UniInput::BUint(x) => unsigned_sub(&lhs.0, &x.0, py),
+        UniInput::OBInt(x) if !x.is_negative() => unsigned_sub(&lhs.0, &x.unsigned_abs(), py),
         other => upy_sub(lhs, other, py),
     }
 }
@@ -212,6 +221,7 @@ fn upy_rsub_any(lhs: UniInput<'_>, rhs: &UPy, py: Python<'_>) -> PyResult<Py<PyA
     match lhs {
         UniInput::Uint(x) => unsigned_sub(&UBig::from(x), &rhs.0, py),
         UniInput::BUint(x) => unsigned_sub(&x.0, &rhs.0, py),
+        UniInput::OBInt(x) if !x.is_negative() => unsigned_sub(&x.unsigned_abs(), &rhs.0, py),
         other => upy_rsub(other, rhs, py),
     }
 }
