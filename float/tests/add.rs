@@ -661,6 +661,40 @@ mod triage {
         assert!(diff.repr().is_infinite() && diff.sign() == Sign::Negative);
     }
 
+    /// The guard digit of a subtraction result (see `test_sub_keeps_one_guard_digit`) is not
+    /// one of the value's `precision` digits: the next operation rounds it away, also when
+    /// that operation is an identity for values that fit their precision (`x + 0`, `x - 0`,
+    /// a one-element `Sum` / `Product`). This is the documented behaviour (see the `Repr`
+    /// docs), pinned here because F42 reported it.
+    #[test]
+    fn test_guard_digit_is_rounded_by_the_next_operation() {
+        use core::str::FromStr;
+        use dashu_float::DBig;
+
+        let x = DBig::from_str("101").unwrap() - DBig::from_str("0.2").unwrap();
+        assert_eq!(x.repr(), &repr::<10>(1008, -1)); // four digits at precision 3
+        assert_eq!(x.precision(), 3);
+        // (`with_precision` only rounds when the precision shrinks)
+        assert_eq!(x.clone().with_precision(3), Exact(x.clone()));
+        let rounded = DBig::from_str("101").unwrap();
+
+        assert_eq!((&x + DBig::ZERO).repr(), rounded.repr());
+        assert_eq!((&x - DBig::ZERO).repr(), rounded.repr());
+        let sum: DBig = core::iter::once(x.clone()).sum();
+        assert_eq!(sum.repr(), rounded.repr());
+        let product: DBig = core::iter::once(x.clone()).product();
+        assert_eq!(product.repr(), rounded.repr());
+
+        // a value that fits its precision is left alone by all of them
+        let y = DBig::from_str("100.8").unwrap();
+        assert_eq!((&y + DBig::ZERO).repr(), y.repr());
+        assert_eq!((&y - DBig::ZERO).repr(), y.repr());
+        let sum: DBig = core::iter::once(y.clone()).sum();
+        assert_eq!(sum.repr(), y.repr());
+        let product: DBig = core::iter::once(y.clone()).product();
+        assert_eq!(product.repr(), y.repr());
+    }
+
     /// An integer operand (a primitive, `UBig` or `IBig`) is exact: next to an
     /// unlimited-precision float the result stays exact and unlimited. The integer used to
     /// bring the number of its digits as a precision, which — "unlimited" yielding to any

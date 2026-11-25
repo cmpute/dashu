@@ -23,8 +23,10 @@ use dashu_int::{DoubleWord, IBig, UBig};
 /// guard digit is what lets a much-smaller operand be reduced to a sign-only sticky bit
 /// during alignment without mis-rounding. Such a result is rounded to `precision + 1` digits,
 /// and is reported exact when those digits hold the difference exactly (`1 - 20` at precision
-/// 1 is the exact `-19`); the next operation, or [`FBig::with_precision`], rounds the guard
-/// digit away.
+/// 1 is the exact `-19`). The guard digit is not one of the value's `precision` digits: the
+/// next arithmetic operation rounds it away — also one that leaves every value that fits its
+/// precision unchanged, such as adding zero or a one-element sum — and so does
+/// [`FBig::with_precision`] with a smaller precision.
 ///
 /// # Infinity and signed zero
 ///
