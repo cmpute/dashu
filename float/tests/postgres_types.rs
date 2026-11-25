@@ -228,18 +228,33 @@ fn test_large_weight_and_precision() {
         wire_bytes(&[1, (-4096i16) as u16, 0, 16383, 10])
     );
     assert_eq!(
-        to_sql(&d("5").with_precision(40000).value()).unwrap(),
-        wire_bytes(&[1, 0, 0, 39999, 5])
+        to_sql(&d("5").with_precision(16384).value()).unwrap(),
+        wire_bytes(&[1, 0, 0, 16383, 5])
     );
-    // the padding implied by the precision stops at the largest scale of the format
+    // The padding implied by the precision stops at the largest scale the server accepts
+    // (it refuses a value received with a scale above 0x3FFF).
+    for precision in [16385, 20000, 40000, 100_000] {
+        assert_eq!(
+            to_sql(&d("5").with_precision(precision).value()).unwrap(),
+            wire_bytes(&[1, 0, 0, 16383, 5]),
+            "{precision}"
+        );
+    }
     assert_eq!(
-        to_sql(&d("5").with_precision(100_000).value()).unwrap(),
-        wire_bytes(&[1, 0, 0, 65535, 5])
+        to_sql(&d("1e-16383").with_precision(50).value()).unwrap(),
+        wire_bytes(&[1, (-4096i16) as u16, 0, 16383, 10])
+    );
+    assert_eq!(
+        to_sql(d("1e-16383").repr()).unwrap(),
+        wire_bytes(&[1, (-4096i16) as u16, 0, 16383, 10])
     );
 
     // beyond what the format can hold
     for s in [
         "1e131072",
+        "1e-16384",
+        "1.5e-16383",
+        "1e-65535",
         "1e-65536",
         "1e1000000",
         "1e-1000000",
@@ -249,4 +264,46 @@ fn test_large_weight_and_precision() {
         assert!(to_sql(&d(s)).is_err(), "{s}");
         assert!(to_sql(d(s).repr()).is_err(), "{s}");
     }
+}
+
+/// The digit count of the format is a 16-bit number of base-10000 digits, and the weight
+/// allows 131072 decimal digits before the decimal point: a number with more than 16383
+/// significant digits is encodable (it used to be refused as a loss of precision).
+#[test]
+fn test_many_significant_digits() {
+    use dashu_int::UBig;
+
+    for digits in [16383usize, 16384, 17000] {
+        let x = DBig::from(UBig::from(10u8).pow(digits - 1) + UBig::ONE);
+        let raw = to_sql(&x).unwrap();
+        let wire = parse_wire(&raw);
+        assert_eq!(wire.digits.len(), (digits + 3) / 4, "{digits}");
+        assert_eq!(wire.weight as usize, (digits + 3) / 4 - 1, "{digits}");
+        assert_eq!(wire.dscale, 0);
+        assert_eq!(dbig_from_sql(&raw).unwrap(), x, "{digits}");
+        assert_eq!(to_sql(x.repr()).unwrap(), raw);
+    }
+    // with a fractional part as well, down to the last place the scale can cover
+    let x = DBig::from_parts((UBig::from(10u8).pow(1_000 + 16_383) - UBig::ONE).into(), -16_383);
+    let raw = to_sql(&x).unwrap();
+    let wire = parse_wire(&raw);
+    assert_eq!((wire.weight, wire.dscale), (249, 16383));
+    assert_eq!(wire.digits.len(), 250 + 4096);
+    assert_eq!(dbig_from_sql(&raw).unwrap(), x);
+
+    // the same value as the report built by hand: 4250 base-10000 digits
+    let mut words: Vec<u16> = vec![4250, 4249, 0, 0, 1000];
+    words.extend(core::iter::repeat(0).take(4248));
+    words.push(1);
+    let x = DBig::from(UBig::from(10u8).pow(16999) + UBig::ONE);
+    assert_eq!(to_sql(&x).unwrap(), wire_bytes(&words));
+
+    // One digit more than the weight can place is out of range, and so is any longer number
+    // (which is refused from its size, before it is expanded into digits).
+    for digits in [140_000usize, 200_000] {
+        let x = Repr::<10>::new((UBig::from(10u8).pow(digits - 1) + UBig::ONE).into(), 0);
+        assert_eq!(to_sql(&x).unwrap_err(), "number out of bounds", "{digits}");
+    }
+    let x = DBig::from_parts((UBig::from(10u8).pow(1000) + UBig::ONE).into(), 131_072 - 1000);
+    assert_eq!(to_sql(&x).unwrap_err(), "number out of bounds");
 }

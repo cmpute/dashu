@@ -87,8 +87,14 @@ impl Numeric {
     }
 }
 
-/// The largest `dscale` that fits the wire format.
-const MAX_DSCALE: usize = u16::MAX as usize;
+/// The largest `dscale` the server accepts. The wire format has 16 bits for it, but the server
+/// keeps 14 (its `NUMERIC_DSCALE_MASK` is `0x3FFF`) and refuses a value received with a larger
+/// one ("invalid scale in external numeric value").
+const MAX_DSCALE: usize = 0x3FFF;
+
+/// The number of decimal digits before the decimal point that the format can hold: the weight
+/// of the leading base-10000 digit is an `i16`.
+const MAX_INTEGER_DIGITS: usize = (i16::MAX as usize + 1) * 4;
 
 /// Number of decimal digits that the leading base-10000 digit lacks to be a full four-digit
 /// group. The digit is expected to be in `1..=9999`; anything else is counted as a full group.
@@ -170,12 +176,24 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
         return Ok(Numeric::zero());
     }
 
-    // check if there are too many digits to be represented.
-    let digit_len_est = repr.significand.log2_bounds().1 * core::f32::consts::LOG10_2;
-    if digit_len_est > (u16::MAX / 4) as f32 {
-        return Err(ConversionError::LossOfPrecision);
+    // Check the range before the significand is expanded into digits. Every digit after the
+    // decimal point has to be covered by `dscale`, and the leading digit by the weight; a
+    // number that passes has at most `MAX_INTEGER_DIGITS + MAX_DSCALE` decimal digits, which is
+    // well within the 16-bit count of base-10000 digits. (The magnitude test is a cheap filter
+    // on the logarithm; the weight is checked exactly below.)
+    let required_digits = repr
+        .exponent
+        .checked_neg()
+        .ok_or(ConversionError::OutOfBounds)?;
+    if required_digits > MAX_DSCALE as isize {
+        return Err(ConversionError::OutOfBounds);
     }
-    let mut digits = Vec::with_capacity(digit_len_est as usize + 1);
+    let log10_lb = repr.log2_bounds().0 * core::f32::consts::LOG10_2;
+    if log10_lb > (MAX_INTEGER_DIGITS + 1) as f32 {
+        return Err(ConversionError::OutOfBounds);
+    }
+    let digit_len_est = repr.significand.log2_bounds().1 * core::f32::consts::LOG10_2;
+    let mut digits = Vec::with_capacity(digit_len_est as usize / 4 + 2);
 
     // destruct the repr
     let Repr {
@@ -215,10 +233,6 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
         }
         _ => exp.checked_neg().ok_or(ConversionError::OutOfBounds)?,
     };
-    let required_digits = exponent.checked_neg().ok_or(ConversionError::OutOfBounds)?;
-    if required_digits > MAX_DSCALE as isize {
-        return Err(ConversionError::OutOfBounds);
-    }
     let dscale = fract_digits.clamp(0, MAX_DSCALE as isize) as u16;
 
     let weight = weight
