@@ -120,21 +120,101 @@ fn cbig_serde_letter_digits_keep_the_precision() {
 
 #[test]
 fn cbig_serde_infinite_parts() {
-    // Infinite parts are written in the plain `a+bi` form and read back (their precision is not
-    // recoverable from the text).
+    // A value with an infinite part reads back as the same value at the same precision, in
+    // every base. In bases above 23 the letters of `inf` are digits (in base 36 the string
+    // `inf` is the integer 24171), so the `a+bi` string cannot be used there.
+    fn check<const B: dashu_int::Word>() {
+        type F<const B: dashu_int::Word> = dashu_float::FBig<HalfEven, B>;
+        for (re, im) in [
+            (F::<B>::from(1), F::<B>::INFINITY),
+            (F::<B>::from(1), F::<B>::NEG_INFINITY),
+            (F::<B>::INFINITY, F::<B>::INFINITY),
+            (F::<B>::NEG_INFINITY, F::<B>::INFINITY),
+            (F::<B>::NEG_INFINITY, F::<B>::from(2)),
+            (F::<B>::INFINITY, F::<B>::ZERO),
+            (F::<B>::INFINITY, F::<B>::ONE),
+            (F::<B>::NEG_INFINITY, F::<B>::ZERO),
+            (F::<B>::INFINITY, -F::<B>::from(7)),
+        ] {
+            for precision in [None, Some(0), Some(1), Some(20), Some(53)] {
+                let z = match precision {
+                    None => CBig::<HalfEven, B>::from_parts(re.clone(), im.clone()),
+                    Some(p) => CBig::from_parts(
+                        re.clone().with_precision(p).value(),
+                        im.clone().with_precision(p).value(),
+                    ),
+                };
+                let output = to_string(&z).unwrap();
+                let parsed: CBig<HalfEven, B> = from_str(&output).unwrap();
+                assert_eq!(parsed.re(), z.re(), "base {B}: {output}");
+                assert_eq!(parsed.im(), z.im(), "base {B}: {output}");
+                assert_eq!(parsed.precision(), z.precision(), "base {B}: {output}");
+
+                let parsed: CBig<HalfEven, B> = from_bytes(&to_allocvec(&z).unwrap()).unwrap();
+                assert_eq!((parsed.re(), parsed.im()), (z.re(), z.im()));
+                assert_eq!(parsed.precision(), z.precision());
+            }
+        }
+    }
+    check::<2>();
+    check::<10>();
+    check::<16>();
+    check::<23>();
+    check::<24>();
+    check::<36>();
+
+    // where the string can carry the value it is still used
     type F = dashu_float::FBig<HalfEven, 10>;
-    for (re, im) in [
-        (F::from(1), F::INFINITY),
-        (F::from(1), F::NEG_INFINITY),
-        (F::INFINITY, F::INFINITY),
-        (F::NEG_INFINITY, F::from(2)),
-        (F::INFINITY, F::ZERO),
-    ] {
-        let z = C::from_parts(re, im);
-        let output = to_string(&z).unwrap();
-        let parsed: C = from_str(&output).unwrap();
-        assert_eq!(parsed.re(), z.re(), "{output}");
-        assert_eq!(parsed.im(), z.im(), "{output}");
+    let z = C::from_parts(F::INFINITY, F::from(2).with_precision(4).value());
+    assert_eq!(to_string(&z).unwrap(), "\"inf+2.000i\"");
+    let z = C::from_parts(F::from(-2).with_precision(3).value(), F::NEG_INFINITY);
+    assert_eq!(to_string(&z).unwrap(), "\"-2.00-infi\"");
+}
+
+#[test]
+fn cbig_serde_finite_part_spelled_inf() {
+    // The converse: in base 36 the finite integer 24171 is written `inf`, and must not read
+    // back as an infinity, in the string form or in the struct form.
+    type F = dashu_float::FBig<HalfEven, 36>;
+    for value in [24171, -24171] {
+        for precision in [0, 3, 5, 20] {
+            let part = F::from(value).with_precision(precision).value();
+            let zero = F::ZERO.with_precision(precision).value();
+            for z in [
+                CBig::from_parts(part.clone(), zero.clone()),
+                CBig::from_parts(zero, part.clone()),
+                CBig::from_parts(part.clone(), part.clone()),
+                CBig::from_parts(part.clone(), F::INFINITY),
+            ] {
+                let output = to_string(&z).unwrap();
+                let parsed: CBig<HalfEven, 36> = from_str(&output).unwrap();
+                assert_eq!((parsed.re(), parsed.im()), (z.re(), z.im()), "{output}");
+                assert_eq!(parsed.precision(), z.precision(), "{output}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cbig_serde_large_exponent_parts() {
+    // A part with a large exponent has no `a+bi` string that implies the precision: the struct
+    // form is chosen without rendering that string first (the string would have as many digits
+    // as the exponent is large, and checking it took far longer than writing the result).
+    type F = dashu_float::FBig<HalfEven, 10>;
+    for e in [31isize, 1_000, 200_000] {
+        let re = F::from_parts(1.into(), e).with_precision(30).value();
+        let im = F::from_parts((-1).into(), -e).with_precision(30).value();
+        for z in [
+            C::from_parts(re.clone(), im.clone()),
+            C::from_parts(im.clone(), re.clone()),
+            C::from_parts(re.clone(), F::ONE.with_precision(30).value()),
+        ] {
+            let output = to_string(&z).unwrap();
+            assert!(output.starts_with('{'), "expected the struct form for e = {e}");
+            let parsed: C = from_str(&output).unwrap();
+            assert_eq!(parsed, z, "e = {e}");
+            assert_eq!(parsed.precision(), 30, "e = {e}");
+        }
     }
 }
 
