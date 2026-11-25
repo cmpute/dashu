@@ -342,3 +342,24 @@ fn atanh_on_the_real_axis_cuts() {
         }
     }
 }
+
+/// In an odd base the midpoint of two floats has no finite expansion, and the driver's
+/// containment test used to stop short of it: a part within `3^-129` ulps of a midpoint was
+/// never certified and the call did not return. `asinh(3^-100)` at 255 digits is such a part
+/// (`x − x³/6` is an exact midpoint there), on the real axis and — as `i·asin` — on the
+/// imaginary one, and off the axes the real part keeps hugging it.
+#[test]
+fn asinh_near_tie_in_odd_base() {
+    type C3 = CBig<HalfEven, 3>;
+    type F3 = FBig<HalfEven, 3>;
+    let x = F3::from_parts(1.into(), -100).with_precision(255).value();
+    let zero = F3::ZERO.with_precision(255).value();
+    let w = C3::from_parts(x.clone(), zero.clone()).asinh();
+    assert_eq!(w.re(), x.asinh().repr());
+    let w = C3::from_parts(zero, x.clone()).asinh();
+    assert_eq!(w.im(), x.asin().repr());
+    // a tiny imaginary part moves the real part by far less than the distance to the midpoint
+    let tiny = F3::from_parts(1.into(), -400).with_precision(255).value();
+    let w = C3::from_parts(x.clone(), tiny).asinh();
+    assert_eq!(w.re(), x.asinh().repr());
+}

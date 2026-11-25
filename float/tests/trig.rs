@@ -551,6 +551,98 @@ fn test_inverse_unit_next_to_quarter_turn() {
     assert_eq!(x.acos_unit(2), half);
 }
 
+/// In an odd base every half-integer is the midpoint of two neighbouring floats (`1/2` is
+/// `0.111…` in base 3), so an inverse ×u function next to an axis whose angle is a half-integer
+/// is a near-tie under the round-to-nearest modes. The loop used to run forever once the
+/// result was within `3^-129` ulps of the midpoint (`acos_unit(3^-140, 2)`; `3^-130` worked):
+/// the half-ulp bound of an odd base is cut off there.
+#[test]
+fn test_inverse_unit_next_to_half_in_odd_base() {
+    // the two neighbours of `q = k/2` (k odd) at `p` digits: (B^p ∓ 1)/2 · B^(e − p) for a
+    // `q` whose leading digit has exponent `e − 1`
+    fn neighbours<R: round::Round, const B: Word>(k: u32, p: usize) -> (FBig<R, B>, FBig<R, B>) {
+        // k/2 = (k·B^s ∓ 1)/2 · B^-s, with s chosen so the significand has exactly p digits
+        let base = IBig::from(B);
+        let mut s = 0usize;
+        while (IBig::from(k) * base.pow(s) - IBig::ONE) / IBig::from(2) < base.pow(p - 1) {
+            s += 1;
+        }
+        let lo: IBig = (IBig::from(k) * base.pow(s) - IBig::ONE) / IBig::from(2);
+        let exp = -(s as isize);
+        (FBig::from_parts(lo.clone(), exp), FBig::from_parts(lo + IBig::ONE, exp))
+    }
+    fn check<R: round::ErrorBounds, const B: Word>(u: usize, p: usize, k: isize) {
+        let ctx = Context::<R>::new(p);
+        let (lo, hi) = neighbours::<R, B>(u as u32 / 2, p);
+        let tiny = Repr::<B>::new(IBig::ONE, -k);
+        let huge = Repr::<B>::new(IBig::ONE, k);
+        let one = Repr::<B>::one();
+        let tag = format!("base {B}, u = {u}, p = {p}, k = {k}");
+        // u/4 − δ: the lower neighbour, a plain truncation
+        let below = Ok(Inexact(lo.clone(), NoOp));
+        // u/4 + δ: the upper neighbour
+        let above = Ok(Inexact(hi.clone(), AddOne));
+        assert_eq!(ctx.acos_unit(&tiny, u, None), below, "acos_unit, {tag}");
+        assert_eq!(ctx.acos_unit(&-tiny.clone(), u, None), above, "acos_unit(-), {tag}");
+        assert_eq!(ctx.atan_unit(&huge, u, None), below, "atan_unit, {tag}");
+        assert_eq!(
+            ctx.atan_unit(&-huge.clone(), u, None),
+            Ok(Inexact(-lo.clone(), NoOp)),
+            "atan_unit(-), {tag}"
+        );
+        assert_eq!(ctx.atan2_unit(&one, &tiny, u, None), below, "atan2_unit, {tag}");
+        assert_eq!(ctx.atan2_unit(&one, &-tiny.clone(), u, None), above, "atan2_unit(-x), {tag}");
+        assert_eq!(
+            ctx.atan2_unit(&-one.clone(), &-tiny, u, None),
+            Ok(Inexact(-hi, SubOne)),
+            "atan2_unit(-y, -x), {tag}"
+        );
+    }
+    // 10 is below the shortcut's reach (the loop decides), 140 is the reported case, and the
+    // rest could never be reached by raising the working precision
+    for k in [10isize, 16, 40, 130, 140, 1000, 1_000_000, isize::MAX / 4] {
+        for p in [1usize, 10, 20, 50] {
+            if k < p as isize + 6 {
+                continue; // the displacement is not below the last place
+            }
+            check::<HalfEven, 3>(2, p, k); // next to 1/2
+            check::<HalfAway, 3>(2, p, k);
+            check::<HalfEven, 3>(6, p, k); // next to 3/2
+            check::<HalfEven, 5>(2, p, k);
+            check::<HalfAway, 7>(10, p, k); // next to 5/2
+        }
+    }
+
+    // A quarter that is not a half-integer (1/4 in base 3 is 0.0202…) is no rounding boundary
+    // at all: the result is the plain rounding of the quarter under every mode.
+    fn check_plain<R: round::ErrorBounds>(p: usize, k: isize) {
+        let ctx = Context::<R>::new(p);
+        let quarter = ctx
+            .div(&Repr::<3>::one(), &Repr::<3>::new(4.into(), 0))
+            .unwrap()
+            .value();
+        let tiny = Repr::<3>::new(IBig::ONE, -k);
+        assert_eq!(ctx.acos_unit(&tiny, 1, None).unwrap().value(), quarter, "p = {p}, k = {k}");
+        assert_eq!(ctx.acos_unit(&-tiny, 1, None).unwrap().value(), quarter, "p = {p}, k = {k}");
+    }
+    for k in [60isize, 140, 1_000_000] {
+        for p in [10usize, 20, 50] {
+            check_plain::<HalfEven>(p, k);
+            check_plain::<Up>(p, k);
+            check_plain::<Down>(p, k);
+        }
+    }
+
+    // the directed modes never saw a boundary at 1/2
+    let tiny = Repr::<3>::new(IBig::ONE, -140);
+    let (lo, _) = neighbours::<Down, 3>(1, 10);
+    let down = Context::<Down>::new(10);
+    assert_eq!(down.acos_unit(&tiny, 2, None), Ok(Inexact(lo.clone(), NoOp)));
+    assert_eq!(down.acos_unit(&-tiny.clone(), 2, None), Ok(Inexact(lo, NoOp)));
+    let (_, hi) = neighbours::<Up, 3>(1, 10);
+    assert_eq!(Context::<Up>::new(10).acos_unit(&tiny, 2, None), Ok(Inexact(hi, AddOne)));
+}
+
 /// `atan2_unit` on the four diagonals: the angle is `±u/8` / `±3u/8` with the sign of `y`
 /// and the quadrant of `x` (the two negative-`y` diagonals used to be swapped).
 #[test]

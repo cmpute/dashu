@@ -416,6 +416,7 @@ impl<R: ErrorBounds> Context<R> {
         }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(y);
 
+        let context = y.context;
         let y = &y.repr;
         let lb = lb.into_repr();
         let rb = rb.into_repr();
@@ -446,7 +447,20 @@ impl<R: ErrorBounds> Context<R> {
         } else {
             right == Ordering::Greater
         };
-        left_ok && right_ok
+        if left_ok && right_ok {
+            return true;
+        }
+        // In an odd base half an ulp has no finite expansion, so the round-to-nearest modes
+        // report a bound cut off just inside it (see `ErrorBounds`): an interval that reaches
+        // into the sliver between that bound and the true midpoint fails the test above at
+        // every working precision, however small its radius. A result that hugs a midpoint is
+        // not rare there — every half-integer is one (`acos_unit(tiny, 2)` next to `1/2`), and
+        // so is `x − x³/6` for a power of the base. Rounding is monotone, so the interval lies
+        // inside the preimage exactly when both of its ends round to `y`; the ends are exact
+        // sums, and the magnitude checks above keep them the size of the approximation.
+        B % 2 == 1
+            && context.repr_round(a - e).value() == *y
+            && context.repr_round(a + e).value() == *y
     }
 }
 
@@ -584,6 +598,29 @@ mod tests {
         let r = |exp: isize| Repr::<2>::new(IBig::ONE, exp);
         assert!(!Context::<mode::HalfEven>::contained(&a, &r(9), &y));
         assert!(Context::<mode::HalfEven>::contained(&a, &r(7), &y));
+    }
+
+    // In an odd base the midpoint of two floats has no finite expansion, and `error_bounds`
+    // stops short of it; an interval inside that last sliver is still inside the preimage.
+    // 1/2 = 0.111…₃ lies halfway between 29524·3^-10 and 29525·3^-10.
+    #[test]
+    fn contained_next_to_a_midpoint_in_an_odd_base() {
+        let three = UBig::from(3u8);
+        let ctx = Context::<mode::HalfEven>::new(10);
+        let below = FBig::<mode::HalfEven, 3>::new(Repr::new(29524.into(), -10), ctx);
+        let above = FBig::<mode::HalfEven, 3>::new(Repr::new(29525.into(), -10), ctx);
+        // 1/2 ∓ 3^-150, to 200 digits
+        let half: IBig = ((three.pow(200) - UBig::ONE) >> 1).into();
+        let a_lo = Repr::<3>::new(&half - IBig::from(three.pow(50)), -200);
+        let a_hi = Repr::<3>::new(&half + IBig::from(three.pow(50)) + IBig::ONE, -200);
+        let radius = |exp: isize| Repr::<3>::new(IBig::ONE, exp);
+        assert!(Context::<mode::HalfEven>::contained(&a_lo, &radius(-190), &below));
+        assert!(!Context::<mode::HalfEven>::contained(&a_lo, &radius(-190), &above));
+        assert!(Context::<mode::HalfEven>::contained(&a_hi, &radius(-190), &above));
+        assert!(!Context::<mode::HalfEven>::contained(&a_hi, &radius(-190), &below));
+        // a radius that crosses the midpoint is contained in neither
+        assert!(!Context::<mode::HalfEven>::contained(&a_lo, &radius(-140), &below));
+        assert!(!Context::<mode::HalfEven>::contained(&a_hi, &radius(-140), &above));
     }
 
     // `round_near` rounds `v ± δ` for an offset too small to reach a rounding boundary, and

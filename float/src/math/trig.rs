@@ -479,10 +479,8 @@ impl<R: ErrorBounds> Context<R> {
     }
 
     /// The correctly rounded value of an angle that is `sign·k·u/4` displaced to the side `dir`
-    /// by `0 < δ < B^delta_exp` — the inverse ×u functions next to an axis. `None` when `k·u/4`
-    /// has no finite expansion in base `B` (then nothing nearby is a rounding boundary by
-    /// construction, and the Ziv loop certifies as usual) or the displacement is not small
-    /// enough.
+    /// by `0 < δ < B^delta_exp` — the inverse ×u functions next to an axis. `None` when the
+    /// displacement is not small enough.
     fn round_near_quarter<const B: Word>(
         &self,
         sign: Sign,
@@ -492,13 +490,55 @@ impl<R: ErrorBounds> Context<R> {
         delta_exp: isize,
     ) -> Option<Rounded<FBig<R, B>>> {
         // k·u/4 = (k·u·B²/4)·B^-2 whenever 4 divides k·u·B² (always for an even base)
-        let scaled = IBig::from(u) * IBig::from(k) * IBig::from(B) * IBig::from(B);
+        let ku = IBig::from(u) * IBig::from(k);
+        let scaled = &ku * IBig::from(B) * IBig::from(B);
         let (quarter, rem) = scaled.div_rem(IBig::from(4));
         if !rem.is_zero() {
-            return None;
+            return self.round_near_quarter_ratio(sign, ku, dir, delta_exp);
         }
         let v = Repr::<B>::new(quarter * sign, -2);
         self.round_near(&v, dir, delta_exp)
+    }
+
+    /// [`round_near_quarter`](Self::round_near_quarter) for a `q = ku/4` without a finite
+    /// expansion (an odd base). Such a `q` is still not an ordinary point: a half-integer is
+    /// the midpoint of two neighbouring floats at every precision that resolves it (`1/2`
+    /// lies halfway between `0.11…1` and `0.11…2` in base 3), so a result next to it is
+    /// exactly the near-tie the Ziv loop can only decide at a working precision of
+    /// `log(1/δ)` digits.
+    ///
+    /// The rounding boundaries (floats and midpoints) are multiples of `B^g/2`, where `B^g`
+    /// is the spacing of the binade below the leading digit of `q`; `q` is a multiple of
+    /// `1/4`. Two distinct multiples of `B^g/2` and `1/4` differ by at least `min(1, B^g)/4`,
+    /// so with `g' = min(g, 0)` no boundary lies strictly between `q` and `q ± B^(g'−2)`
+    /// (`B² > 4`), and every such displacement rounds like the exact rational
+    /// `q ± B^(g'−2)/4`.
+    fn round_near_quarter_ratio<const B: Word>(
+        &self,
+        sign: Sign,
+        ku: IBig,
+        dir: Sign,
+        delta_exp: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        if !self.is_limited() {
+            return None;
+        }
+        let p = isize::try_from(self.precision).ok()?;
+        let whole = &ku / IBig::from(4);
+        // the exponent of the leading digit of q (a lower bound for a q below 1: q ≥ 1/4 ≥ B^-2)
+        let lead = if whole.is_zero() {
+            -2
+        } else {
+            digit_len::<B>(&whole) as isize - 1
+        };
+        let eps_exp = lead.checked_sub(p)?.min(0) - 2;
+        if delta_exp > eps_exp {
+            return None;
+        }
+        let unit = IBig::from_parts(dir, UBig::ONE);
+        let num = shl_digits::<B>(&(ku * sign), eps_exp.unsigned_abs()) + unit;
+        self.div(&Repr::new(num, eps_exp), &Repr::new(IBig::from(4), 0))
+            .ok()
     }
 
     /// Calculate the sine of the floating point representation.

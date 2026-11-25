@@ -159,6 +159,63 @@ fn test_argument_at_bottom_of_exponent_range() {
     assert_eq!(c, Ok(Inexact(FBig::ONE, NoOp)));
 }
 
+/// `asinh(x) = x − x³/6 + 3x⁵/40 − …`, and for `x = c·3^-100` in base 3 the first two terms
+/// add up to an exact midpoint of two 255-digit floats (`3^54/2` is a half-integer). The result
+/// is that midpoint plus `3x⁵/40`, a near-tie that takes about twice the precision to resolve —
+/// and that the round-to-nearest modes could not resolve at any working precision: the loop did
+/// not return (the half-ulp bound of an odd base stops `3^-129` ulps short of the midpoint).
+#[test]
+fn test_asinh_near_tie_in_odd_base() {
+    use dashu_base::Approximation::Inexact;
+    use dashu_float::round::Rounding::AddOne;
+    let three = IBig::from(3);
+    // (c, the half-integer part c³·3^k/2 that x³/6 removes, the exponent of the last place)
+    let cases = [
+        (1, three.pow(54), -355isize),
+        (7, IBig::from(343) * three.pow(52), -353),
+    ];
+    for (c, odd, last) in cases {
+        let x = Repr::<3>::new(IBig::from(c), -100);
+        // in units of the last place: x − x³/6 = c·3^(−100 − last) − odd/2
+        let below = IBig::from(c) * three.pow((-100 - last) as usize) - (&odd + IBig::ONE) / 2;
+        let above = &below + IBig::ONE;
+        let f = |sig: &IBig| FBig::<mode::HalfEven, 3>::from_parts(sig.clone(), last);
+        // just above the midpoint: the nearest modes round up, towards zero truncates
+        assert_eq!(
+            Context::<mode::HalfEven>::new(255).asinh(&x, None),
+            Ok(Inexact(f(&above), AddOne)),
+            "c = {c}"
+        );
+        assert_eq!(
+            Context::<mode::HalfAway>::new(255)
+                .asinh(&x, None)
+                .unwrap()
+                .value()
+                .repr(),
+            f(&above).repr()
+        );
+        assert_eq!(
+            Context::<mode::Down>::new(255)
+                .asinh(&x, None)
+                .unwrap()
+                .value()
+                .repr(),
+            f(&below).repr()
+        );
+        // odd: the mirror image, with the flag of a negative value
+        let neg = Context::<mode::HalfEven>::new(255)
+            .asinh(&-x.clone(), None)
+            .unwrap();
+        assert_eq!(neg.value_ref().repr(), (-f(&above)).repr());
+        // one digit more or less and it is an ordinary rounding
+        for p in [200usize, 254, 256] {
+            let narrow = Context::<mode::HalfEven>::new(p).asinh(&x, None).unwrap();
+            let wide = Context::<mode::HalfEven>::new(700).asinh(&x, None).unwrap();
+            assert_eq!(narrow.value(), wide.value().with_precision(p).value(), "p = {p}");
+        }
+    }
+}
+
 /// The `Rounding` flag of a `tanh` that saturates next to `±1` is the adjustment applied to
 /// the truncated significand, as everywhere else: `tanh(13)` at 10 digits towards zero is the
 /// truncation `0.9999999999` itself — `NoOp`, like `tanh(12)` one step below the saturation

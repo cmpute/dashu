@@ -268,7 +268,25 @@ impl<R: ErrorBounds> Context<R> {
             right == Ordering::Greater
         };
         if !(left_ok && right_ok) {
-            return false;
+            // In an odd base half an ulp has no finite expansion, so the round-to-nearest
+            // modes report a bound cut off just inside it, and an interval reaching into the
+            // sliver next to a midpoint would fail at every working precision (see the same
+            // step in `dashu-float`'s driver). Rounding is monotone: the interval is inside
+            // the preimage exactly when both of its (exact) ends round to `target`.
+            if B % 2 == 0 {
+                return false;
+            }
+            let value_lo = x.sub(value.repr(), radius.repr()).unwrap().value(); // value − radius
+            let rounds_to_target = |end: &FBig<R, B>| {
+                end.clone()
+                    .with_precision(target.precision())
+                    .value()
+                    .repr()
+                    == target.repr()
+            };
+            if !(rounds_to_target(&value_lo) && rounds_to_target(&value_hi)) {
+                return false;
+            }
         }
         // The candidate's inexactness flag is read off the *approximation* (whether, and in
         // which direction, `value` was rounded to reach `target`). That is the flag of the true
