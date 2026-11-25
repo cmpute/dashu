@@ -522,6 +522,25 @@ fn test_atanh_one_is_infinity() {
         .unwrap()
         .value();
     assert!(r.repr().is_infinite() && r.repr().sign() == Sign::Negative);
+
+    // the pole is an exact row: it needs no precision to round to, so the unlimited-precision
+    // constants reach it too (they used to panic with "precision cannot be 0")
+    type F = FBig<mode::HalfEven, 2>;
+    assert_eq!(F::ONE.precision(), 0);
+    assert_eq!(F::ONE.atanh(), F::INFINITY);
+    assert_eq!(F::NEG_ONE.atanh(), F::NEG_INFINITY);
+    assert_eq!(DBig::ONE.atanh(), DBig::INFINITY);
+    assert_eq!(DBig::NEG_ONE.atanh(), DBig::NEG_INFINITY);
+}
+
+/// Anything but the exact rows still needs a precision.
+#[test]
+#[should_panic(expected = "precision cannot be 0")]
+fn test_atanh_unlimited_precision_inexact_panics() {
+    let half = FBig::<mode::HalfEven, 2>::from_parts(1.into(), -1)
+        .with_precision(0)
+        .value();
+    let _ = half.atanh();
 }
 
 #[test]

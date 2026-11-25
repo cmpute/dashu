@@ -642,7 +642,6 @@ impl<R: ErrorBounds> Context<R> {
             // atanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
         }
-        assert_limited_precision(self.precision);
         // Domain |x| < 1: |x| = 1 → ±∞ (value), |x| > 1 → error. The boundary is compared
         // *exactly* (no precision argument) because `±1` is a pole of `atanh`: `1 − 10⁻¹⁵⁵`
         // at 100 digits rounds onto `1` but is the finite `(p+155)·ln(10)/2`, not `∞`.
@@ -653,6 +652,8 @@ impl<R: ErrorBounds> Context<R> {
             }
             _ => {}
         }
+        // after the exact `atanh(±1) = ±∞` row, which needs no precision to round to
+        assert_limited_precision(self.precision);
         // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
         if let Some(r) = self.tiny_odd(x, true) {
             return r;
@@ -864,8 +865,8 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the absolute value is greater than or equal to 1 (out of domain;
-    /// `|x| = 1` is infinite and `|x| > 1` is not real).
+    /// Panics if the absolute value is greater than 1 (out of domain: not real). At
+    /// `|x| = 1` the result is the signed infinity.
     ///
     /// # Examples
     ///
