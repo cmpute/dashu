@@ -60,14 +60,21 @@ const_assert!(THRESHOLD_NTT_DEFAULT > THRESHOLD_TOOM4_MUL_DEFAULT);
 /// `DASHU_THRESHOLD_KARATSUBA_MUL`, `DASHU_THRESHOLD_TOOM42_MIN`,
 /// `DASHU_THRESHOLD_TOOM4_MUL` or `DASHU_THRESHOLD_NTT_MUL` to override the
 /// compile-time defaults.
+///
+/// A tuning value only selects between algorithms, it must never make a product
+/// fail. Each value is therefore clamped to the range in which the kernel it
+/// gates accepts every operand it is handed: a kernel is never entered below its
+/// `MIN_LEN` (nor the schoolbook kernel above its `MAX_SMALLER_LEN`), and the
+/// transform threshold is not below the Toom-4 one, as the scratch budgets rely on
+/// the transform taking the longest operands only.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_MUL") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.clamp(super::karatsuba::MIN_LEN - 1, super::simple::MAX_SMALLER_LEN);
                 }
             }
         }
@@ -78,8 +85,8 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA_MUL") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::toom_3::MIN_LEN - 1);
                 }
             }
         }
@@ -90,8 +97,8 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_TOOM42_MIN") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::toom_4_2::MIN_LEN);
                 }
             }
         }
@@ -128,8 +135,8 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_TOOM4_MUL") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::toom_4::MIN_LEN - 1);
                 }
             }
         }
@@ -137,11 +144,15 @@ mod threshold {
     }
     #[inline]
     pub fn ntt() -> usize {
-        #[cfg(feature = "tuning")]
+        // There is no transform kernel with 16-bit words, hence nothing to tune.
+        #[cfg(all(
+            feature = "tuning",
+            not(any(force_bits = "16", target_pointer_width = "16"))
+        ))]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_MUL") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(toom4());
                 }
             }
         }
@@ -240,11 +251,13 @@ pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout 
 /// [`add_signed_mul`], which can reach a different algorithm with a larger
 /// scratch appetite than the top-level claim (e.g. a Toom-3 chunk tail
 /// landing in the Toom-4x2 band). The chain's second argument strictly
-/// decreases at every step, so the recursion terminates.
+/// decreases at every step (except for the tail of the schoolbook kernel's
+/// own chunk loop, which is shorter than a chunk and so ends that loop), so
+/// the recursion terminates.
 fn memory_chain_budget(a: usize, b: usize) -> Layout {
     debug_assert!(a >= b);
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    if b >= threshold::ntt_asym_min() && a >= threshold::ntt_asym_ratio() * b {
+    if b >= threshold::ntt_asym_min() && a >= threshold::ntt_asym_ratio().saturating_mul(b) {
         // The chunked NTT budget is expressed over the full product and
         // covers its internal chunk pipelines and their tails.
         return ntt::memory_requirement_up_to(a + b, b);
@@ -255,9 +268,15 @@ fn memory_chain_budget(a: usize, b: usize) -> Layout {
         return toom_4_2::memory_chain_budget(a, b);
     }
     let ladder = if b <= threshold::simple() {
-        // The schoolbook kernel consumes the whole operand in one pass,
-        // there is no chunk loop and no tail re-dispatch.
-        return memory::zero_layout();
+        // The schoolbook kernel needs no scratch itself, but it splits a long
+        // operand into chunks and re-dispatches the tail. With the default
+        // thresholds the tail product is schoolbook again; a simple threshold
+        // tuned above the Toom-4x2 minimum lets it land in that band.
+        let tail = a % simple::CHUNK_LEN;
+        if a <= simple::CHUNK_LEN || tail == 0 {
+            return memory::zero_layout();
+        }
+        return memory_chain_budget(tail.max(b), tail.min(b));
     } else if b <= threshold::karatsuba() {
         karatsuba::memory_requirement_up_to(b)
     } else if b <= threshold::toom4() {
@@ -452,7 +471,9 @@ pub fn add_signed_mul<'a>(
     // Heavily unbalanced: transform the smaller operand once and reuse its
     // spectrum across chunks of the larger one.
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    if b.len() >= threshold::ntt_asym_min() && a.len() >= threshold::ntt_asym_ratio() * b.len() {
+    if b.len() >= threshold::ntt_asym_min()
+        && a.len() >= threshold::ntt_asym_ratio().saturating_mul(b.len())
+    {
         return ntt::add_signed_mul(c, sign, a, b, memory);
     }
     #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
