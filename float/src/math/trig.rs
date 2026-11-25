@@ -2152,12 +2152,15 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// # Ok::<(), dashu_base::ParseError>(())
     /// ```
     ///
+    /// The result carries the higher of the two operands' precisions, as for the binary
+    /// arithmetic operations.
+    ///
     /// # Panics
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2_unit(&self, x: &Self, u: usize) -> Self {
-        self.context
-            .unwrap_fp(self.context.atan2_unit(&self.repr, &x.repr, u, None))
+        let context = Context::max(self.context, x.context);
+        context.unwrap_fp(context.atan2_unit(&self.repr, &x.repr, u, None))
     }
 
     /// Calculate the arcsine of the floating point number.
@@ -2186,12 +2189,25 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 
     /// Calculate the arctangent of `self / x`.
     ///
+    /// The result carries the higher of the two operands' precisions, as for the binary
+    /// arithmetic operations.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_float::DBig;
+    /// let y = DBig::from_str("1")?; // one digit
+    /// let x = DBig::from_str("1.000000000")?; // ten digits
+    /// assert_eq!(y.atan2(&x), DBig::from_str("0.7853981634")?);
+    /// # Ok::<(), dashu_base::ParseError>(())
+    /// ```
+    ///
     /// # Panics
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2(&self, x: &Self) -> Self {
-        self.context
-            .unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
+        let context = Context::max(self.context, x.context);
+        context.unwrap_fp(context.atan2(&self.repr, &x.repr, None))
     }
 }
 

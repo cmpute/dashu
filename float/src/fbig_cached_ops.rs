@@ -815,27 +815,23 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
 
     /// `atan2_unit(y, x, u)` (see [`FBig::atan2_unit`]).
     pub fn atan2_unit(&self, x: &Self, u: usize) -> Self {
+        let context = Context::max(self.fbig.context, x.fbig.context);
         let mut c = self.cache.borrow_mut();
-        let fbig = self
-            .fbig
-            .context
-            .unwrap_fp(self.fbig.context.atan2_unit::<B>(
-                &self.fbig.repr,
-                &x.fbig.repr,
-                u,
-                Some(&mut *c),
-            ));
+        let fbig = context.unwrap_fp(context.atan2_unit::<B>(
+            &self.fbig.repr,
+            &x.fbig.repr,
+            u,
+            Some(&mut *c),
+        ));
         Self::from_fbig(fbig, &self.cache)
     }
 
     /// `atan2(y, x)` (see [`FBig::atan2`]).
     pub fn atan2(&self, x: &Self) -> Self {
+        let context = Context::max(self.fbig.context, x.fbig.context);
         let mut c = self.cache.borrow_mut();
-        let fbig = self.fbig.context.unwrap_fp(self.fbig.context.atan2::<B>(
-            &self.fbig.repr,
-            &x.fbig.repr,
-            Some(&mut *c),
-        ));
+        let fbig =
+            context.unwrap_fp(context.atan2::<B>(&self.fbig.repr, &x.fbig.repr, Some(&mut *c)));
         Self::from_fbig(fbig, &self.cache)
     }
 

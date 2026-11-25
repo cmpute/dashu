@@ -109,6 +109,60 @@ fn test_atan2() {
     assert!((neg_one.atan2(&zero) - m_half_pi).abs() < DBig::from_parts(1.into(), -29));
 }
 
+/// `atan2` / `atan2_unit` take two operands and return the result at the higher of their
+/// precisions, like `+`, `/`, `powf` and `hypot`. They used to keep the receiver's: a `1` of
+/// precision 1 against an `x` of precision 40 gave `0.3`.
+#[test]
+fn test_atan2_takes_the_higher_precision() {
+    let y = DBig::from(1);
+    let x = DBig::from_str("3.000000000000000000000000000000000000001").unwrap();
+    assert_eq!((y.precision(), x.precision()), (1, 40));
+    let r = y.atan2(&x);
+    assert_eq!(r.precision(), 40);
+    assert_eq!(r.to_string(), "0.3217505543966421934014046143586613190207");
+    assert_eq!(r, y.clone().with_precision(40).value().atan2(&x));
+    // whichever operand is the wide one
+    assert_eq!(x.atan2(&y).precision(), 40);
+    let u = y.atan2_unit(&x, 360);
+    assert_eq!(u.precision(), 40);
+    assert_eq!(u, y.clone().with_precision(40).value().atan2_unit(&x, 360));
+    assert_eq!(x.atan2_unit(&y, 360).precision(), 40);
+
+    // the same value as the context-level call at the wider precision
+    type F = FBig<HalfEven, 2>;
+    for (py, px) in [
+        (20usize, 50usize),
+        (50, 20),
+        (100, 500),
+        (500, 100),
+        (50, 50),
+    ] {
+        let y = F::from(3).with_precision(py).value();
+        let x = F::from(-7).with_precision(px).value();
+        let ctx = Context::<HalfEven>::new(py.max(px));
+        let r = y.atan2(&x);
+        assert_eq!(r.precision(), py.max(px));
+        assert_eq!(r, ctx.atan2(y.repr(), x.repr(), None).unwrap().value());
+        let r = y.atan2_unit(&x, 360);
+        assert_eq!(r.precision(), py.max(px));
+        assert_eq!(
+            r,
+            ctx.atan2_unit(y.repr(), x.repr(), 360, None)
+                .unwrap()
+                .value()
+        );
+
+        // the cached wrapper is a drop-in replacement
+        let cache = std::rc::Rc::new(core::cell::RefCell::new(dashu_float::ConstCache::new()));
+        let cy = dashu_float::CachedFBig::new(y.clone(), cache.clone());
+        let cx = dashu_float::CachedFBig::new(x.clone(), cache);
+        assert_eq!(cy.atan2(&cx).as_fbig(), &y.atan2(&x));
+        assert_eq!(cy.atan2(&cx).as_fbig().precision(), py.max(px));
+        assert_eq!(cy.atan2_unit(&cx, 360).as_fbig(), &y.atan2_unit(&x, 360));
+        assert_eq!(cy.atan2_unit(&cx, 360).as_fbig().precision(), py.max(px));
+    }
+}
+
 #[test]
 #[should_panic]
 fn test_atan2_zero_zero_panics() {
