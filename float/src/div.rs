@@ -1,5 +1,7 @@
 use crate::{
-    error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
+    error::{
+        assert_finite_operands, assert_limited_precision, panic_divide_by_0, FpError, FpResult,
+    },
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{rounded_to_repr, Context, Repr, Word},
@@ -107,7 +109,7 @@ macro_rules! impl_rem_for_fbig {
             ///
             /// # Panics
             ///
-            /// Panics if either operand is infinite.
+            /// Panics if either operand is infinite, or if `rhs` is zero.
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(context.$repr_method(self.repr, rhs.repr).value(), context)
@@ -165,17 +167,22 @@ impl<R: Round, const B: Word> DivEuclid<FBig<R, B>> for FBig<R, B> {
     #[inline]
     fn div_euclid(self, rhs: FBig<R, B>) -> Self::Output {
         assert_finite_operands(&self.repr, &rhs.repr);
-        if !rhs.repr.significand.is_zero() && !self.repr.significand.is_zero() {
-            // |self| < |rhs| whenever the divisor's lowest digit sits above the dividend's
-            // highest one; the quotient is then 0 or -1 and the aligned divisor (as wide as
-            // the exponent gap) is never needed.
-            let top = self.repr.exponent as i128 + self.repr.digits() as i128;
-            if top <= rhs.repr.exponent as i128 {
-                return match self.repr.sign() {
-                    Sign::Positive => IBig::ZERO,
-                    Sign::Negative => IBig::from_parts(-rhs.repr.sign(), UBig::ONE),
-                };
-            }
+        if rhs.repr.significand.is_zero() {
+            panic_divide_by_0()
+        }
+        if self.repr.significand.is_zero() {
+            // nothing to align: the exponent of a zero is not a scale
+            return IBig::ZERO;
+        }
+        // |self| < |rhs| whenever the divisor's lowest digit sits above the dividend's
+        // highest one; the quotient is then 0 or -1 and the aligned divisor (as wide as
+        // the exponent gap) is never needed.
+        let top = self.repr.exponent as i128 + self.repr.digits() as i128;
+        if top <= rhs.repr.exponent as i128 {
+            return match self.repr.sign() {
+                Sign::Positive => IBig::ZERO,
+                Sign::Negative => IBig::from_parts(-rhs.repr.sign(), UBig::ONE),
+            };
         }
         let (num, den) = align_as_int(self, rhs);
         num.div_euclid(den)
@@ -848,11 +855,20 @@ impl<R: Round> Context<R> {
         euclid: bool,
     ) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
+        if rhs.significand.is_zero() {
+            panic_divide_by_0()
+        }
 
         // The sign of a zero remainder follows the dividend (IEEE 754 §5.3.1: "if the
         // remainder is zero, its sign shall be that of x"); a Euclidean remainder is
         // non-negative, so its zero is `+0`.
         let zero_sign = if euclid { Sign::Positive } else { lhs.sign() };
+        if lhs.significand.is_zero() {
+            // A zero dividend is its own remainder. Its exponent only encodes the sign of
+            // the zero: it must not be aligned with the divisor's (the gap would be as
+            // wide as the divisor's exponent).
+            return Approximation::Exact(Repr::zero_with_sign(zero_sign));
+        }
         let (lhs_exponent, rhs_exponent) = (lhs.exponent, rhs.exponent);
         let (lhs_sign, lhs_signif) = lhs.significand.into_parts();
         let (rhs_sign, rhs_signif) = rhs.significand.into_parts();
@@ -915,7 +931,7 @@ impl<R: Round> Context<R> {
                 let lhs_signif = IBig::from(lhs_signif);
                 let ldigits = digit_len::<B>(&lhs_signif);
 
-                if shift >= ldigits && !rhs_signif.is_zero() && !lhs_signif.is_zero() {
+                if shift >= ldigits {
                     // |lhs| < B^shift <= |rhs| (in units of B^lhs.exponent): the truncated
                     // quotient is zero and `r1` is the dividend itself. `r2 = |rhs|·B^shift
                     // − |lhs|` spans the whole exponent gap, so it is only formed on demand —
@@ -1058,9 +1074,18 @@ impl<R: Round> Context<R> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FpError::InfiniteInput`] if either operand is infinite, and
+    /// [`FpError::Indeterminate`] if `rhs` is zero (the remainder of a division by zero is
+    /// not a number, whatever the dividend is).
     pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
+        }
+        if rhs.significand.is_zero() {
+            return Err(FpError::Indeterminate);
         }
         Ok(self
             .repr_rem(lhs.clone(), rhs.clone())

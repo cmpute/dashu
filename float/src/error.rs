@@ -35,6 +35,7 @@ pub enum FpError {
     /// An indeterminate form, e.g. `0 / 0`. Only a *zero* divided by zero is
     /// indeterminate — a non-zero value divided by zero yields ±infinity, which is a
     /// legitimate [`Exact`](dashu_base::Approximation::Exact) value rather than an error.
+    /// The *remainder* of a division by zero is indeterminate for every dividend.
     Indeterminate,
 
     /// The result magnitude is too large to represent as a finite number.
@@ -120,6 +121,11 @@ pub const fn panic_unlimited_precision() -> ! {
 /// Panics when taking the zeroth root of a number
 pub fn panic_root_zeroth() -> ! {
     panic!("finding 0th root is not allowed!")
+}
+
+/// Panics when taking a remainder (or an integer quotient) by zero
+pub fn panic_divide_by_0() -> ! {
+    panic!("divisor must not be 0")
 }
 
 /// Panics when the result of an operation is NaN

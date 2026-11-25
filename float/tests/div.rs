@@ -615,6 +615,91 @@ mod triage {
         assert_eq!(&x % &DBig::from(3u8), DBig::ONE);
     }
 
+    /// A zero dividend is its own remainder, whatever the divisor's exponent is. The exponent
+    /// of a zero (0, or -1 for `-0`) is not a scale, but it used to be aligned with the
+    /// divisor's: `0 % 3·2^(isize::MAX/2)` ran out of memory (F94).
+    #[test]
+    fn test_rem_zero_dividend_huge_divisor_exponent() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [0usize, 20, 50, 100, 500] {
+                let ctx = Context::<R>::new(precision);
+                let exponents = [
+                    1000,
+                    1 << 40,
+                    isize::MAX / 2,
+                    isize::MAX - 1,
+                    isize::MIN + 1,
+                ];
+                for exponent in exponents {
+                    for divisor in [3i64, -3, 1] {
+                        let big = fbig::<R, B>(divisor, exponent, precision);
+                        for zero in [Repr::<B>::zero(), Repr::<B>::neg_zero()] {
+                            let r = match ctx.rem(&zero, big.repr()) {
+                                Ok(Approximation::Exact(r)) => r,
+                                other => panic!("rem({zero:?}, {big:?}) = {other:?}"),
+                            };
+                            // the zero keeps the dividend's sign
+                            assert_eq!(r.repr(), &zero);
+                            assert_eq!(r.precision(), precision);
+
+                            let z = FBig::<R, B>::from_repr(zero.clone(), ctx);
+                            assert_eq!((&z % &big).repr(), &zero);
+                            // a Euclidean remainder is non-negative
+                            assert!((&z).rem_euclid(&big).repr().is_pos_zero());
+                            assert_eq!((&z).div_euclid(&big), IBig::ZERO);
+                            let (q, r) = z.div_rem_euclid(&big);
+                            assert!(q == IBig::ZERO && r.repr().is_pos_zero());
+                        }
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::Down, 2>();
+        check::<mode::HalfEven, 10>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Up, 3>();
+    }
+
+    /// `Context::rem` reports a zero divisor as an error, like `Context::div` reports `0 / 0`
+    /// (it used to panic inside the integer division, although it returns an `FpResult`).
+    /// The operators have no error channel and keep panicking (F47).
+    #[test]
+    fn test_rem_by_zero_is_an_error() {
+        use dashu_float::FpError;
+        use std::panic::catch_unwind;
+
+        fn check<R: Round + std::panic::RefUnwindSafe, const B: Word>() {
+            for precision in [0usize, 20, 50, 100, 500] {
+                let ctx = Context::<R>::new(precision);
+                let dividends = [
+                    Repr::<B>::one(),
+                    Repr::<B>::zero(),
+                    Repr::<B>::neg_zero(),
+                    Repr::<B>::new((-7).into(), -3),
+                    Repr::<B>::new(5.into(), isize::MAX / 2),
+                    Repr::<B>::new(5.into(), isize::MIN + 1),
+                ];
+                for x in &dividends {
+                    for zero in [Repr::<B>::zero(), Repr::<B>::neg_zero()] {
+                        assert_eq!(ctx.rem(x, &zero), Err(FpError::Indeterminate));
+
+                        let fx = FBig::<R, B>::from_repr(x.clone(), ctx);
+                        let fz = FBig::<R, B>::from_repr(zero, ctx);
+                        assert!(catch_unwind(|| &fx % &fz).is_err());
+                        assert!(catch_unwind(|| (&fx).rem_euclid(&fz)).is_err());
+                        assert!(catch_unwind(|| (&fx).div_euclid(&fz)).is_err());
+                    }
+                }
+                // an infinite operand is still reported first
+                let inf = Repr::<B>::infinity();
+                assert_eq!(ctx.rem(&inf, &Repr::zero()), Err(FpError::InfiniteInput));
+            }
+        }
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 10>();
+    }
+
     /// Like every operation, the Euclidean remainder is rounded to the operands' precision.
     /// When the exact remainder does not fit (the divisor's exponent is above the dividend's)
     /// the rounded value can reach `|rhs|` — the same documented limitation as
