@@ -5,7 +5,7 @@
 
 use pyo3::{
     Bound, FromPyObject, PyErr, PyResult,
-    exceptions::{PySyntaxError, PyTypeError, PyValueError},
+    exceptions::{PyIndexError, PySyntaxError, PyTypeError, PyValueError, PyZeroDivisionError},
     ffi, intern,
     prelude::*,
     types::{PyBytes, PyDict, PyFloat, PyInt},
@@ -38,6 +38,26 @@ pub fn parse_signed_index(index: isize, length: usize, unlimited: bool) -> Optio
         let i = index.unsigned_abs();
         if i <= length { Some(length - i) } else { None }
     }
+}
+
+/// Read a subscript as an integer index. Returns `None` if the subscript is not an integer
+/// (so that the caller can go on and try a slice), and an `IndexError` (as `list` does) if it
+/// is an integer that does not fit in an index-sized integer.
+pub fn extract_index(index: &Bound<'_, PyAny>) -> Option<PyResult<isize>> {
+    if index.is_instance_of::<PyInt>() {
+        Some(
+            index
+                .extract::<isize>()
+                .map_err(|_| PyIndexError::new_err("cannot fit 'int' into an index-sized integer")),
+        )
+    } else {
+        index.extract::<isize>().ok().map(Ok)
+    }
+}
+
+/// The error for a division (or modulo) by an exact zero, as raised by Python's own numbers.
+pub fn zero_division_error() -> PyErr {
+    PyZeroDivisionError::new_err("division or modulo by zero")
 }
 
 pub fn conversion_error_to_py(error: ConversionError) -> PyErr {
@@ -210,7 +230,59 @@ impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'py> {
     }
 }
 
+/// Build a decimal float from an `f64`. Base-10 floats have no direct `TryFrom<f64>`, so a
+/// finite one goes through the shortest scientific-notation string that round-trips the `f64`
+/// (which gives the precision of the result); an infinity is the infinity of that sign.
+fn dbig_from_f64(x: f64) -> PyResult<DBig> {
+    if x.is_infinite() {
+        return Ok(if x > 0.0 {
+            DBig::INFINITY
+        } else {
+            DBig::NEG_INFINITY
+        });
+    }
+    DBig::from_str(&format!("{:e}", x)).map_err(parse_error_to_py)
+}
+
+/// Raise the precision of an exactly converted number to `precision` (no rounding happens:
+/// the precision is only ever increased).
+fn exact_at_least(f: FBig, precision: usize) -> FBig {
+    if f.precision() < precision {
+        f.with_precision(precision).value()
+    } else {
+        f
+    }
+}
+
 impl<'a> UniInput<'a> {
+    /// Whether the input is an exact number (an integer or a rational), as opposed to a float.
+    pub fn is_exact(&self) -> bool {
+        matches!(
+            self,
+            Self::Uint(_)
+                | Self::Int(_)
+                | Self::BUint(_)
+                | Self::BInt(_)
+                | Self::OBInt(_)
+                | Self::BRational(_)
+                | Self::OBRational(_)
+        )
+    }
+
+    /// Whether the input is an exact zero (an integer or a rational). Dividing by it raises
+    /// `ZeroDivisionError`, while dividing by a float zero gives an infinity.
+    pub fn is_exact_zero(&self) -> bool {
+        match self {
+            Self::Uint(x) => *x == 0,
+            Self::BUint(x) => x.0.is_zero(),
+            Self::BInt(x) => x.0.is_zero(),
+            Self::OBInt(x) => x.is_zero(),
+            Self::BRational(x) => x.0.is_zero(),
+            Self::OBRational(x) => x.is_zero(),
+            _ => false,
+        }
+    }
+
     pub fn into_ubig(self) -> PyResult<UBig> {
         let err = PyTypeError::new_err(ERRMSG_INPUT_NOT_UBIG);
         match self {
@@ -264,6 +336,31 @@ impl<'a> UniInput<'a> {
         }
     }
 
+    /// Conversion of the operand of a module-level math function (`dashu.sqrt(2)`) to a
+    /// binary float.
+    ///
+    /// An exact number (an integer or a rational) has no precision of its own, so it is taken
+    /// at the module default precision, or exactly if it has more digits than that: the
+    /// result of `dashu.sqrt(2)` is that of `dashu.sqrt(2.0)`, not a float rounded to the two
+    /// bits of the integer. A rational that is not a binary fraction is rounded to the default
+    /// precision first. Floats keep their own precision.
+    pub fn into_math_fpy(self) -> PyResult<FPy> {
+        let default = crate::utils::default_precision();
+        let rounded = |r: &RBig| match FBig::try_from(r.clone()) {
+            Ok(f) => exact_at_least(f, default),
+            Err(_) => r.to_float(default).value(),
+        };
+        match self {
+            Self::BRational(x) => Ok(FPy(rounded(&x.0))),
+            Self::OBRational(x) => Ok(FPy(rounded(&x))),
+            other => {
+                let exact = other.is_exact();
+                let f = other.into_fpy()?.0;
+                Ok(FPy(if exact { exact_at_least(f, default) } else { f }))
+            }
+        }
+    }
+
     /// Strict conversion of any numeric input to a decimal float (`DPy`).
     /// Binary floats are rejected (convert explicitly).
     pub fn into_dpy(self) -> PyResult<DPy> {
@@ -273,12 +370,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(DPy(DBig::from(x.0.clone()))),
             Self::BInt(x) => Ok(DPy(DBig::from(x.0.clone()))),
             Self::OBInt(x) => Ok(DPy(DBig::from(x))),
-            // base-10 floats have no direct TryFrom<f64>; round-trip through the
-            // shortest scientific-notation string that f64 produces.
-            Self::Float(x) => {
-                let s = format!("{:e}", x);
-                DBig::from_str(&s).map(DPy).map_err(parse_error_to_py)
-            }
+            Self::Float(x) => dbig_from_f64(x).map(DPy),
             Self::BDecimal(x) => Ok(DPy(x.0.clone())),
             Self::OBDecimal(x) => Ok(DPy(x)),
             Self::BRational(x) => DBig::try_from(x.0.clone())
@@ -341,10 +433,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(DBig::from(x.0.clone())),
             Self::BInt(x) => Ok(DBig::from(x.0.clone())),
             Self::OBInt(x) => Ok(DBig::from(x)),
-            Self::Float(x) => {
-                let s = format!("{:e}", x);
-                DBig::from_str(&s).map_err(parse_error_to_py)
-            }
+            Self::Float(x) => dbig_from_f64(x),
             Self::BFloat(x) => Ok(x.0.to_decimal().value()),
             Self::BDecimal(x) => Ok(x.0.clone()),
             Self::OBDecimal(x) => Ok(x),

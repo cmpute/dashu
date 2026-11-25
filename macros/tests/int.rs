@@ -165,3 +165,31 @@ fn test_static_ibig() {
         IBig::from_str("-123456789012345678901234567890123456789012345678901234567890").unwrap()
     );
 }
+
+#[test]
+#[rustfmt::skip::macros(ibig, static_ibig)]
+fn test_ibig_single_sign() {
+    use dashu_macros::static_ibig;
+
+    // one optional sign in front of the digits (repeated signs such as `ibig!(--5)` are
+    // rejected at compile time, see the docs of `ibig!` and the unit tests of the parser)
+    assert_eq!(ibig!(-5), IBig::from(-5));
+    assert_eq!(ibig!(- 5), IBig::from(-5));
+    assert_eq!(ibig!(+5), IBig::from(5));
+    assert_eq!(ibig!(-a base 16), IBig::from(-10));
+    assert_eq!(*static_ibig!(-5), IBig::from(-5));
+    assert_eq!(*static_ibig!(+5), IBig::from(5));
+}
+
+#[test]
+#[rustfmt::skip::macros(ibig, ubig)]
+fn test_base_marker() {
+    // one `base N` suffix (a repeated marker such as `ubig!(5 base base 36)` is rejected at
+    // compile time, see the docs of `ubig!` and the unit tests of the parser)
+    assert_eq!(ubig!(5 base 36), UBig::from(5u8));
+    assert_eq!(ubig!(z base 36), UBig::from(35u8));
+    assert_eq!(ibig!(-z base 36), IBig::from(-35));
+    // `base` itself is a digit string in a large enough base
+    assert_eq!(ubig!(base base 36), UBig::from(527198u32));
+    assert_eq!(ibig!(-base base 36), IBig::from(-527198));
+}

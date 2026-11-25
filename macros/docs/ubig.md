@@ -27,6 +27,12 @@ let j = ubig!(b102 base 32);
 assert_eq!(i, j);
 ```
 
+The `base` marker is given once, followed by the base:
+```compile_fail
+# use dashu_macros::ubig;
+let _ = ubig!(5 base base 36);
+```
+
 For numbers that are small enough (fits in a [u32]), the literal can
 be assigned to a constant.
 ```rust

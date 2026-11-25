@@ -172,12 +172,15 @@ helper_macros::impl_binop_assign_by_taking!(impl RemAssign<UBig> for IBig, rem_a
 
 macro_rules! impl_divrem_with_primitive {
     (impl <$target:ty> for $t:ty) => {
+        impl_divrem_with_primitive!(impl <$target> for $t, OutputRem = $target);
+    };
+    (impl <$target:ty> for $t:ty, OutputRem = $rem:ty) => {
         impl DivRem<$target> for $t {
             type OutputDiv = $t;
-            type OutputRem = $target;
+            type OutputRem = $rem;
 
             #[inline]
-            fn div_rem(self, rhs: $target) -> ($t, $target) {
+            fn div_rem(self, rhs: $target) -> ($t, $rem) {
                 let (q, r) = self.div_rem(<$t>::from(rhs));
                 (q, r.try_into().unwrap())
             }
@@ -185,10 +188,10 @@ macro_rules! impl_divrem_with_primitive {
 
         impl<'l> DivRem<$target> for &'l $t {
             type OutputDiv = $t;
-            type OutputRem = $target;
+            type OutputRem = $rem;
 
             #[inline]
-            fn div_rem(self, rhs: $target) -> ($t, $target) {
+            fn div_rem(self, rhs: $target) -> ($t, $rem) {
                 let (q, r) = self.div_rem(<$t>::from(rhs));
                 (q, r.try_into().unwrap())
             }
@@ -196,10 +199,10 @@ macro_rules! impl_divrem_with_primitive {
 
         impl<'r> DivRem<&'r $target> for $t {
             type OutputDiv = $t;
-            type OutputRem = $target;
+            type OutputRem = $rem;
 
             #[inline]
-            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+            fn div_rem(self, rhs: &$target) -> ($t, $rem) {
                 let (q, r) = self.div_rem(<$t>::from(*rhs));
                 (q, r.try_into().unwrap())
             }
@@ -207,10 +210,10 @@ macro_rules! impl_divrem_with_primitive {
 
         impl<'l, 'r> DivRem<&'r $target> for &'l $t {
             type OutputDiv = $t;
-            type OutputRem = $target;
+            type OutputRem = $rem;
 
             #[inline]
-            fn div_rem(self, rhs: &$target) -> ($t, $target) {
+            fn div_rem(self, rhs: &$target) -> ($t, $rem) {
                 let (q, r) = self.div_rem(<$t>::from(*rhs));
                 (q, r.try_into().unwrap())
             }
@@ -220,38 +223,41 @@ macro_rules! impl_divrem_with_primitive {
 
 macro_rules! impl_div_by_primitive {
     (impl <$target:ty> for $t:ty) => {
+        impl_div_by_primitive!(impl <$target> for $t, Output = $target);
+    };
+    (impl <$target:ty> for $t:ty, Output = $out:ty) => {
         impl Div<$t> for $target {
-            type Output = $target;
+            type Output = $out;
 
             #[inline]
-            fn div(self, rhs: $t) -> $target {
+            fn div(self, rhs: $t) -> $out {
                 <$t>::from(self).div(rhs).try_into().unwrap()
             }
         }
 
         impl<'l> Div<$t> for &'l $target {
-            type Output = $target;
+            type Output = $out;
 
             #[inline]
-            fn div(self, rhs: $t) -> $target {
+            fn div(self, rhs: $t) -> $out {
                 <$t>::from(*self).div(rhs).try_into().unwrap()
             }
         }
 
         impl<'r> Div<&'r $t> for $target {
-            type Output = $target;
+            type Output = $out;
 
             #[inline]
-            fn div(self, rhs: &$t) -> $target {
+            fn div(self, rhs: &$t) -> $out {
                 <$t>::from(self).div(rhs).try_into().unwrap()
             }
         }
 
         impl<'l, 'r> Div<&'r $t> for &'l $target {
-            type Output = $target;
+            type Output = $out;
 
             #[inline]
-            fn div(self, rhs: &$t) -> $target {
+            fn div(self, rhs: &$t) -> $out {
                 <$t>::from(*self).div(rhs).try_into().unwrap()
             }
         }
@@ -282,7 +288,23 @@ macro_rules! impl_div_primitive_with_ibig {
         helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for IBig, div_rem_assign, OutputRem = $t);
     )*};
 }
-impl_div_primitive_with_ibig!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
+impl_div_primitive_with_ibig!(i8 i16 i32 i64 i128 isize);
+
+// With an unsigned primitive operand, a result that takes its sign from the IBig operand
+// (the remainder `IBig % uN`, and the quotient `uN / IBig`) can be negative, so it's
+// not representable by the primitive type in general and an IBig is returned instead.
+macro_rules! impl_div_unsigned_primitive_with_ibig {
+    ($($t:ty)*) => {$(
+        helper_macros::impl_binop_with_primitive!(impl Div<$t> for IBig, div);
+        impl_div_by_primitive!(impl <$t> for IBig, Output = IBig);
+        helper_macros::impl_binop_with_primitive!(impl Rem<$t> for IBig, rem);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivAssign<$t> for IBig, div_assign);
+
+        impl_divrem_with_primitive!(impl <$t> for IBig, OutputRem = IBig);
+        helper_macros::impl_binop_assign_with_primitive!(impl DivRemAssign<$t> for IBig, div_rem_assign, OutputRem = IBig);
+    )*};
+}
+impl_div_unsigned_primitive_with_ibig!(u8 u16 u32 u64 u128 usize);
 
 pub(crate) mod repr {
     use super::*;

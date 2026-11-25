@@ -10,6 +10,18 @@ use dashu_int::{
     UBig,
 };
 
+/// Parse an unsigned run of digits (digit separators `_` allowed) in the given radix.
+///
+/// The sign of a literal is consumed once, up front, by [`Repr::from_str_native`]; the integer
+/// parser underneath accepts a leading `+` of its own, which would otherwise let a second sign
+/// slip through in the integral part (`++1`, `0x+1`) or in the fractional part (`0.+1`).
+fn parse_unsigned_digits(src: &str, radix: u32) -> Result<UBig, ParseError> {
+    if src.starts_with('+') {
+        return Err(ParseError::InvalidDigit);
+    }
+    UBig::from_str_radix(src, radix)
+}
+
 impl<const B: Word> Repr<B> {
     /// Convert a string in the native base (i.e. radix `B`) to [Repr].
     ///
@@ -75,8 +87,10 @@ impl<const B: Word> Repr<B> {
             (0, false)
         };
 
-        // parse the body of the float number
-        let mut exponent = scale;
+        // Parse the body of the float number. The exponent is tracked in a wider type until the
+        // number is normalized: `cc - len(bbb)` can lie below `isize::MIN` for a literal whose
+        // trailing zeros bring the exponent back into the range (`0.100e<isize::MIN + 2>`).
+        let mut exponent = scale as i128;
         let ndigits;
         let significand = if let Some(dot) = src.find('.') {
             // check whether both integral part and fractional part are empty
@@ -92,15 +106,19 @@ impl<const B: Word> Repr<B> {
                     let int_str = &int_str[2..];
                     let digits = 4 * (int_str.len() - int_str.matches('_').count());
                     if int_str.is_empty() {
+                        // the prefix alone carries no digit: `0x.` omits both parts
+                        if dot + 1 == src.len() {
+                            return Err(ParseError::NoDigits);
+                        }
                         (UBig::ZERO, digits, 16)
                     } else {
-                        (UBig::from_str_radix(int_str, 16)?, digits, 16)
+                        (parse_unsigned_digits(int_str, 16)?, digits, 16)
                     }
                 } else if B == 2 && pmarker && !has_prefix {
                     return Err(ParseError::UnsupportedRadix);
                 } else {
                     let digits = int_str.len() - int_str.matches('_').count();
-                    (UBig::from_str_radix(&src[..dot], radix)?, digits, radix)
+                    (parse_unsigned_digits(int_str, radix)?, digits, radix)
                 }
             } else {
                 if pmarker {
@@ -117,7 +135,7 @@ impl<const B: Word> Repr<B> {
                 if B == 2 && base == 16 {
                     digits *= 4;
                 }
-                (UBig::from_str_radix(src, base)?, digits)
+                (parse_unsigned_digits(src, base)?, digits)
             } else {
                 (UBig::ZERO, 0)
             };
@@ -126,7 +144,8 @@ impl<const B: Word> Repr<B> {
             if fract.is_zero() {
                 int
             } else {
-                exponent -= fract_digits as isize;
+                // (a `usize` always fits an `i128`, and the difference cannot overflow one)
+                exponent -= fract_digits as i128;
                 int * UBig::from_word(B).pow(fract_digits) + fract
             }
         } else {
@@ -134,12 +153,12 @@ impl<const B: Word> Repr<B> {
             if B == 2 && has_prefix {
                 src = &src[2..];
                 ndigits = 4 * (src.len() - src.matches('_').count());
-                UBig::from_str_radix(src, 16)?
+                parse_unsigned_digits(src, 16)?
             } else if B == 2 && pmarker && !has_prefix {
                 return Err(ParseError::UnsupportedRadix);
             } else {
                 ndigits = src.len() - src.matches('_').count();
-                UBig::from_str_radix(src, radix)?
+                parse_unsigned_digits(src, radix)?
             }
         };
 
@@ -147,10 +166,17 @@ impl<const B: Word> Repr<B> {
         // `sign * significand` cannot express it — negating an `IBig` zero yields zero. Without
         // this, `-0`, `-0.0` and `-0e0` all parsed as `+0` and the value did not survive its own
         // `Display` round-trip.
-        let repr = if sign == Sign::Negative && significand.is_zero() {
-            Repr::neg_zero()
+        //
+        // For the same reason the scale of a zero must be dropped rather than stored: `0e-1`
+        // would otherwise land on the `-0` sentinel and `0e<isize::MAX>` on the infinity one.
+        let repr = if significand.is_zero() {
+            Repr::zero_with_sign(sign)
         } else {
-            Repr::new(sign * significand, exponent)
+            // The extreme exponents are reserved (a nonzero significand there is not what a
+            // literal can denote), so the exponent has to lie strictly between them once the
+            // trailing zeros of the significand are folded into it; a literal beyond that is
+            // out of range.
+            Repr::new_wide(sign * significand, exponent).map_err(|_| ParseError::InvalidDigit)?
         };
         Ok((repr, ndigits))
     }
@@ -199,6 +225,11 @@ impl<R: Round, const B: Word> FromStr for FBig<R, B> {
     /// Literal `aaa` and `cc` above can be signed, but `bbb` must be unsigned.
     /// All `cc` are represented in decimal. Either `aaa` or `bbb` can be omitted
     /// when its value is zero, but they are not allowed to be omitted at the same time.
+    ///
+    /// A zero is `+0` or `-0` according to the sign of `aaa` alone; its scale `cc` is ignored.
+    /// For a nonzero number the resulting exponent must lie strictly between [`isize::MIN`]
+    /// and [`isize::MAX`]; a literal whose scale `cc` does not fit, or whose exponent leaves
+    /// that range, is rejected with [`ParseError::InvalidDigit`].
     ///
     /// # Precision
     ///

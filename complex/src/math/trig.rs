@@ -5,17 +5,55 @@
 //! `sin(x+iy) = sin x·cosh y + i·cos x·sinh y`, `cos(x+iy) = cos x·cosh y − i·sin x·sinh y`. This
 //! form avoids the `exp(±iz)` identity's exponential blow-up for large `|Im z|`.
 
-use crate::ball::CBall;
+use crate::ball::{abs_ball, div_real, is_zero, kernel_ball, six_x_is_integer, CBall};
 use crate::cbig::CBig;
 use crate::repr::{combine_parts, reborrow_cache, CfpResult, Context};
-use dashu_base::{Approximation, EstimatedLog2};
-use dashu_float::round::ErrorBounds;
-use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
-use dashu_int::{IBig, Word};
+use crate::ziv::MAX_ZIV_RETRIES;
+use dashu_base::{Approximation, EstimatedLog2, Sign};
+use dashu_float::round::{ErrorBounds, Rounding};
+use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Mag, Repr};
+use dashu_int::{IBig, UBig, Word};
 
 /// Guard digits (base-B) for the forward trig. Composes real `sin_cos` + `sinh_cosh` + two
 /// products; the cancellation near the trig zeros is absorbed by the re-round.
 const TRIG_GUARD: usize = 16;
+
+/// The real kernels of the `tan` composition at one working precision, as balls:
+/// `sin 2x`, `cos 2x`, `sinh 2y`, `cosh 2y` (or their ×π twins) and the shared denominator
+/// `D = cos 2x + cosh 2y`.
+struct TanKernel<const B: Word> {
+    sin2x: Ball<B>,
+    cos2x: Ball<B>,
+    sinh2y: Ball<B>,
+    cosh2y: Ball<B>,
+    denom: Ball<B>,
+}
+
+/// `|x|` of a finite `Repr` (a negative zero becomes `+0`).
+fn repr_abs<const B: Word>(x: &Repr<B>) -> Repr<B> {
+    if x.sign() == Sign::Negative {
+        -x.clone()
+    } else {
+        x.clone()
+    }
+}
+
+/// A part that left the bottom of the exponent range: a signed zero, flagged inexact (the
+/// componentwise saturation of [`combine_results`](crate::repr::combine_results)).
+fn underflowed_part<R: ErrorBounds, const B: Word>(
+    sign: Sign,
+    f: FloatCtxt<R>,
+) -> Approximation<FBig<R, B>, Rounding> {
+    Approximation::Inexact(FBig::from_repr(Repr::zero_with_sign(sign), f), Rounding::NoOp)
+}
+
+/// An exact signed zero at the float context `f`.
+fn zero_part<R: ErrorBounds, const B: Word>(
+    sign: Sign,
+    f: FloatCtxt<R>,
+) -> Approximation<FBig<R, B>, Rounding> {
+    Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(sign), f))
+}
 
 impl<R: ErrorBounds> Context<R> {
     /// Simultaneously compute `sin z` and `cos z` (context layer), correctly rounded via a shared
@@ -24,71 +62,117 @@ impl<R: ErrorBounds> Context<R> {
     pub fn sin_cos<const B: Word>(
         &self,
         z: &CBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> (CfpResult<R, B>, CfpResult<R, B>) {
         if z.is_infinite() {
             return (Err(FpError::Indeterminate), Err(FpError::Indeterminate));
         }
         if z.is_zero() {
-            let (re, im) = (z.re(), z.im());
-            // sin(x+iy) = sinx·coshy + i·cosx·sinhy: at ±0 the parts carry the input zeros' signs
-            // (sin(±0) = ±0, sinh(±0) = ±0, cos(±0) = cosh(±0) = 1), so e.g. `csin(-0 + i·0) = -0 + i·0`.
-            let sin = crate::repr::exact(
-                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
-                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
-            );
-            // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed
-            // product `x·y` (`−0` iff the two parts are opposite-signed zeros) — the Annex-G table
-            // value, which differs from the naive `−sinx·sinhy` propagation (`ccos(-0 + i·0) = 1 - i·0`).
-            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
-            let cos = crate::repr::exact(
-                FBig::from_repr(Repr::one(), self.float()),
-                FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
-            );
-            return (Ok(sin), Ok(cos));
+            return self.sin_cos_of_zero(z);
         }
+        match self.sin_cos_parts(z, cache, false, [false; 4]) {
+            Ok([sin_re, sin_im, cos_re, cos_im]) => {
+                (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
+            }
+            // an overflow (e.g. `cosh` of a huge imaginary part) fails both sin and cos together.
+            Err(e) => (Err(e), Err(e)),
+        }
+    }
 
-        // `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four
-        // products share one evaluation of the real `sin_cos`/`sinh_cosh` (each correctly-rounded
-        // at the working precision, folded to one work-ulp by `from_rounded`) and are tracked by
-        // the ball product rule — the radius is mechanical, so the cancellation near the trig
-        // zeros prices itself. A single 4-part Ziv loop certifies all of `sin` and `cos`
-        // together; the entry is exact, so the input-error folds are all zero.
+    /// `(sin z, cos z)` at a signed zero `z` (shared by the radian and ×π families: both have
+    /// the same table at zero).
+    fn sin_cos_of_zero<const B: Word>(&self, z: &CBig<R, B>) -> (CfpResult<R, B>, CfpResult<R, B>) {
+        let (re, im) = (z.re(), z.im());
+        // sin(x+iy) = sinx·coshy + i·cosx·sinhy: at ±0 the parts carry the input zeros' signs
+        // (sin(±0) = ±0, sinh(±0) = ±0, cos(±0) = cosh(±0) = 1), so e.g. `csin(-0 + i·0) = -0 + i·0`.
+        let sin = crate::repr::exact(
+            FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
+            FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
+        );
+        // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed zero
+        // `−sin x·sinh y = −(x·y)`, i.e. `−0` iff the two parts are like-signed zeros. This is the
+        // Annex-G value `ccos(z) = ccosh(iz)` (`ccos(+0 + i·0) = ccosh(−0 + i·0) = 1 − i·0`), and
+        // the sign the nonzero neighbours `cos(±ε ± i·0)` have.
+        let cos_im = -(re.sign() * im.sign());
+        let cos = crate::repr::exact(
+            FBig::from_repr(Repr::one(), self.float()),
+            FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
+        );
+        (Ok(sin), Ok(cos))
+    }
+
+    /// The four parts `[Re sin, Im sin, Re cos, Im cos]` of `sin z` / `cos z` (or of
+    /// `sin zπ` / `cos zπ` with `pi`), each correctly rounded — with part `i` *negated* where
+    /// `negate[i]` is set. The negation is applied to the working-precision ball, before the
+    /// single final rounding, so a negated part is the correctly rounded value of the negated
+    /// quantity under every mode (negating an already-rounded part instead would reverse the
+    /// direction of `Down`/`Up`). This is what lets the hyperbolic family reuse this evaluation.
+    ///
+    /// `sin z = sinx·coshy + i·cosx·sinhy`, `cos z = cosx·coshy − i·sinx·sinhy`. The four
+    /// products share one evaluation of the real `sin_cos`/`sinh_cosh` (each correctly-rounded
+    /// at the working precision, folded to one work-ulp by `from_rounded`) and are tracked by
+    /// the ball product rule — the radius is mechanical, so the cancellation near the trig
+    /// zeros prices itself. A single 4-part Ziv loop certifies all of `sin` and `cos` together.
+    ///
+    /// For the ×π family the π-scaling lives inside the real ×π kernels (their argument balls
+    /// carry π's radius), NOT in a pre-multiplied `π·y` (whose ½-ulp error the hyperbolic
+    /// derivative would amplify to ~2π|y| ulps).
+    pub(crate) fn sin_cos_parts<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        mut cache: Option<&mut ConstCache>,
+        pi: bool,
+        negate: [bool; 4],
+    ) -> Result<[Approximation<FBig<R, B>, Rounding>; 4], FpError> {
         let p = self.precision();
-        let parts = self.ziv(TRIG_GUARD, |guard| {
+        self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
             let cb = CBall::from_parts(z.re(), z.im(), pw);
-            let (sinx, cosx) = gctx.sin_cos(&cb.re.mid, reborrow_cache(&mut cache));
-            let mut sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
-            let mut cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
-            // the kernels run on the midpoints: the seed rounding of an over-precise input
-            // propagates (|Δsin|, |Δcos| ≤ |δx|; |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δy}·|δy|)
+            let (sinx, cosx) = if pi {
+                gctx.sin_cos_pi(&cb.re.mid, reborrow_cache(&mut cache))
+            } else {
+                gctx.sin_cos(&cb.re.mid, reborrow_cache(&mut cache))
+            };
+            // where the real kernels can be exact at all: sin/cos only at 0, the ×π pair only on
+            // the lattice 6x ∈ ℤ, sinh/cosh only at 0
+            let x_exact = if pi {
+                six_x_is_integer(&cb.re.mid)
+            } else {
+                is_zero(&cb.re.mid)
+            };
+            let y_exact = is_zero(&cb.im.mid);
+            let mut sx = kernel_ball(sinx?, pw, |_| x_exact);
+            let mut cx = kernel_ball(cosx?, pw, |_| x_exact);
+            // the kernels run on the midpoints: an input radius would propagate as
+            // |Δsin|, |Δcos| ≤ |δx|; |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δy}·|δy| (the seed is
+            // exact, so these folds are zero)
             sx.add_error(cb.re.rad);
             cx.add_error(cb.re.rad);
-            let (sinhy, coshy) = gctx.sinh_cosh(&cb.im.mid, reborrow_cache(&mut cache));
-            let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
-            let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
+            let (sinhy, coshy) = if pi {
+                gctx.sinh_cosh_pi(&cb.im.mid, reborrow_cache(&mut cache))
+            } else {
+                gctx.sinh_cosh(&cb.im.mid, reborrow_cache(&mut cache))
+            };
+            let mut shy = kernel_ball(sinhy?, pw, |_| y_exact);
+            let mut chy = kernel_ball(coshy?, pw, |_| y_exact);
             let y_fold = chy.mag().mul(&cb.im.rad.exp_upper()).mul(&cb.im.rad).mul2();
             shy.add_error(y_fold);
             chy.add_error(y_fold);
-            let sin_re = sx.mul(&chy, pw)?;
-            let sin_im = cx.mul(&shy, pw)?;
-            let cos_re = cx.mul(&chy, pw)?;
-            let cos_im = -sx.mul(&shy, pw)?; // cos z's imaginary part is −sinx·sinhy
-            Ok([
-                sin_re.to_value_radius(&gctx),
-                sin_im.to_value_radius(&gctx),
-                cos_re.to_value_radius(&gctx),
-                cos_im.to_value_radius(&gctx),
-            ])
-        });
-        let [sin_re, sin_im, cos_re, cos_im] = match parts {
-            Ok(arr) => arr,
-            // an overflow (e.g. `cosh` of a huge imaginary part) fails both sin and cos together.
-            Err(e) => return (Err(e), Err(e)),
-        };
-        (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
+            let parts = [
+                sx.mul(&chy, pw)?,
+                cx.mul(&shy, pw)?,
+                cx.mul(&chy, pw)?,
+                -sx.mul(&shy, pw)?, // cos z's imaginary part is −sinx·sinhy
+            ];
+            let mut out = parts.map(|b| b.to_value_radius(&gctx));
+            for (slot, neg) in out.iter_mut().zip(negate) {
+                if neg {
+                    slot.0 = -slot.0.clone();
+                }
+            }
+            Ok(out)
+        })
     }
 
     /// Complex sine (context layer).
@@ -126,7 +210,7 @@ impl<R: ErrorBounds> Context<R> {
     pub fn tan<const B: Word>(
         &self,
         z: &CBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
         if z.is_infinite() {
             // An infinite input maps to Indeterminate (the C99 NaN case), like the other complex
@@ -144,87 +228,256 @@ impl<R: ErrorBounds> Context<R> {
             ));
         }
 
-        // The saturation gate and the Ziv recipe below are limited-precision techniques — reject
-        // an unlimited context before either runs, like the float layer's `tanh` and this crate's
-        // `exp`. (The Ziv driver would also reject — the saturated path still enters it for the
-        // real part — but the contract belongs to the caller, not to the driver being reached
-        // through a pre-driver shortcut like the gate.)
+        // The saturation gate and the Ziv recipe are limited-precision techniques — reject an
+        // unlimited context before either runs, like the float layer's `tanh` and this crate's
+        // `exp`.
         self.assert_limited();
+        self.tan_parts(z, cache, false)
+    }
 
-        // Through the tracked composition: exact doublings, the real `sin_cos`/`sinh_cosh`
-        // kernels on the doubled midpoints (folded to one work-ulp each), the shared
-        // denominator `cos 2x + cosh 2y` as a real ball, and one componentwise ball division —
-        // the radius (including the genuine amplification near the real-axis poles, where the
-        // denominator touches zero) is mechanical. The Ziv driver asserts a limited context.
+    /// The shared body of `tan` (`pi == false`) and `tan_pi` (`pi == true`) for a finite nonzero
+    /// argument at limited precision.
+    ///
+    /// Through the tracked composition: exact doublings, the real `sin_cos`/`sinh_cosh` kernels
+    /// (or their ×π twins) on the doubled midpoints (folded to one work-ulp each), the shared
+    /// denominator `cos 2x + cosh 2y` as a real ball, and one componentwise ball division — the
+    /// radius (including the genuine amplification near the real-axis poles, where the
+    /// denominator touches zero) is mechanical.
+    fn tan_parts<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        mut cache: Option<&mut ConstCache>,
+        pi: bool,
+    ) -> CfpResult<R, B> {
         let p = self.precision();
 
-        // For a large enough |Im z| the imaginary part saturates: im = sinh 2y / D lies within
-        // (1+e^{−2y})/(cosh 2y − 1) ≤ 4·e^{−2y} of sign(y) (for |y| ≥ 1), which is below half an
-        // ulp of ±1 once 2|y| > p·ln B + ln 8 — its rounding is then fully determined, but the
-        // componentwise division's working-precision mid collapses onto exactly ±1, the boundary
-        // of a one-sided directed preimage, which the Ziv containment cannot certify (it would
-        // climb toward ~2|y|/ln B working digits — an effective hang for a plain input like
-        // tan(i·10⁵), and `tanh = −i·tan(i·z)` of a large real part lands here too). Pin the
-        // mode-aware endpoint directly via dashu-float's `Context::near_one_endpoint`, mirroring
-        // that crate's `tanh` gate; the real part
-        // sin 2x / D stays a genuine tiny value (no underflow — e^{2y} is a huge exponent over a
-        // small significand, cheap at any working precision), so it keeps flowing through a
-        // single-part Ziv loop on the same composition. Compare the lower bound of log2|y|
-        // against an upper bound of log2(threshold) so a borderline input still falls through.
-        let thresh =
+        // For a large enough |Im z| the imaginary part saturates. With `t = 2|y|` (`2π|y|` for
+        // the ×π family), `im − sign(y) = −sign(y)·(cos 2x + e^{−t})/D`, which lies within
+        // (1+e^{−t})/(cosh t − 1) ≤ 4·e^{−t} of ±1 (for t ≥ 2) — below half an ulp of ±1 once
+        // t > p·ln B + ln 8. Its rounding is then fully determined by *which side* of ±1 it
+        // lies on, but the componentwise division's working-precision mid collapses onto
+        // exactly ±1, a rounding boundary, which the Ziv containment cannot certify (it would
+        // climb toward ~t/ln B working digits — an effective hang for a plain input like
+        // tan(i·10⁵), and `tanh` of a large real part lands here too). So decide the side
+        // directly (see `tan_saturated_side`) and round the endpoint under this mode. The real
+        // part sin 2x / D stays a genuine tiny value (no underflow — e^{t} is a huge exponent
+        // over a small significand, cheap at any working precision), so it keeps flowing
+        // through a single-part Ziv loop on the same composition. Compare the lower bound of
+        // log2|y| against an upper bound of log2(threshold) so a borderline input still falls
+        // through.
+        let mut thresh =
             p as f32 * B.log2_est() * core::f32::consts::LN_2 / 2.0 + 1.5 * core::f32::consts::LN_2;
+        if pi {
+            thresh /= 3.0; // t = 2π|y|, and π > 3
+        }
         if z.im().log2_bounds().0 > thresh.log2_bounds().1 {
-            let im_sign = z.im().sign();
-            let [re] = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
+            let re = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
                 // re = sin 2x / D: the tan composition minus the saturated imaginary part.
                 let pw = p + guard;
-                let (sx2, _shy2, denom) = Self::tan_kernel_balls::<B>(z, pw, &mut cache)?;
-                let re = sx2.div(&denom, pw)?;
+                let k = Self::tan_kernel_balls::<B>(z, pw, pi, &mut cache)?;
+                let re = div_real(&k.sin2x, &k.denom, pw)?;
                 Ok([re.to_value_radius(&FloatCtxt::<R>::new(pw))])
-            })?;
-            return Ok(combine_parts(re, self.float().near_one_endpoint::<B>(im_sign)));
+            });
+            let re = match re {
+                Ok([re]) => re,
+                // `e^t` itself is beyond the exponent range: the result is still bounded
+                Err(FpError::Overflow(_)) => return self.tan_beyond_range(z, pi, &mut cache),
+                // the tiny real part alone left the range: it saturates on its own
+                Err(FpError::Underflow(sign)) => underflowed_part(sign, self.float()),
+                Err(e) => return Err(e),
+            };
+            let above = self.tan_saturated_side(z, pi, &mut cache)?;
+            let im = self.near_unit_endpoint::<B>(z.im().sign(), above);
+            return Ok(combine_parts(re, im));
         }
 
         let [re, im] = self.ziv(TRIG_GUARD, |guard| {
             let pw = p + guard;
-            let (sx2, shy2, denom) = Self::tan_kernel_balls::<B>(z, pw, &mut cache)?;
-            let out = CBall { re: sx2, im: shy2 }.div_by_real(&denom, pw)?;
+            let k = Self::tan_kernel_balls::<B>(z, pw, pi, &mut cache)?;
+            let out = CBall {
+                re: k.sin2x,
+                im: k.sinh2y,
+            }
+            .div_by_real(&k.denom, pw)?;
             Ok(out.to_parts_radius(&FloatCtxt::<R>::new(pw)))
         })?;
         Ok(combine_parts(re, im))
     }
 
-    /// The shared kernel evaluation of the `tan` composition at working precision `pw`: the exact
-    /// doubled arguments, the real `sin_cos`/`sinh_cosh` kernels on the doubled midpoints (each
-    /// folded to one work-ulp, with the input-radius folds propagated), and the shared denominator
-    /// `D = cos 2x + cosh 2y` (a benign sum: a bounded term plus one ≥ 1). Returns
-    /// `(sin 2x, sinh 2y, D)` as balls at `pw` — the general `tan` divides both numerator balls by
-    /// `D` componentwise; the saturated path (a large `|Im z|`) divides only the real part.
+    /// For a saturated `tan` (see `tan_parts`): is `|Im tan z|` *above* 1?
+    ///
+    /// `|im| = sinh t / (cos 2x + cosh t)` exceeds 1 iff `cos 2x < sinh t − cosh t = −e^{−t}`,
+    /// i.e. iff `cos 2x · e^t + 1 < 0` with `e^t = cosh t + sinh t` (a sum of same-sign terms,
+    /// no cancellation). That quantity is never zero for a representable argument, so its sign
+    /// resolves at a working precision proportional to how close `cos 2x` is to `−e^{−t}` — in
+    /// practice immediately: `|cos 2x|` only gets that small when `x` itself carries that many
+    /// digits.
+    fn tan_saturated_side<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        pi: bool,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> Result<bool, FpError> {
+        let p = self.precision();
+        let one = Ball::exact(Repr::<B>::one());
+        let mut guard = TRIG_GUARD;
+        for _ in 0..MAX_ZIV_RETRIES {
+            let pw = p + guard;
+            let k = Self::tan_kernel_balls::<B>(z, pw, pi, cache)?;
+            let exp_t = k.cosh2y.add(&abs_ball(&k.sinh2y), pw)?;
+            let s = k.cos2x.mul(&exp_t, pw)?.add(&one, pw)?;
+            if !Mag::from_repr_lower(&s.mid).sub_down(&s.rad).is_zero() {
+                // the ball excludes zero: the sign of its midpoint is the sign of the value
+                return Ok(s.mid.sign() == Sign::Negative);
+            }
+            guard = guard.saturating_mul(2).min(usize::MAX - p);
+        }
+        Err(FpError::ZivRetryLimitExceeded)
+    }
+
+    /// `tan z` (`tan zπ` with `pi`) for an imaginary part so large that `e^t` (`t = 2|y|`, or
+    /// `2π|y|`) is beyond the exponent range, so that the hyperbolic kernels of the composition
+    /// cannot be formed. The result is still bounded and needs only the signs of the circular
+    /// kernels:
+    ///
+    /// - `|im|` is above 1 iff `cos 2x < −e^{−t}` (see
+    ///   [`tan_saturated_side`](Self::tan_saturated_side)). `e^{−t}` is below every positive
+    ///   representable number here, so that is the sign of `cos 2x`, known as soon as its ball
+    ///   excludes zero.
+    /// - `re = sin 2x / D` with `D ≥ cosh t − 1` is below the exponent range (the kernels
+    ///   overflowed at a working precision of several digits, and a significand can only raise
+    ///   the top of the range, not lower its bottom), so it underflows to a zero with the sign
+    ///   of `sin 2x` — or is an exact zero when `sin 2x` is.
+    fn tan_beyond_range<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        pi: bool,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> CfpResult<R, B> {
+        let p = self.precision();
+        let exactly_zero = |b: &Ball<B>| b.mid.significand().is_zero() && b.rad.is_zero();
+        // the ball excludes zero, or is the exact zero: its sign is the sign of the value
+        let sign_known = |b: &Ball<B>| {
+            exactly_zero(b) || !Mag::from_repr_lower(&b.mid).sub_down(&b.rad).is_zero()
+        };
+        let mut guard = TRIG_GUARD;
+        for _ in 0..MAX_ZIV_RETRIES {
+            let pw = p + guard;
+            let (sin2x, cos2x) = Self::tan_circular_balls::<B>(z, pw, pi, cache)?;
+            if sign_known(&sin2x) && sign_known(&cos2x) {
+                let re = if exactly_zero(&sin2x) {
+                    zero_part(sin2x.mid.sign(), self.float())
+                } else {
+                    underflowed_part(sin2x.mid.sign(), self.float())
+                };
+                let above = !exactly_zero(&cos2x) && cos2x.mid.sign() == Sign::Negative;
+                let im = self.near_unit_endpoint::<B>(z.im().sign(), above);
+                return Ok(combine_parts(re, im));
+            }
+            guard = guard.saturating_mul(2).min(usize::MAX - p);
+        }
+        Err(FpError::ZivRetryLimitExceeded)
+    }
+
+    /// Round a value lying strictly between `±1` and its nearest rounding boundary — just
+    /// `above` or just below one in magnitude, with the given sign — to this context's
+    /// precision. Every such value rounds alike, so a representative (`1 ± B^−(p+2)`) is
+    /// rounded by the float layer under this mode, which also yields the inexactness flag.
+    fn near_unit_endpoint<const B: Word>(
+        &self,
+        sign: Sign,
+        above: bool,
+    ) -> Approximation<FBig<R, B>, Rounding> {
+        let shift = self.precision() + 2;
+        let scale = IBig::from(UBig::from(B).pow(shift));
+        let magnitude = if above {
+            scale + IBig::ONE
+        } else {
+            scale - IBig::ONE
+        };
+        let signed = if sign == Sign::Negative {
+            -magnitude
+        } else {
+            magnitude
+        };
+        let proxy = Repr::<B>::new(signed, -(shift as isize));
+        FBig::from_repr(proxy, FloatCtxt::<R>::new(0)).with_precision(self.precision())
+    }
+
+    /// The circular kernels of the `tan` composition at working precision `pw`, as balls:
+    /// `sin 2x` and `cos 2x` (their ×π twins with `pi`) on the midpoint of the doubled real
+    /// part, each folded to one work-ulp, with the doubling's rounding — if the argument is
+    /// wider than `pw` — propagated.
+    fn tan_circular_balls<const B: Word>(
+        z: &CBig<R, B>,
+        pw: usize,
+        pi: bool,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> Result<(Ball<B>, Ball<B>), FpError> {
+        let gctx = FloatCtxt::<R>::new(pw);
+        // 2x (an exact doubling — same significand, exponent +1 — unless the argument is wider
+        // than the working precision, in which case the rounding joins the radius)
+        let x = Ball::exact(z.re().clone());
+        let x2 = x.add(&x, pw)?;
+        let (sin2x, cos2x) = if pi {
+            gctx.sin_cos_pi(&x2.mid, reborrow_cache(cache))
+        } else {
+            gctx.sin_cos(&x2.mid, reborrow_cache(cache))
+        };
+        // where the real kernels can be exact at all (see `sin_cos_parts`)
+        let x_exact = if pi {
+            six_x_is_integer(&x2.mid)
+        } else {
+            is_zero(&x2.mid)
+        };
+        let mut sx2 = kernel_ball(sin2x?, pw, |_| x_exact);
+        let mut cx2 = kernel_ball(cos2x?, pw, |_| x_exact);
+        // the kernels run on the midpoint: |Δsin|, |Δcos| ≤ |δ(2x)| (times π for the ×π family,
+        // bounded by 4)
+        let x_fold = if pi { x2.rad.mul2().mul2() } else { x2.rad };
+        sx2.add_error(x_fold);
+        cx2.add_error(x_fold);
+        Ok((sx2, cx2))
+    }
+
+    /// The shared kernel evaluation of the `tan` composition at working precision `pw`: the
+    /// doubled arguments, the real `sin_cos`/`sinh_cosh` kernels (their ×π twins with `pi`) on
+    /// the doubled midpoints (each folded to one work-ulp, with the doubling's rounding — if the
+    /// argument is wider than `pw` — propagated), and the shared denominator
+    /// `D = cos 2x + cosh 2y` (a benign sum: a bounded term plus one ≥ 1).
     fn tan_kernel_balls<const B: Word>(
         z: &CBig<R, B>,
         pw: usize,
+        pi: bool,
         cache: &mut Option<&mut ConstCache>,
-    ) -> Result<(Ball<B>, Ball<B>, Ball<B>), FpError> {
+    ) -> Result<TanKernel<B>, FpError> {
         let gctx = FloatCtxt::<R>::new(pw);
-        let cb = CBall::from_parts(z.re(), z.im(), pw);
-        // 2x, 2y (exact doublings — same significand, exponent +1; the entry is exact)
-        let x2 = cb.re.add(&cb.re, pw)?;
-        let y2 = cb.im.add(&cb.im, pw)?;
-        let (sin2x, cos2x) = gctx.sin_cos(&x2.mid, reborrow_cache(cache));
-        let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
-        let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
-        // the kernels run on the midpoints: the seed rounding of an over-precise input propagates
-        // (|Δsin|, |Δcos| ≤ |δx|; |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δy}·|δy|)
-        sx2.add_error(x2.rad);
-        cx2.add_error(x2.rad);
-        let (sinh2y, cosh2y) = gctx.sinh_cosh(&y2.mid, reborrow_cache(cache));
-        let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
-        let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-        let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul2();
+        let (sx2, cx2) = Self::tan_circular_balls::<B>(z, pw, pi, cache)?;
+        // 2y, doubled like 2x
+        let y = Ball::exact(z.im().clone());
+        let y2 = y.add(&y, pw)?;
+        let y_exact = is_zero(&y2.mid);
+        // the kernels run on the midpoint: |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δ}·|δ| with δ
+        // the (π-scaled) radius of 2y
+        let y_rad = if pi { y2.rad.mul2().mul2() } else { y2.rad };
+        let (sinh2y, cosh2y) = if pi {
+            gctx.sinh_cosh_pi(&y2.mid, reborrow_cache(cache))
+        } else {
+            gctx.sinh_cosh(&y2.mid, reborrow_cache(cache))
+        };
+        let mut shy2 = kernel_ball(sinh2y?, pw, |_| y_exact);
+        let mut chy2 = kernel_ball(cosh2y?, pw, |_| y_exact);
+        let y2_fold = chy2.mag().mul(&y_rad.exp_upper()).mul(&y_rad).mul2();
         shy2.add_error(y2_fold);
         chy2.add_error(y2_fold);
         let denom = cx2.add(&chy2, pw)?;
-        Ok((sx2, shy2, denom))
+        Ok(TanKernel {
+            sin2x: sx2,
+            cos2x: cx2,
+            sinh2y: shy2,
+            cosh2y: chy2,
+            denom,
+        })
     }
 
     /// Simultaneously compute `sin(z·π)` and `cos(z·π)` (context layer), correctly rounded via
@@ -238,72 +491,22 @@ impl<R: ErrorBounds> Context<R> {
     pub fn sin_cos_pi<const B: Word>(
         &self,
         z: &CBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> (CfpResult<R, B>, CfpResult<R, B>) {
         if z.is_infinite() {
             return (Err(FpError::Indeterminate), Err(FpError::Indeterminate));
         }
         if z.is_zero() {
-            // sin(x+iy)·π = sinx·coshy + i·cosx·sinhy: at ±0 the parts carry the input zeros'
-            // signs (sin_pi(±0) = ±0, sinh(±0) = ±0, cos_pi(±0) = cosh(±0) = 1), so e.g.
-            // `csin_pi(-0 + i·0) = -0 + i·0` — the same table as the radian `sin_cos`.
-            let (re, im) = (z.re(), z.im());
-            let sin = crate::repr::exact(
-                FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
-                FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
-            );
-            // cos(x+iy)·π = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the
-            // signed product `x·y` — the Annex-G table value (see the radian `sin_cos`).
-            let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
-            let cos = crate::repr::exact(
-                FBig::from_repr(Repr::one(), self.float()),
-                FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
-            );
-            return (Ok(sin), Ok(cos));
+            // the same table as the radian `sin_cos` (sin_pi(±0) = ±0, cos_pi(±0) = 1)
+            return self.sin_cos_of_zero(z);
         }
-
-        // `sin zπ = sin_pi(x)·cosh(πy) + i·cos_pi(x)·sinh(πy)`,
-        // `cos zπ = cos_pi(x)·cosh(πy) − i·sin_pi(x)·sinh(πy)`. Each factor is correctly
-        // rounded at the working precision (contributing ~½ ulp each), so only the products
-        // round — a few working-ULPs, like the radian `sin_cos`. The π-scaling lives inside the
-        // real ×π kernels (their argument balls carry π's radius), NOT in a pre-multiplied
-        // `π·y` (whose ½-ulp error the hyperbolic derivative would amplify to ~2π|y| ulps).
-        // Like the radian `sin_cos`: the four products are ball-tracked, the π-scaling lives
-        // inside the real ×π kernels (their argument balls carry π's radius), and the entry is
-        // exact — so only the kernel work-ulps and the products price the radius.
-        let p = self.precision();
-        let parts = self.ziv(TRIG_GUARD, |guard| {
-            let pw = p + guard;
-            let gctx = FloatCtxt::<R>::new(pw);
-            let cb = CBall::from_parts(z.re(), z.im(), pw);
-            let (sinx, cosx) = gctx.sin_cos_pi(&cb.re.mid, reborrow_cache(&mut cache));
-            let mut sx = Ball::from_rounded(sinx?.map(FBig::into_repr), pw);
-            let mut cx = Ball::from_rounded(cosx?.map(FBig::into_repr), pw);
-            sx.add_error(cb.re.rad);
-            cx.add_error(cb.re.rad);
-            let (sinhy, coshy) = gctx.sinh_cosh_pi(&cb.im.mid, reborrow_cache(&mut cache));
-            let mut shy = Ball::from_rounded(sinhy?.map(FBig::into_repr), pw);
-            let mut chy = Ball::from_rounded(coshy?.map(FBig::into_repr), pw);
-            let y_fold = chy.mag().mul(&cb.im.rad.exp_upper()).mul(&cb.im.rad).mul2();
-            shy.add_error(y_fold);
-            chy.add_error(y_fold);
-            let sin_re = sx.mul(&chy, pw)?;
-            let sin_im = cx.mul(&shy, pw)?;
-            let cos_re = cx.mul(&chy, pw)?;
-            let cos_im = -sx.mul(&shy, pw)?; // cos zπ's imaginary part is −sin_pi(x)·sinh(πy)
-            Ok([
-                sin_re.to_value_radius(&gctx),
-                sin_im.to_value_radius(&gctx),
-                cos_re.to_value_radius(&gctx),
-                cos_im.to_value_radius(&gctx),
-            ])
-        });
-        let [sin_re, sin_im, cos_re, cos_im] = match parts {
-            Ok(arr) => arr,
+        match self.sin_cos_parts(z, cache, true, [false; 4]) {
+            Ok([sin_re, sin_im, cos_re, cos_im]) => {
+                (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
+            }
             // an overflow (e.g. `cosh` of a huge imaginary part) fails both sin and cos together.
-            Err(e) => return (Err(e), Err(e)),
-        };
-        (Ok(combine_parts(sin_re, sin_im)), Ok(combine_parts(cos_re, cos_im)))
+            Err(e) => (Err(e), Err(e)),
+        }
     }
 
     /// Complex sine of `z·π` (context layer).
@@ -338,7 +541,8 @@ impl<R: ErrorBounds> Context<R> {
     /// a purely real argument bypasses that via the real [`tan_pi`](dashu_float::Context::tan_pi)
     /// kernel (whose pole guard certifies the huge near-pole values, and whose exact poles
     /// return [`FpError::Indeterminate`] — the same `0/0` convention), and a nonzero tiny `y`
-    /// retries until the (always positive) true difference re-emerges at higher guard.
+    /// retries until the (always positive) true difference re-emerges at higher guard. A large
+    /// `|y|` saturates the imaginary part onto `±1`, exactly as in the radian `tan`.
     pub fn tan_pi<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -360,59 +564,35 @@ impl<R: ErrorBounds> Context<R> {
             // A purely real argument reduces exactly to the real ×π kernel — the double-angle
             // denominator would cancel `cos_pi(2x)` against `cosh(0) = 1` down to (and past)
             // zero near the poles, while the real kernel's own guard handles them. The
-            // imaginary part is `sinh(±0)/D` with `D = cos_pi(2x) + 1 ≥ 0`: ±0 with the sign
-            // of `y`.
-            return FloatCtxt::<R>::new(self.precision())
-                .tan_pi::<B>(z.re(), reborrow_cache(&mut cache))
-                .map(|t| {
-                    crate::repr::exact(
-                        t.value(),
-                        FBig::from_repr(Repr::zero_with_sign(z.im().sign()), self.float()),
-                    )
-                });
+            // imaginary part is `sinh(±0)/D` with `D = cos_pi(2x) + 1 ≥ 0`: an exact ±0 with
+            // the sign of `y`. The real part keeps the kernel's inexactness flag.
+            let re = FloatCtxt::<R>::new(self.precision())
+                .tan_pi::<B>(z.re(), reborrow_cache(&mut cache))?;
+            return Ok(combine_parts(re, zero_part(z.im().sign(), self.float())));
         }
 
-        // Like the radian `tan`: exact doublings, the ×π kernels on the doubled midpoints
-        // (with their input folds), the shared denominator as a real ball, and one tracked
-        // componentwise division. An exact pole (`y = 0`, x an odd multiple of `1/2`, where
-        // `cos_pi(2x)` is exactly −1) fails the midpoint division first — `0/0` maps to
-        // `Err(Indeterminate)` before any radius work.
-        let p = self.precision();
-        let [re, im] = self.ziv(TRIG_GUARD, |guard| {
-            let pw = p + guard;
-            let gctx = FloatCtxt::<R>::new(pw);
-            let cb = CBall::from_parts(z.re(), z.im(), pw);
-            let x2 = cb.re.add(&cb.re, pw)?;
-            let y2 = cb.im.add(&cb.im, pw)?;
-            let (sin2x, cos2x) = gctx.sin_cos_pi(&x2.mid, reborrow_cache(&mut cache));
-            let mut sx2 = Ball::from_rounded(sin2x?.map(FBig::into_repr), pw);
-            let mut cx2 = Ball::from_rounded(cos2x?.map(FBig::into_repr), pw);
-            sx2.add_error(x2.rad);
-            cx2.add_error(x2.rad);
-            let (sinh2y, cosh2y) = gctx.sinh_cosh_pi(&y2.mid, reborrow_cache(&mut cache));
-            let mut shy2 = Ball::from_rounded(sinh2y?.map(FBig::into_repr), pw);
-            let mut chy2 = Ball::from_rounded(cosh2y?.map(FBig::into_repr), pw);
-            let y2_fold = chy2.mag().mul(&y2.rad.exp_upper()).mul(&y2.rad).mul2();
-            shy2.add_error(y2_fold);
-            chy2.add_error(y2_fold);
-            // D = cos_pi(2x) + cosh(2πy)  (a benign sum: a bounded term plus one ≥ 1)
-            let denom = cx2.add(&chy2, pw)?;
-            let out = CBall { re: sx2, im: shy2 }.div_by_real(&denom, pw)?;
-            Ok(out.to_parts_radius(&gctx))
-        })?;
-        Ok(combine_parts(re, im))
+        // An exact pole has `y = 0` and was handled above; here `y ≠ 0`.
+        self.assert_limited();
+        self.tan_parts(z, cache, true)
     }
 
-    /// Inverse sine `asin z = -i·log(iz + sqrt(1-z²))` (context layer, Kahan form), correctly
-    /// rounded via a Ziv loop. The argument of the inner `log` always has positive real part, so the
-    /// branch cut comes entirely from the `sqrt`; an infinite input maps to
-    /// [`FpError::Indeterminate`]. The `1-z²` under the `sqrt` is computed in the factored form
-    /// `(1-z)(1+z)`, which is Sterbenz-exact near `z = ±1` (where the direct `1-z²` would
-    /// catastrophically cancel against the `sqr` rounding error), so the well-conditioned regime
-    /// extends right up to the singularities — and because the composition is ball-tracked, the
-    /// radius grows mechanically as `1-z² → 0` (the `sqrt` fold divides by the shrinking root and
-    /// the `log` fold by the shrinking `‖w‖`), so the Ziv retries price themselves instead of
-    /// relying on a blanket constant.
+    /// Inverse sine (context layer), correctly rounded, on the principal branch (cuts on the
+    /// real axis outside `[−1, 1]`, continuous with the quadrant the signed zero of the
+    /// imaginary part selects). An infinite input maps to [`FpError::Indeterminate`].
+    ///
+    /// On the axes the result reduces to real kernels and exact zeros:
+    /// * `asin(x ± 0i) = asin x ± 0i` for `|x| ≤ 1`, and `±π/2 ± i·acosh|x|` for `|x| > 1` (the
+    ///   real part takes the sign of `x`, the imaginary part the sign of the imaginary zero);
+    /// * `asin(±0 + iy) = ±0 + i·asinh y`.
+    ///
+    /// Elsewhere it is the Kahan form `asin z = −i·log(iz + sqrt(1−z²))`, evaluated for `z` in
+    /// the lower half plane (via `asin(−z) = −asin z`), where the two terms of the sum have
+    /// real and imaginary parts of the same sign and so never cancel — in the upper half plane
+    /// `iz` and the root nearly cancel for a large `|Im z|`. The `1−z²` under the root is
+    /// computed in the factored form `(1−z)(1+z)`, which is exact near `z = ±1` (where the
+    /// direct `1−z²` would catastrophically cancel against the `sqr` rounding error), and the
+    /// composition is ball-tracked, so the radius grows mechanically as `1−z² → 0` and the Ziv
+    /// retries price themselves.
     pub fn asin<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -421,58 +601,155 @@ impl<R: ErrorBounds> Context<R> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
+        let (x, y) = (z.re(), z.im());
+        let f = self.float();
+        if y.significand().is_zero() {
+            if x.significand().is_zero() {
+                // asin(±0 ± 0i) = ±0 ± 0i
+                return Ok(combine_parts(zero_part(x.sign(), f), zero_part(y.sign(), f)));
+            }
+            let ax = repr_abs(x);
+            if ax <= Repr::one() {
+                // asin(x ± 0i) = asin(x) ± 0i (the real kernel is odd and handles its own sign)
+                let re = f.asin(x, reborrow_cache(&mut cache))?;
+                return Ok(combine_parts(re, zero_part(y.sign(), f)));
+            }
+            // on the cut: asin(x ± 0i) = sign(x)·π/2 ± i·acosh|x|
+            let re = self.round_pi_multiple::<B>(
+                x.sign() == Sign::Negative,
+                true,
+                reborrow_cache(&mut cache),
+            )?;
+            // acosh is exact only at 1, and |x| > 1 here
+            let im = self.round_kernel(y.sign() == Sign::Negative, false, |c| {
+                c.acosh(&ax, reborrow_cache(&mut cache))
+            })?;
+            return Ok(combine_parts(re, im));
+        }
+        if x.significand().is_zero() {
+            // asin(±0 + iy) = ±0 + i·asinh(y)
+            let im = f.asinh(y, reborrow_cache(&mut cache))?;
+            return Ok(combine_parts(zero_part(x.sign(), f), im));
+        }
+
+        let flip = y.sign() == Sign::Positive;
         let p = self.precision();
         let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
             let pw = p + guard;
             let fctx = FloatCtxt::<R>::new(pw);
-            let cz = CBall::from_parts(z.re(), z.im(), pw);
+            let cz = CBall::from_parts(x, y, pw);
+            let cz = if flip { cz.neg() } else { cz };
             let one = CBall::exact(Repr::one(), Repr::zero());
             // Factor `1-z² = (1-z)(1+z)`. Near `z = ±1` the direct `1 - z²` subtracts a value
-            // dominated by the `sqr` rounding error from 1 (catastrophic cancellation); the factored
-            // form is Sterbenz-exact there (`1-z` is computed exactly, since the subtraction's
-            // significand difference is exact), so the radius stays sound right up to the singularity.
+            // dominated by the `sqr` rounding error from 1 (catastrophic cancellation); the
+            // factored form is exact there (`1-z` is computed exactly, since the subtraction's
+            // significand difference is exact), so the radius stays sound right up to the
+            // singularity.
             let one_m_z = one.sub(&cz, pw)?;
             let one_p_z = one.add(&cz, pw)?;
             let sqrt_term = one_m_z.mul(&one_p_z, pw)?.sqrt(&fctx, pw)?;
             let w = cz.mul_i(false).add(&sqrt_term, pw)?; // i·z + sqrt(1-z²)
             let log_w = w.log(&fctx, pw, reborrow_cache(&mut cache))?;
-            Ok(log_w.mul_i(true).to_parts_radius(&fctx)) // -i·log(w)
+            let out = log_w.mul_i(true); // -i·log(w)
+            let out = if flip { out.neg() } else { out };
+            Ok(out.to_parts_radius(&fctx))
         })?;
         Ok(combine_parts(re, im))
     }
 
-    /// Inverse cosine `acos z = -i·log(z + i·sqrt(1-z²))` (context layer, Kahan form), correctly
-    /// rounded via a Ziv loop. Same composition and singularity structure as `asin` (including the
-    /// factored `1-z² = (1-z)(1+z)` near `z = ±1`).
+    /// Inverse cosine (context layer), correctly rounded, on the principal branch (same cuts as
+    /// [`asin`](Self::asin); `acos(conj z) = conj(acos z)`, signed zeros included). An infinite
+    /// input maps to [`FpError::Indeterminate`].
+    ///
+    /// On the axes: `acos(x ± 0i) = acos x ∓ 0i` for `|x| ≤ 1`, `0 ∓ i·acosh x` for `x > 1`,
+    /// `π ∓ i·acosh|x|` for `x < −1`, and `acos(±0 + iy) = π/2 − i·asinh y`. Elsewhere it is the
+    /// Kahan form `acos z = −i·log(z + i·sqrt(1−z²))`, evaluated for `z` in the upper half plane
+    /// (via conjugation), where the sum never cancels; see `asin` for the factored `1−z²`.
     pub fn acos<const B: Word>(
         &self,
         z: &CBig<R, B>,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
         if z.is_infinite() {
             return Err(FpError::Indeterminate);
         }
+        let [re, im] = self.acos_parts(z, cache, false)?;
+        Ok(combine_parts(re, im))
+    }
+
+    /// The parts `[Re acos z, Im acos z]` for a finite `z`, each correctly rounded — with the
+    /// real part *negated* when `negate_re` is set (`acosh` on the lower half plane is
+    /// `−i·acos z`, whose imaginary part is `−Re acos z`; the negation must precede the final
+    /// rounding, see [`sin_cos_parts`](Self::sin_cos_parts)).
+    pub(crate) fn acos_parts<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        mut cache: Option<&mut ConstCache>,
+        negate_re: bool,
+    ) -> Result<[Approximation<FBig<R, B>, Rounding>; 2], FpError> {
+        let (x, y) = (z.re(), z.im());
+        let f = self.float();
+        if y.significand().is_zero() {
+            // the imaginary part on the real axis carries the opposite sign of the input's zero
+            let im_negative = y.sign() == Sign::Positive;
+            let ax = repr_abs(x);
+            if ax <= Repr::one() {
+                // acos(x ± 0i) = acos(x) ∓ 0i
+                // acos is exact only at 1 (acos 1 = 0)
+                let re = self.round_kernel(negate_re, *x == Repr::one(), |c| {
+                    c.acos(x, reborrow_cache(&mut cache))
+                })?;
+                return Ok([re, zero_part(-y.sign(), f)]);
+            }
+            // on the cut: acos(x ± 0i) = (0 or π) ∓ i·acosh|x|
+            let re = if x.sign() == Sign::Negative {
+                self.round_pi_multiple::<B>(negate_re, false, reborrow_cache(&mut cache))?
+            } else if negate_re {
+                zero_part(Sign::Negative, f)
+            } else {
+                zero_part(Sign::Positive, f)
+            };
+            let im = self
+                .round_kernel(im_negative, false, |c| c.acosh(&ax, reborrow_cache(&mut cache)))?;
+            return Ok([re, im]);
+        }
+        if x.significand().is_zero() {
+            // acos(±0 + iy) = π/2 − i·asinh(y) = π/2 + i·asinh(−y)
+            let re = self.round_pi_multiple::<B>(negate_re, true, reborrow_cache(&mut cache))?;
+            let im = f.asinh(&-y.clone(), reborrow_cache(&mut cache))?;
+            return Ok([re, im]);
+        }
+
+        let flip = y.sign() == Sign::Negative;
         let p = self.precision();
-        let [re, im] = self.ziv(ITRIG_GUARD, |guard| {
+        self.ziv(ITRIG_GUARD, |guard| {
             let pw = p + guard;
             let fctx = FloatCtxt::<R>::new(pw);
-            let cz = CBall::from_parts(z.re(), z.im(), pw);
+            let cz = CBall::from_parts(x, y, pw);
+            let cz = if flip { cz.conj() } else { cz };
             let one = CBall::exact(Repr::one(), Repr::zero());
-            // Factored `1-z² = (1-z)(1+z)` — Sterbenz-exact near `z = ±1` (see `asin`).
+            // Factored `1-z² = (1-z)(1+z)` — exact near `z = ±1` (see `asin`).
             let one_m_z = one.sub(&cz, pw)?;
             let one_p_z = one.add(&cz, pw)?;
             let sqrt_term = one_m_z.mul(&one_p_z, pw)?.sqrt(&fctx, pw)?;
             let w = cz.add(&sqrt_term.mul_i(false), pw)?; // z + i·sqrt(1-z²)
             let log_w = w.log(&fctx, pw, reborrow_cache(&mut cache))?;
-            Ok(log_w.mul_i(true).to_parts_radius(&fctx)) // -i·log(w)
-        })?;
-        Ok(combine_parts(re, im))
+            let out = log_w.mul_i(true); // -i·log(w)
+            let out = if flip { out.conj() } else { out };
+            let [(re, re_rad), im] = out.to_parts_radius(&fctx);
+            let re = if negate_re { -re } else { re };
+            Ok([(re, re_rad), im])
+        })
     }
 
     /// Inverse tangent `atan z = (i/2)·(log(1-iz) - log(1+iz))` (context layer), correctly rounded
     /// via a Ziv loop. The two logs nearly cancel for small `z`; near `z = ±i` one of `1∓iz`
     /// vanishes and its log diverges. The Ziv retries absorb the cancellation in the
     /// well-conditioned regime.
+    ///
+    /// On the axes the result reduces to real kernels and exact zeros: `atan(x ± 0i) =
+    /// atan x ± 0i`; `atan(±0 + iy) = ±0 + i·atanh y` for `|y| < 1`, and on the cuts (`|y| > 1`)
+    /// `±π/2 + i·atanh(1/y)`, the real part taking the sign of the real zero.
     pub fn atan<const B: Word>(
         &self,
         z: &CBig<R, B>,
@@ -486,33 +763,67 @@ impl<R: ErrorBounds> Context<R> {
         // Axis dispatch (Annex-G): on the real axis the result is real (`atan(x) ± i·0`), and
         // on the imaginary axis with `|y| < 1` it is `±0 + i·atanh(y)` — in both cases one
         // component is *exactly* zero, which the two-log difference can never certify (its
-        // seed-rounding radius stays nonzero while the mids cancel to an exact 0, and no
+        // rounding radius stays nonzero while the mids cancel to an exact 0, and no
         // containment can ever fit a nonzero radius around an exact zero). The real kernels
         // are correctly rounded and the zeros are exact, so these paths certify under every
-        // mode; off-axis inputs, and `|y| ≥ 1` on the imaginary axis (the inexact `±π/2` real
-        // part above it, the `±i` poles on it), take the general path.
+        // mode. On the cuts (`|y| > 1` on the imaginary axis) the real part is `±π/2` with the
+        // sign of the real zero — the side the cut is approached from — which the two-log
+        // form cannot see either. Off-axis inputs, and the `±i` poles, take the general path.
         let (re_in, im_in) = (z.re(), z.im());
         let f = self.float();
         if im_in.significand().is_zero() {
             // atan(x ± i·0) = atan(x) ± i·0
             let at = f.atan(re_in, reborrow_cache(&mut cache))?;
-            let im_zero =
-                Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(im_in.sign()), f));
-            return Ok(combine_parts(at, im_zero));
+            return Ok(combine_parts(at, zero_part(im_in.sign(), f)));
         }
         if re_in.significand().is_zero() {
-            // atan(±0 + i·y) = ±0 + i·atanh(y) for |y| < 1. Only `|y| > 1` is an `atanh` error
-            // — the `|y| = 1` branch points come back as `±∞`, which must *not* take this path:
-            // `atan(±i)` has no limit (the two-log form diverges), so the pole stays with the
-            // general path's `Err(OutOfDomain)` rather than surfacing an infinite result.
-            if let Ok(ath) = f.atanh(im_in, reborrow_cache(&mut cache)) {
-                if !ath.value_ref().repr().is_infinite() {
-                    let re_zero = Approximation::Exact(FBig::from_repr(
-                        Repr::zero_with_sign(re_in.sign()),
-                        f,
-                    ));
-                    return Ok(combine_parts(re_zero, ath));
+            match repr_abs(im_in).cmp(&Repr::one()) {
+                core::cmp::Ordering::Less => {
+                    // atan(±0 + i·y) = ±0 + i·atanh(y) for |y| < 1
+                    let ath = f.atanh(im_in, reborrow_cache(&mut cache))?;
+                    return Ok(combine_parts(zero_part(re_in.sign(), f), ath));
                 }
+                core::cmp::Ordering::Greater => {
+                    // atan(±0 + i·y) = ±π/2 + i·atanh(1/y) for |y| > 1
+                    let re = self.round_pi_multiple::<B>(
+                        re_in.sign() == Sign::Negative,
+                        true,
+                        reborrow_cache(&mut cache),
+                    )?;
+                    let p = self.precision();
+                    let [im] = self.ziv::<B, 1>(ITRIG_GUARD, |guard| {
+                        let pw = p + guard;
+                        let fctx = FloatCtxt::<R>::new(pw);
+                        // t = 1/y ∈ (−1, 1), then the real `atanh` on its midpoint; the
+                        // reciprocal's rounding propagates through `atanh′ = 1/(1−t²)`
+                        let t = Ball::exact(Repr::one()).div(&Ball::exact(im_in.clone()), pw)?;
+                        if repr_abs(&t.mid) >= Repr::one() {
+                            // the reciprocal rounded onto ±1 (|y| barely above 1): retry
+                            let out = Ball::with_error(Repr::<B>::zero(), Mag::INFINITY);
+                            return Ok([out.to_value_radius(&fctx)]);
+                        }
+                        // atanh is exact only at 0, and t = 1/y is not zero
+                        let mut out = kernel_ball(
+                            fctx.atanh(&t.mid, reborrow_cache(&mut cache))?,
+                            pw,
+                            |_| false,
+                        );
+                        if !t.rad.is_zero() {
+                            let m = t.mag();
+                            let lo = Mag::ONE.sub_down(&m.mul(&m));
+                            out.add_error(if lo.is_zero() {
+                                Mag::INFINITY
+                            } else {
+                                t.rad.div(&lo)
+                            });
+                        }
+                        Ok([out.to_value_radius(&fctx)])
+                    })?;
+                    return Ok(combine_parts(re, im));
+                }
+                // `atan(±i)` has no limit (the two-log form diverges): the pole stays with the
+                // general path's error rather than surfacing an infinite result.
+                core::cmp::Ordering::Equal => {}
             }
         }
         let p = self.precision();
@@ -1150,15 +1461,15 @@ mod tests {
     #[test]
     fn sin_cos_signed_zero() {
         // Annex-G signed-zero cases for exactly-zero input: `csin(±0 ± i·0)` carries the input
-        // zeros' signs per part; `ccos`'s imaginary part is the signed product `x·y` (`−0` iff the
-        // two parts are opposite-signed — e.g. `ccos(-0 + i·0) = 1 - i·0`).
+        // zeros' signs per part; `ccos`'s imaginary part is the signed zero `−x·y` (`−0` iff the
+        // two parts are like-signed — `ccos(z) = ccosh(iz)`, e.g. `ccos(+0 + i·0) = 1 - i·0`).
         let fctx = dashu_float::Context::<mode::HalfAway>::new(53);
         let (neg0, pos0) = (F::from_repr(Repr::neg_zero(), fctx), F::from_repr(Repr::zero(), fctx));
         for (z, s_re_neg, s_im_neg, c_im_neg) in [
-            (C::from_parts(pos0.clone(), pos0.clone()), false, false, false), // +0 + i·0
-            (C::from_parts(pos0.clone(), neg0.clone()), false, true, true),   // +0 − i·0
-            (C::from_parts(neg0.clone(), pos0.clone()), true, false, true),   // −0 + i·0
-            (C::from_parts(neg0.clone(), neg0.clone()), true, true, false),   // −0 − i·0
+            (C::from_parts(pos0.clone(), pos0.clone()), false, false, true), // +0 + i·0
+            (C::from_parts(pos0.clone(), neg0.clone()), false, true, false), // +0 − i·0
+            (C::from_parts(neg0.clone(), pos0.clone()), true, false, false), // −0 + i·0
+            (C::from_parts(neg0.clone(), neg0.clone()), true, true, true),   // −0 − i·0
         ] {
             let (s, c) = z.sin_cos();
             assert_eq!(s.re().is_neg_zero(), s_re_neg, "sin re sign for {z}");
@@ -1420,7 +1731,8 @@ mod tests {
     }
 
     // tan's imaginary part saturates at sign(Im z)·(1 − δ), δ < 4·e^{−2|y|} below half an ulp,
-    // for a large |Im z| — and `tanh = −i·tan(i·z)` of a large real part lands on the same path.
+    // for a large |Im z| — and `tanh` (the part swap of `tan`) of a large real part lands on the
+    // same path.
     // The componentwise division's working-precision mid collapses onto exactly ±1 (the boundary
     // of a one-sided directed preimage), so the Ziv loop used to climb toward ~2|y|/ln 2 working
     // digits — an effective hang under directed modes at |y| = 10⁵ (and minutes at ±1755648).
@@ -1445,21 +1757,21 @@ mod tests {
                         ($mode:ty, $stays:expr) => {{
                             let ctx = Context::<$mode>::new(p);
                             let name = stringify!($mode);
-                            let expected_adj = if $stays {
+                            // The flag is the adjustment applied to the *truncated*
+                            // significand `±0.99…9`: none when the result is that value, a
+                            // carry of the magnitude when it stays at `±1`.
+                            let expected_adj = if !$stays {
                                 Rounding::NoOp
                             } else if sign == Sign::Positive {
-                                Rounding::SubOne
-                            } else {
                                 Rounding::AddOne
-                            };
-                            // `combine_parts` collapses an all-NoOp pair to `Exact` (the flag
-                            // channel carries the per-component ulp *adjustment*, not exactness),
-                            // so the endpoint's Inexact-NoOp case surfaces as `Exact` here.
-                            let expected_flag = if expected_adj == Rounding::NoOp {
-                                None
                             } else {
-                                Some((Rounding::NoOp, expected_adj))
+                                Rounding::SubOne
                             };
+                            // The saturated endpoint is never the exact value, so the result
+                            // is `Inexact` even when the adjustment is `NoOp` (the flag channel
+                            // carries the per-component ulp *adjustment*; exactness is the
+                            // `Exact`/`Inexact` variant).
+                            let expected_flag = Some((Rounding::NoOp, expected_adj));
                             let want = near_one_repr(sign, p, $stays);
 
                             // tan(0 + iy): im saturates to the endpoint, re = +0 exactly.
@@ -1493,7 +1805,7 @@ mod tests {
                             );
 
                             // tanh(x + 0i) = −i·tan(ix): re saturates to the endpoint (same
-                            // table — the rotation preserves the component values), im = +0.
+                            // table — the part swap preserves the component values), im = +0.
                             let z = CBig::new(y.clone(), Repr::<2>::zero(), ctx);
                             let h = ctx
                                 .tanh::<2>(&z, None)
@@ -1508,7 +1820,7 @@ mod tests {
                                 &want,
                                 "{name} tanh(±{mag}) p={p}: real endpoint"
                             );
-                            // the endpoint part carries the input context through the rotation
+                            // the endpoint part carries the input context through the swap
                             assert_eq!(
                                 h.precision(),
                                 p,

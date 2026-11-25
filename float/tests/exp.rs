@@ -438,6 +438,35 @@ fn test_pow_unlimited_precision() {
         .powf(&dbig!(2.1).with_precision(0).unwrap());
 }
 
+/// The trivially exact powers need no precision: a zero or unit exponent, a zero or unit base.
+/// Regression: `powf` asserted a limited precision before its exact shortcuts, so
+/// `0^0` on the zeros made by `FBig::try_from(0.0)` (precision 0) panicked with "precision
+/// cannot be 0", while the same call on `FBig::from(0u8)` returned 1.
+#[test]
+fn test_powf_exact_shortcuts_unlimited_precision() {
+    type F = FBig<dashu_float::round::mode::HalfEven, 2>;
+    let one = F::from(1u8);
+    let p0 = F::try_from(0.0f64).unwrap();
+    let n0 = F::try_from(-0.0f64).unwrap();
+    let p0f = F::try_from(0.0f32).unwrap();
+    assert_eq!(p0.precision(), 0);
+    // the reported calls
+    assert_eq!(F::from(0u8).powf(&F::from(0u8)), one);
+    assert_eq!(F::from(5u8).powf(&p0), one);
+    assert_eq!(p0.powf(&p0), one);
+    assert_eq!(p0.powf(&n0), one);
+    assert_eq!(n0.powf(&p0), one);
+    assert_eq!(p0f.powf(&p0f), one);
+    assert_eq!(DBig::ZERO.powf(&DBig::ZERO), DBig::ONE);
+    // the other exact shortcuts: x^1, 0^y, 1^y
+    assert_eq!(F::ONE.powf(&F::ONE), one);
+    assert_eq!(F::NEG_ONE.powf(&F::ONE), F::NEG_ONE);
+    assert_eq!(p0.powf(&F::ONE), F::ZERO);
+    assert_eq!(p0.powf(&F::NEG_ONE), F::INFINITY);
+    assert_eq!(F::ONE.powf(&F::NEG_ONE), one);
+    assert_eq!(DBig::ONE.powf(&DBig::NEG_ONE), DBig::ONE);
+}
+
 #[test]
 #[should_panic]
 fn test_pow_inf() {
@@ -477,5 +506,860 @@ fn test_pow_with_rounding() {
         test_powf_with_error::<_, Down, 2>(&base, &exp, &target, &target.ulp());
         test_powf_with_error::<_, HalfAway, 2>(&base, &exp, &target, &target.ulp());
         test_powf_with_error::<_, HalfEven, 2>(&base, &exp, &target, &target.ulp());
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Regressions from the correct-rounding certification (the Ziv containment test).
+// ---------------------------------------------------------------------------------------------
+
+/// A result just below a power of the base was certified against a preimage one binade too
+/// wide: `exp`/`powi` of a value a hair below `0.9995` returned `1` at 3 digits, where the
+/// correctly rounded value is `0.999`.
+#[test]
+fn test_exp_powi_round_just_below_power_of_base() {
+    use core::str::FromStr;
+    use dashu_float::{round::mode::HalfEven, Context};
+    type D = FBig<HalfEven, 10>;
+
+    let hi = Context::<HalfEven>::new(100);
+    let ctx = Context::<HalfEven>::new(3);
+    for (t, expected) in [
+        ("0.99949999999999999999999999999999999999999", "0.999"),
+        ("0.99950000000000000000000000000000000000001", "1"),
+    ] {
+        let t = D::from_str(t).unwrap();
+        let expected = D::from_str(expected).unwrap();
+
+        // x with x² ≈ t: the exact square (unlimited precision) is the oracle
+        let x = hi.sqrt(t.repr()).unwrap().value();
+        let x_exact = D::from_repr(x.repr().clone(), Context::new(0));
+        assert_eq!((&x_exact * &x_exact).with_precision(3).value(), expected);
+        assert_eq!(ctx.powi(x.repr(), 2.into()).unwrap().value(), expected);
+
+        let l = hi.ln(t.repr(), None).unwrap().value();
+        assert_eq!(ctx.exp(l.repr(), None).unwrap().value(), expected);
+    }
+}
+
+/// An exact power that is a rounding tie (`5² = 25` at one digit) was rejected by the
+/// certification and surfaced as `ZivRetryLimitExceeded` (a panic through `FBig::powi`).
+#[test]
+fn test_powi_exact_tie() {
+    use core::str::FromStr;
+    use dashu_float::{
+        round::mode::{HalfAway, HalfEven},
+        Context,
+    };
+    type D = FBig<HalfEven, 10>;
+
+    for (x, p, even, away) in [
+        ("5", 1usize, "20", "30"),
+        ("1.5", 2, "2.2", "2.3"),
+        ("3.5", 3, "12.2", "12.3"),
+        ("5", 2, "25", "25"),
+        ("1.4", 2, "2", "2"),
+    ] {
+        let a = D::from_str(x).unwrap();
+        let got = Context::<HalfEven>::new(p).powi(a.repr(), 2.into());
+        assert_eq!(got.unwrap().value(), D::from_str(even).unwrap(), "{x}^2 at {p} digits");
+        let got = Context::<HalfAway>::new(p).powi(a.repr(), 2.into());
+        assert_eq!(got.unwrap().value(), DBig::from_str(away).unwrap(), "{x}^2 at {p} digits");
+    }
+    // through the convenience API (this panicked)
+    let five = D::from_str("5").unwrap().with_precision(1).value();
+    assert_eq!(five.powi(2.into()), D::from_str("20").unwrap());
+}
+
+/// `powi` with a negative exponent agrees with the correctly rounded division `1 / baseⁿ`, flag
+/// included. It used to report `Exact` whenever the working-precision value happened to round to
+/// itself (`183⁻⁸` at 53 bits), and misround next to a power of two (`15⁻¹⁶` at 1 bit gave
+/// `2⁻⁶²` for `0.70·2⁻⁶²`).
+#[test]
+fn test_powi_negative_exponent_matches_division() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, base: i64, n: usize) {
+        let ctx = Context::<R>::new(p);
+        let power = Repr::<B>::new(IBig::from(base).pow(n), 0);
+        let want = ctx.div(&Repr::one(), &power);
+        let got = ctx.powi(&Repr::<B>::new(base.into(), 0), -IBig::from(n));
+        assert_eq!(got, want, "{base}^-{n} at {p} digits in base {B}");
+    }
+    fn check_all_modes<const B: Word>(p: usize, base: i64, n: usize) {
+        check::<mode::Zero, B>(p, base, n);
+        check::<mode::Away, B>(p, base, n);
+        check::<mode::Down, B>(p, base, n);
+        check::<mode::Up, B>(p, base, n);
+        check::<mode::HalfEven, B>(p, base, n);
+        check::<mode::HalfAway, B>(p, base, n);
+    }
+
+    // the reported inputs
+    check::<mode::HalfEven, 2>(1, 15, 16);
+    check::<mode::Away, 2>(3, 1187, 15);
+    check::<mode::HalfEven, 2>(1, 13, 7);
+    check::<mode::HalfEven, 2>(52, 30879, 6);
+    check::<mode::HalfEven, 2>(53, 183, 8);
+
+    for base in [-7i64, 2, 3, 5, 10, 15, 183, 1187, 30879] {
+        for n in [2usize, 3, 7, 8, 15, 16] {
+            for p in [1usize, 2, 3, 20, 50, 100, 500] {
+                check_all_modes::<2>(p, base, n);
+            }
+            for p in [1usize, 2, 3, 6, 15, 30, 150] {
+                check_all_modes::<10>(p, base, n);
+            }
+        }
+    }
+}
+
+/// `powf(x, 0.5)` agrees with the correctly rounded `sqrt(x)` for a non-square `x`. At one bit of
+/// precision every result is a power of two, and a value just below one (`√15.994 ≈ 3.9993`)
+/// was certified as the next power up (`8` under `Away`/`Up`).
+#[test]
+fn test_powf_half_matches_sqrt() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds>(p: usize, sig: i64, exp: isize) {
+        let half = Repr::<2>::new(IBig::ONE, -1);
+        let x = Repr::<2>::new(sig.into(), exp);
+        let ctx = Context::<R>::new(p);
+        let want = ctx.sqrt(&x);
+        assert_eq!(ctx.powf(&x, &half, None), want, "({sig}·2^{exp})^0.5 at {p} bits");
+    }
+    for (sig, exp) in [
+        (8189i64, -9isize),
+        (8191, -9),
+        (8187, -9),
+        (16263, 80),
+        (5, 0),
+        (3, 1),
+    ] {
+        for p in [1usize, 2, 20, 50, 100, 500] {
+            check::<mode::Zero>(p, sig, exp);
+            check::<mode::Away>(p, sig, exp);
+            check::<mode::Down>(p, sig, exp);
+            check::<mode::Up>(p, sig, exp);
+            check::<mode::HalfEven>(p, sig, exp);
+            check::<mode::HalfAway>(p, sig, exp);
+        }
+    }
+}
+
+/// The exact special cases carry the context like every other result. They used to return the
+/// precision-0 constants (`FBig::ONE` / `FBig::ZERO`), so the next limited-precision operation
+/// on the result of e.g. `exp(0)` or `x.powi(0)` panicked with "precision cannot be 0".
+#[test]
+fn test_exact_shortcuts_keep_precision() {
+    use dashu_float::{round::mode, Context, Repr};
+    use dashu_int::IBig;
+
+    fn check<const B: Word>(p: usize) {
+        type F<const B: Word> = FBig<mode::HalfEven, B>;
+        let zero = F::<B>::ZERO.with_precision(p).value();
+        let one = F::<B>::ONE.with_precision(p).value();
+        let three = F::<B>::from(3u8).with_precision(p).value();
+        let exact_shortcuts = [
+            (zero.exp(), F::<B>::ONE),
+            (zero.exp_m1(), F::<B>::ZERO),
+            ((-zero.clone()).exp_m1(), F::<B>::ZERO),
+            (three.powi(IBig::ZERO), F::<B>::ONE),
+            (zero.powi(IBig::ZERO), F::<B>::ONE),
+            (three.powf(&zero), F::<B>::ONE),
+            (three.powf(&-zero.clone()), F::<B>::ONE),
+            (one.powf(&three.sqrt()), F::<B>::ONE),
+            (zero.powf(&three), F::<B>::ZERO),
+        ];
+        for (i, (got, want)) in exact_shortcuts.iter().enumerate() {
+            assert_eq!(got, want, "case {i} at {p} digits in base {B}");
+            assert_eq!(got.precision(), p, "case {i} at {p} digits in base {B}");
+        }
+        assert!((-zero.clone()).exp_m1().repr().is_neg_zero());
+
+        // chained operations must not panic
+        assert_eq!(zero.exp().exp(), one.exp());
+        assert_eq!(three.powi(IBig::ZERO).powi(IBig::from(-1)), one);
+        assert_eq!(three.powi(IBig::ZERO).exp(), one.exp());
+        assert_eq!(one.powf(&three).ln_1p(), (&one + &one).ln());
+
+        // the Context layer reports them at its own precision
+        let ctx = Context::<mode::HalfEven>::new(p);
+        let exp_m1_neg_inf = ctx
+            .exp_m1(&Repr::<B>::neg_infinity(), None)
+            .unwrap()
+            .value();
+        assert_eq!(exp_m1_neg_inf, F::<B>::NEG_ONE);
+        assert_eq!(exp_m1_neg_inf.precision(), p);
+    }
+    for p in [1, 20, 50, 100, 500] {
+        check::<2>(p);
+        check::<10>(p);
+    }
+
+    // an unlimited-precision zero still has its exact results (at unlimited precision)
+    assert_eq!(DBig::ZERO.exp(), DBig::ONE);
+    assert_eq!(DBig::ZERO.exp().precision(), 0);
+    assert_eq!(DBig::ZERO.exp_m1(), DBig::ZERO);
+}
+
+// ---------------------------------------------------------------------------------------------
+// exp over the whole argument range
+// ---------------------------------------------------------------------------------------------
+
+mod exp_range {
+    use core::str::FromStr;
+    use dashu_base::{Approximation::*, Sign};
+    use dashu_float::{
+        round::{mode, ErrorBounds, Rounding::*},
+        Context, FBig, FpError, FpResult, Repr,
+    };
+    use dashu_int::{IBig, Word};
+
+    /// `exp(x)` from `exp(x/2)²`: the half argument is exact in an even base and its exponential
+    /// sits in the middle of the exponent range, where it is computed with 40 extra digits; the
+    /// square is rounded once, on the significands, and the exponents are added with a range
+    /// check — the library's convention being that a finite value has its (normalized) exponent
+    /// strictly between `isize::MIN` and `isize::MAX`.
+    fn exp_by_squaring<R: ErrorBounds, const B: Word>(
+        p: usize,
+        x: &Repr<B>,
+    ) -> FpResult<FBig<R, B>> {
+        assert!(B % 2 == 0);
+        let half_x = Repr::<B>::new(x.significand() * IBig::from(B / 2), x.exponent() - 1);
+        let half = Context::<mode::HalfEven>::new(p + 40)
+            .exp(&half_x, None)
+            .unwrap()
+            .value();
+        let unit = Repr::<B>::new(half.repr().significand().clone(), 0);
+        let square = Context::<R>::new(p).mul(&unit, &unit).unwrap();
+        let exponent =
+            square.value_ref().repr().exponent() as i128 + 2 * half.repr().exponent() as i128;
+        if exponent >= isize::MAX as i128 {
+            Err(FpError::Overflow(Sign::Positive))
+        } else if exponent <= isize::MIN as i128 {
+            Err(FpError::Underflow(Sign::Positive))
+        } else {
+            Ok(square.map(|v| FBig::from_parts(v.repr().significand().clone(), exponent as isize)))
+        }
+    }
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, x: &Repr<B>) {
+        let got = Context::<R>::new(p).exp(x, None);
+        assert_eq!(got, exp_by_squaring::<R, B>(p, x), "exp({x:?}) at {p} digits");
+    }
+
+    fn check_modes<const B: Word>(p: usize, x: &Repr<B>) {
+        check::<mode::HalfEven, B>(p, x);
+        check::<mode::Zero, B>(p, x);
+        check::<mode::Up, B>(p, x);
+    }
+
+    /// Regressions, all for arguments around `±6e18` whose result is far inside or next to the
+    /// end of the exponent range:
+    /// - at a low precision the argument was rounded to the working precision before the
+    ///   reduction and the result came back as `Err(Underflow)`;
+    /// - a result within the guard digits of the smallest exponent did not terminate (from
+    ///   222 bits on for `x = -6243314768165359·2^10`);
+    /// - a result within the guard digits of the largest exponent was reported as an overflow,
+    ///   or did not terminate just above `ln(10)·isize::MAX`.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn test_exp_huge_arguments() {
+        let binary = [
+            Repr::<2>::new(IBig::from(-5764607523034234881i64), 0),
+            Repr::<2>::new(IBig::from(-6243314768165359i64), 10),
+            Repr::<2>::new(IBig::from(6243314768165359i64), 10),
+            Repr::<2>::new(IBig::from(-5), 60),
+            Repr::<2>::new(IBig::from(5), 60),
+            Repr::<2>::new(IBig::from(-12345), 3),
+        ];
+        for x in &binary {
+            for p in [1usize, 2, 4, 20, 50, 53, 100, 221, 222, 230, 500] {
+                check_modes::<2>(p, x);
+            }
+        }
+        let decimal = [
+            "21237598959199934314",
+            "21237597959199934514",
+            "21237598949199934514",
+            "21237598959199934507",
+            "21237598959199934508",
+            "21237598959199934509",
+            "21237598959199934510",
+            "21237598959199934514",
+            "21237598959199934600",
+        ];
+        for x in decimal {
+            let x = Repr::<10>::new(IBig::from_str(x).unwrap(), 0);
+            for p in [1usize, 3, 5, 6, 7, 30] {
+                check_modes::<10>(p, &x);
+                check_modes::<10>(p, &-x.clone());
+            }
+        }
+
+        // spelled out: a 1-bit result nowhere near the limits, and the largest decimal results
+        let x = Repr::<2>::new(IBig::from(-5764607523034234881i64), 0);
+        let got = Context::<mode::HalfEven>::new(1).exp(&x, None);
+        assert_eq!(got, Ok(Inexact(FBig::from_parts(1.into(), -8316570686152701559), NoOp)));
+        let ctx = Context::<mode::HalfEven>::new(3);
+        let x = Repr::<10>::new(IBig::from_str("21237598959199934314").unwrap(), 0);
+        let got = ctx.exp(&x, None);
+        assert_eq!(got, Ok(Inexact(FBig::from_parts(895.into(), isize::MAX - 87), AddOne)));
+        // 6.47·10^(isize::MAX + 2): the exponent of the 3-digit significand is the sentinel
+        let x = Repr::<10>::new(IBig::from_str("21237598959199934514").unwrap(), 0);
+        assert_eq!(ctx.exp(&x, None), Err(FpError::Overflow(Sign::Positive)));
+    }
+
+    /// An argument beyond every finite result is a range error at once, whatever its exponent.
+    /// Regression: the time to report it grew with the exponent (`exp(2^100000000)` took
+    /// minutes), also through `sinh`/`cosh`.
+    #[test]
+    fn test_exp_astronomical_arguments() {
+        let ctx = Context::<mode::Up>::new(2);
+        for e in [100isize, 10_000, 100_000_000, isize::MAX - 1] {
+            let x = Repr::<2>::new(IBig::ONE, e);
+            let neg = -x.clone();
+            assert_eq!(ctx.exp(&x, None), Err(FpError::Overflow(Sign::Positive)));
+            assert_eq!(ctx.exp(&neg, None), Err(FpError::Underflow(Sign::Positive)));
+            assert_eq!(ctx.exp_m1(&x, None), Err(FpError::Overflow(Sign::Positive)));
+            // exp_m1(-huge) is just above -1: -0.75 is the next 2-bit value up, which is also
+            // the truncated significand, so no adjustment is applied to it
+            let got = ctx.exp_m1(&neg, None);
+            assert_eq!(got, Ok(Inexact(FBig::from_parts((-3).into(), -2), NoOp)));
+            assert_eq!(ctx.sinh(&x, None), Err(FpError::Overflow(Sign::Positive)));
+            assert_eq!(ctx.sinh(&neg, None), Err(FpError::Overflow(Sign::Negative)));
+            assert_eq!(ctx.cosh(&neg, None), Err(FpError::Overflow(Sign::Positive)));
+
+            let x = Repr::<10>::new(IBig::ONE, e);
+            let ctx = Context::<mode::HalfEven>::new(7);
+            assert_eq!(ctx.exp(&x, None), Err(FpError::Overflow(Sign::Positive)));
+            assert_eq!(ctx.exp(&-x, None), Err(FpError::Underflow(Sign::Positive)));
+        }
+        // through the convenience API: the directed endpoints
+        let x = FBig::<mode::Up, 10>::from_str("1e100000000").unwrap();
+        assert!(x.exp().repr().is_infinite());
+        assert_eq!((-x).exp().repr(), &Repr::new(IBig::ONE, isize::MIN));
+    }
+
+    /// A tiny argument: `exp(x) = 1 + x + …` and `exp_m1(x) = x + x²/2 + …` round like the
+    /// leading term plus a sticky part, at a cost that does not depend on how tiny `x` is. (The
+    /// oracle rounds the leading term with one unit added a few digits below the precision.)
+    #[test]
+    fn test_exp_tiny_arguments() {
+        fn check<R: ErrorBounds, const B: Word>(p: usize, k: isize) {
+            let ctx = Context::<R>::new(p);
+            let pad = p + 3;
+            // `v ± B^(v.exponent − pad)`, exactly, rounded to the precision
+            let nudged = |v: &Repr<B>, unit: i32| {
+                let sig = v.significand() * IBig::from(B).pow(pad) + IBig::from(unit);
+                let exact = Repr::<B>::new(sig, v.exponent() - pad as isize);
+                FBig::<R, B>::from_repr(exact, Context::new(0)).with_precision(p)
+            };
+            for sig in [1i32, -1, 7, -7] {
+                let x = Repr::<B>::new(sig.into(), -k);
+                // exp(x) rounds like 1 + x
+                let want = nudged(&Repr::one(), sig.signum());
+                assert_eq!(ctx.exp(&x, None), Ok(want), "exp({x:?}) at {p} digits");
+                // exp_m1(x) rounds like x + x²/2
+                let want = nudged(&x, 1);
+                assert_eq!(ctx.exp_m1(&x, None), Ok(want), "exp_m1({x:?}) at {p} digits");
+            }
+        }
+        for p in [1usize, 20, 50, 100, 500] {
+            for k in [2 * p as isize + 8, 5_000, 1_000_000_000, isize::MAX / 4] {
+                check::<mode::Zero, 2>(p, k);
+                check::<mode::Away, 2>(p, k);
+                check::<mode::Down, 2>(p, k);
+                check::<mode::Up, 2>(p, k);
+                check::<mode::HalfEven, 2>(p, k);
+                check::<mode::HalfAway, 10>(p, k);
+                check::<mode::Up, 10>(p, k);
+                check::<mode::Down, 10>(p, k);
+            }
+        }
+
+        // around the shortcut's threshold the direct rounding agrees with the series evaluated
+        // at a much higher precision
+        fn check_threshold<R: ErrorBounds, const B: Word>(p: usize) {
+            let (ctx, hi) = (Context::<R>::new(p), Context::<mode::HalfEven>::new(3 * p + 60));
+            let round =
+                |v: FBig<mode::HalfEven, B>| v.with_rounding::<R>().with_precision(p).value();
+            for k in (p as isize / 2).max(1)..p as isize + 8 {
+                for sig in [1i32, -1, 9, -9] {
+                    let x = Repr::<B>::new(sig.into(), -k);
+                    let want = round(hi.exp(&x, None).unwrap().value());
+                    let got = ctx.exp(&x, None).unwrap().value();
+                    assert_eq!(got, want, "exp({x:?}) at {p} digits");
+                    let want = round(hi.exp_m1(&x, None).unwrap().value());
+                    let got = ctx.exp_m1(&x, None).unwrap().value();
+                    assert_eq!(got, want, "exp_m1({x:?}) at {p} digits");
+                }
+            }
+        }
+        for p in [1usize, 20, 50, 100] {
+            check_threshold::<mode::Zero, 2>(p);
+            check_threshold::<mode::Up, 2>(p);
+            check_threshold::<mode::HalfEven, 2>(p);
+            check_threshold::<mode::HalfAway, 10>(p);
+            check_threshold::<mode::Down, 10>(p);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// powf / powi: exact results, huge exponents, and the ends of the exponent range
+// ---------------------------------------------------------------------------------------------
+
+mod pow_range {
+    use core::str::FromStr;
+    use dashu_base::{Approximation::*, Sign};
+    use dashu_float::{
+        round::{mode, ErrorBounds, Rounding::*},
+        Context, DBig, FBig, FpError, Repr,
+    };
+    use dashu_int::{IBig, UBig, Word};
+
+    /// `powf(z^d, n/d)` against `z^n` computed exactly (`n ≥ 0`) or as the correctly rounded
+    /// quotient `1/z^|n|` (`n < 0`). `inv_d` is `1/d` as an exact value of the base.
+    fn check_root_power<R: ErrorBounds, const B: Word>(
+        p: usize,
+        z: &Repr<B>,
+        d: usize,
+        inv_d: &Repr<B>,
+        n: i32,
+    ) {
+        let ctx = Context::<R>::new(p);
+        let exact = Context::<R>::new(0);
+        let x = exact.powi(z, d.into()).unwrap().value();
+        let y = Repr::<B>::new(inv_d.significand() * IBig::from(n), inv_d.exponent());
+        let power = exact.powi(z, n.unsigned_abs().into()).unwrap().value();
+        let want = if n >= 0 {
+            Ok(power.with_precision(p))
+        } else {
+            ctx.div(&Repr::one(), power.repr())
+        };
+        let got = ctx.powf(x.repr(), &y, None);
+        assert_eq!(got, want, "({z:?}^{d})^({n}/{d}) at {p} digits");
+    }
+
+    fn check_root_power_modes<const B: Word>(
+        p: usize,
+        z: &Repr<B>,
+        d: usize,
+        inv_d: &Repr<B>,
+        n: i32,
+    ) {
+        check_root_power::<mode::Zero, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Away, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Down, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::Up, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::HalfEven, B>(p, z, d, inv_d, n);
+        check_root_power::<mode::HalfAway, B>(p, z, d, inv_d, n);
+    }
+
+    /// A power with a non-integer exponent that is exactly representable (or an exact tie) is
+    /// returned correctly rounded and flagged, in every mode. Regression: `powf(4, 0.5)` and
+    /// `powf(0.25, 1.5)` did not terminate under `Down`/`Up`/`Zero` (the default mode of
+    /// `FBig`), and under the nearest modes `2` came back flagged `Inexact`.
+    #[test]
+    fn test_powf_exact_results() {
+        // base 2: d ∈ {2, 4, 8}
+        for (d, inv_d) in [(2usize, (1, -1)), (4, (1, -2)), (8, (1, -3))] {
+            let inv_d = Repr::<2>::new(inv_d.0.into(), inv_d.1);
+            for sig in [1i32, 2, 3, 5, 7, 12] {
+                for exp in [-3isize, 0, 2] {
+                    let z = Repr::<2>::new(sig.into(), exp);
+                    if z.is_one() {
+                        continue;
+                    }
+                    for n in [-3i32, -1, 1, 3, 5] {
+                        for p in [1usize, 2, 3, 20, 50, 100, 500] {
+                            check_root_power_modes::<2>(p, &z, d, &inv_d, n);
+                        }
+                    }
+                }
+            }
+        }
+        // base 10: 1/2 = 0.5, 1/4 = 0.25, 1/5 = 0.2
+        for (d, inv_d) in [(2usize, (5, -1)), (4, (25, -2)), (5, (2, -1))] {
+            let inv_d = Repr::<10>::new(inv_d.0.into(), inv_d.1);
+            for sig in [2i32, 5, 15, 25, 3] {
+                for exp in [-2isize, 0, 1] {
+                    let z = Repr::<10>::new(sig.into(), exp);
+                    for n in [-3i32, -1, 1, 3, 7] {
+                        if n.unsigned_abs() as usize % d == 0 {
+                            continue;
+                        }
+                        for p in [1usize, 2, 3, 6, 15, 30, 150] {
+                            check_root_power_modes::<10>(p, &z, d, &inv_d, n);
+                        }
+                    }
+                }
+            }
+        }
+        // bases with a square factor: 4^0.5 = 2 in base 4, 3 = 9^0.5 in base 9
+        let half4 = Repr::<4>::new(2.into(), -1);
+        check_root_power_modes::<4>(3, &Repr::new(2.into(), 0), 2, &half4, 1);
+        check_root_power_modes::<4>(3, &Repr::new(6.into(), -1), 2, &half4, 3);
+        let third9 = Repr::<9>::new(3.into(), -1);
+        check_root_power_modes::<9>(3, &Repr::new(3.into(), 0), 3, &third9, 1);
+        check_root_power_modes::<9>(3, &Repr::new(2.into(), 1), 3, &third9, 2);
+
+        // the reported calls
+        let x = FBig::<mode::Zero, 2>::from(4u32).with_precision(53).value();
+        let half = FBig::<mode::Zero, 2>::from_parts(1.into(), -1);
+        assert_eq!(x.powf(&half), FBig::<mode::Zero, 2>::from(2u32));
+        let (four, half) = (Repr::<2>::new(4.into(), 0), Repr::<2>::new(1.into(), -1));
+        let got = Context::<mode::Down>::new(2).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let got = Context::<mode::Up>::new(20).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let got = Context::<mode::HalfEven>::new(2).powf(&four, &half, None);
+        assert_eq!(got, Ok(Exact(FBig::from(2u8))));
+        let (quarter, y) = (Repr::<2>::new(1.into(), -2), Repr::<2>::new(3.into(), -1));
+        let got = Context::<mode::Zero>::new(20).powf(&quarter, &y, None);
+        assert_eq!(got, Ok(Exact(FBig::from_parts(1.into(), -3))));
+        // an exact result beyond the exponent range is a range error, not a hang
+        let x = Repr::<2>::new(1.into(), isize::MAX - 1);
+        let y = Repr::<2>::new(3.into(), -1);
+        let got = Context::<mode::Zero>::new(20).powf(&x, &y, None);
+        assert_eq!(got, Err(FpError::Overflow(Sign::Positive)));
+    }
+
+    /// `(±1)^n` is `±1` for any exponent. Regression: with a base of `-1` and an exponent past
+    /// `2^64` the call did not return under `Down`/`Up`.
+    #[test]
+    fn test_powi_unit_base_huge_exponent() {
+        fn check<R: ErrorBounds, const B: Word>() {
+            let ctx = Context::<R>::new(10);
+            let (one, neg_one) = (Repr::<B>::one(), Repr::<B>::neg_one());
+            let big = IBig::ONE << 64;
+            for (n, odd) in [
+                (big.clone(), false),
+                (big.clone() + IBig::ONE, true),
+                (IBig::from(1_000_000_001), true),
+            ] {
+                for n in [n.clone(), -n] {
+                    assert_eq!(ctx.powi(&one, n.clone()), Ok(Exact(FBig::ONE)));
+                    let want = if odd { FBig::NEG_ONE } else { FBig::ONE };
+                    assert_eq!(ctx.powi(&neg_one, n.clone()), Ok(Exact(want)), "(-1)^{n}");
+                }
+            }
+        }
+        check::<mode::Down, 10>();
+        check::<mode::Up, 10>();
+        check::<mode::Zero, 2>();
+        check::<mode::HalfEven, 2>();
+    }
+
+    /// An exponent past `i64` is not by itself a range error. Regression: `0.999^(2^63)` — about
+    /// `10^(-4.0e15)`, one factor of `0.999` below the correctly computed `0.999^(2^63 - 1)` —
+    /// was reported as an underflow (0 through `FBig::powi`), also through `powf`.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn test_powi_exponent_past_i64() {
+        let x = DBig::from_str("0.999").unwrap();
+        let hi = Context::<mode::HalfAway>::new(40);
+        let two63 = IBig::ONE << 63;
+        // x^(2^63) = x^(2^63 - 1) · x, and x^(2^64) = (x^(2^63))²
+        let below = hi
+            .powi(x.repr(), two63.clone() - IBig::ONE)
+            .unwrap()
+            .value();
+        let want = (below * &x).with_precision(6).value();
+        let at = x.clone().with_precision(6).value().powi(two63.clone());
+        assert_eq!(at, want);
+        assert_eq!(at.repr().exponent(), -4007663746158940);
+        let y = Repr::<10>::new(two63.clone(), 0);
+        let got = Context::<mode::HalfAway>::new(6).powf(x.repr(), &y, None);
+        assert_eq!(got.unwrap().value(), want);
+
+        let at_hi = hi.powi(x.repr(), two63.clone()).unwrap().value();
+        let want = hi
+            .sqr(at_hi.repr())
+            .unwrap()
+            .value()
+            .with_precision(6)
+            .value();
+        let got = Context::<mode::HalfAway>::new(6).powi(x.repr(), two63 << 1);
+        assert_eq!(got.unwrap().value(), want);
+
+        // still a range error where it is one
+        let got = Context::<mode::HalfAway>::new(6).powi(x.repr(), IBig::ONE << 80);
+        assert_eq!(got, Err(FpError::Underflow(Sign::Positive)));
+        let got = Context::<mode::HalfAway>::new(6).powi(x.repr(), -(IBig::ONE << 80));
+        assert_eq!(got, Err(FpError::Overflow(Sign::Positive)));
+    }
+
+    /// `(1 + 10^-k)^(10^k + 1) ≈ e` for an exponent beyond the squaring chain. Regression: from
+    /// `k = 20` (an exponent above `2^64`) the call took seconds to minutes and then panicked
+    /// with "out of memory" at `k = 22` — an attempt whose working precision cannot resolve the
+    /// base yet carries an astronomically wide error radius, and the certification test
+    /// materialized it.
+    #[test]
+    fn test_powi_base_near_one_huge_exponent() {
+        let e15 = DBig::from_str("2.71828182845905").unwrap();
+        for k in [19usize, 20, 22, 40, 300] {
+            let pow10 = UBig::from(10u8).pow(k);
+            let x = Repr::<10>::new(IBig::from(pow10.clone() + UBig::ONE), -(k as isize));
+            let n = IBig::from(pow10 + UBig::ONE);
+            let got = Context::<mode::Up>::new(1).powi(&x, n.clone());
+            assert_eq!(got, Ok(Inexact(FBig::from(3), AddOne)), "k = {k}");
+            let got = Context::<mode::Zero>::new(1).powi(&x, n.clone());
+            assert_eq!(got, Ok(Inexact(FBig::from(2), NoOp)), "k = {k}");
+            let got = Context::<mode::HalfAway>::new(15).powi(&x, n.clone());
+            assert_eq!(got.unwrap().value(), e15, "k = {k}");
+            let got = Context::<mode::HalfAway>::new(15).powi(&x, -n);
+            let want = Context::<mode::HalfAway>::new(15).div(&Repr::one(), e15.repr());
+            assert_eq!(got.unwrap().value(), want.unwrap().value(), "k = {k}");
+        }
+    }
+
+    /// `powi` does not depend on where the base sits in the exponent range: `(m·B^j)^n` is
+    /// `m^n` with the exponent moved by `j·n`, or a range error exactly when that exponent is out
+    /// of range. Regression: `(3·2^j)^-2` was reported as an underflow (0 through `FBig::powi`)
+    /// when the result was within the working precision's guard digits of `isize::MIN`.
+    #[test]
+    fn test_powi_is_exponent_invariant() {
+        fn check<R: ErrorBounds, const B: Word>(p: usize, m: i32, j: isize, n: i32) {
+            let ctx = Context::<R>::new(p);
+            let unit = ctx.powi(&Repr::<B>::new(m.into(), 0), n.into()).unwrap();
+            let exponent = unit.value_ref().repr().exponent() as i128 + j as i128 * n as i128;
+            let sign = unit.value_ref().repr().sign();
+            let want = if exponent >= isize::MAX as i128 {
+                Err(FpError::Overflow(sign))
+            } else if exponent <= isize::MIN as i128 {
+                Err(FpError::Underflow(sign))
+            } else {
+                Ok(unit
+                    .map(|v| FBig::from_parts(v.repr().significand().clone(), exponent as isize)))
+            };
+            let got = ctx.powi(&Repr::<B>::new(m.into(), j), n.into());
+            assert_eq!(got, want, "({m}·{B}^{j})^{n} at {p} digits");
+        }
+        for (m, n) in [
+            (3i32, -2i32),
+            (3, 2),
+            (-3, 3),
+            (-7, -3),
+            (15, -16),
+            (5, 4),
+            (2, -2),
+        ] {
+            let half = isize::MAX / n.unsigned_abs() as isize;
+            for offset in [-600isize, -74, -72, -40, -6, -2, 0, 2, 40, 600] {
+                for j in [half + offset, -half + offset] {
+                    for p in [1usize, 10, 20, 50, 100, 200, 500] {
+                        check::<mode::Down, 2>(p, m, j, n);
+                        check::<mode::HalfEven, 2>(p, m, j, n);
+                        check::<mode::Up, 10>(p, m, j, n);
+                        check::<mode::HalfAway, 10>(p, m, j, n);
+                    }
+                }
+            }
+        }
+
+        // the reported shape: 1/(9·2^(2j)) just above the smallest exponent
+        let ctx = Context::<mode::Down>::new(10);
+        for k in [4isize, 72, 74, 1000] {
+            let j = -((isize::MIN + k + 12) / 2);
+            let base = Repr::<2>::new(3.into(), j);
+            let expected = ctx
+                .div::<2>(&Repr::one(), &Repr::new(9.into(), 2 * j))
+                .unwrap();
+            assert_eq!(expected.value_ref().repr().exponent(), isize::MIN + k);
+            assert_eq!(ctx.powi::<2>(&base, (-2).into()), Ok(expected), "isize::MIN + {k}");
+        }
+    }
+
+    /// `powf` next to the smallest exponent: `2^(isize::MIN + k + 1/2)` has the binary order of
+    /// magnitude `isize::MIN + k` (or underflows when its 66-bit significand does not fit above
+    /// the smallest exponent). Regression: for `k ≤ 260` the result was the same value near
+    /// `2^(isize::MIN + 260)` — up to `2^260` times too large.
+    #[test]
+    fn test_powf_near_smallest_exponent() {
+        let two = Repr::<2>::new(2.into(), 0);
+        let sqrt2 = Context::<mode::Up>::new(66).sqrt(&two).unwrap().value();
+        for k in [0i128, 60, 64, 65, 66, 100, 200, 260, 261, 1000] {
+            let target = isize::MIN as i128 + k;
+            let y = Repr::<2>::new(IBig::from(2 * target + 1), -1);
+            let got = Context::<mode::Up>::new(66).powf(&two, &y, None);
+            // √2·2^target: the (normalized) significand of √2 at 66 bits, moved by target
+            if sqrt2.repr().exponent() as i128 + target <= isize::MIN as i128 {
+                assert_eq!(got, Err(FpError::Underflow(Sign::Positive)), "k = {k}");
+            } else {
+                let want = FBig::<mode::Up, 2>::from_parts(
+                    sqrt2.repr().significand().clone(),
+                    sqrt2.repr().exponent() + target as isize,
+                );
+                assert_eq!(got, Ok(Inexact(want, AddOne)), "k = {k}");
+            }
+        }
+        // through the convenience API the underflow is the directed endpoint
+        let y = FBig::<mode::Up, 2>::from_parts(IBig::from(2 * (isize::MIN as i128) + 1), -1)
+            .with_precision(66)
+            .value();
+        let r = FBig::<mode::Up, 2>::from(2u8)
+            .with_precision(66)
+            .value()
+            .powf(&y);
+        assert_eq!(r.repr(), &Repr::new(IBig::ONE, isize::MIN));
+    }
+
+    /// A negative base with an odd exponent beyond the squaring chain (above `2^64`) is
+    /// rounded as the negative number it is. Regression: the magnitude was rounded first and
+    /// then negated, so `Down` and `Up` came back swapped (with each other's flag):
+    /// `(-(1 + 2^-70))^(2^64 + 1) ≈ -e^(1/64)` under `Down` was above the `Up` result.
+    #[test]
+    fn test_powi_huge_odd_exponent_negative_base_directed() {
+        // the reported call: -e^(1/64) = -1.01574770858… lies between -532545·2^-19 and
+        // -8321·2^-13
+        let a = Repr::<2>::new(IBig::from((1u128 << 70) + 1), -70);
+        let neg_a = -a.clone();
+        let n = (IBig::ONE << 64) + IBig::ONE;
+        let lo: FBig<mode::Down> = FBig::from_parts(IBig::from(-532545), -19);
+        let hi: FBig<mode::Down> = FBig::from_parts(IBig::from(-8321), -13);
+        let got = Context::<mode::Down>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(lo.clone(), SubOne)));
+        let got = Context::<mode::Up>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.clone().with_rounding(), NoOp)));
+        let got = Context::<mode::Zero>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.clone().with_rounding(), NoOp)));
+        let got = Context::<mode::Away>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(lo.with_rounding(), SubOne)));
+        let got = Context::<mode::HalfEven>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.with_rounding(), NoOp)));
+
+        // (-a)^n = -(a^n) rounded in the mirrored direction for an odd n, and a^n for an even
+        // one — on both sides of the squaring chain's limit
+        fn check<R: ErrorBounds, M: ErrorBounds>(p: usize, k: usize, n: &IBig) {
+            // a = 1 + 2^-k
+            let a = Repr::<2>::new((IBig::ONE << k) + IBig::ONE, -(k as isize));
+            let neg_a = -a.clone();
+            let got = Context::<R>::new(p).powi(&neg_a, n.clone()).unwrap();
+            let odd = dashu_base::BitTest::bit(n, 0);
+            let want = if odd {
+                let mirrored = Context::<M>::new(p).powi(&a, n.clone()).unwrap();
+                match mirrored {
+                    Exact(v) => Exact((-v).with_rounding()),
+                    Inexact(v, AddOne) => Inexact((-v).with_rounding(), SubOne),
+                    Inexact(v, SubOne) => Inexact((-v).with_rounding(), AddOne),
+                    Inexact(v, NoOp) => Inexact((-v).with_rounding(), NoOp),
+                }
+            } else {
+                Context::<R>::new(p).powi(&a, n.clone()).unwrap()
+            };
+            assert_eq!(got, want, "(-(1 + 2^-{k}))^{n} at {p} bits");
+        }
+        for p in [20, 50, 100, 500] {
+            for (k, bits) in [(70usize, 64usize), (70, 66), (100, 96), (600, 601)] {
+                for n in [
+                    (IBig::ONE << bits) - IBig::ONE,
+                    IBig::ONE << bits,
+                    (IBig::ONE << bits) + IBig::ONE,
+                    -(IBig::ONE << bits) - IBig::ONE,
+                ] {
+                    check::<mode::Down, mode::Up>(p, k, &n);
+                    check::<mode::Up, mode::Down>(p, k, &n);
+                    check::<mode::Zero, mode::Zero>(p, k, &n);
+                    check::<mode::Away, mode::Away>(p, k, &n);
+                    check::<mode::HalfEven, mode::HalfEven>(p, k, &n);
+                    check::<mode::HalfAway, mode::HalfAway>(p, k, &n);
+                }
+            }
+        }
+    }
+
+    /// On a zero base `powf` follows IEEE 754 `pow`, and so agrees with `powi` for every
+    /// integer exponent: `pow(-0, y)` is `-0` (`-inf` for `y < 0`) when `y` is an odd integer
+    /// and `+0` (`+inf`) for any other `y`. Regression: `powf(-0, 3)` was `+0` and
+    /// `powf(-0, -3)` was `+inf` — the sign of the base was dropped whatever the exponent.
+    #[test]
+    fn test_powf_zero_base_sign() {
+        fn check<const B: Word>(p: usize) {
+            let ctx = Context::<mode::Zero>::new(p);
+            let zeros = [Repr::<B>::zero(), Repr::<B>::neg_zero()];
+            // integer exponents; the multiples of the base have a positive exponent of their own
+            let ints = (-7i32..=7).chain([9, -9, 10, -10, 27, -27, 30, -30, 1000001, -1000001]);
+            for k in ints.filter(|&k| k != 0) {
+                let y = Repr::<B>::new(k.into(), 0);
+                for base in &zeros {
+                    let negative = base.is_neg_zero() && k % 2 != 0;
+                    let got = ctx.powf(base, &y, None).unwrap();
+                    assert!(matches!(got, Exact(_)), "powf({base:?}, {k}) in base {B}");
+                    let got = got.value();
+                    if k > 0 {
+                        let want = Repr::<B>::zero_with_sign(Sign::from(negative));
+                        assert_eq!(got.repr(), &want, "powf({base:?}, {k}) in base {B}");
+                    } else {
+                        assert!(got.repr().is_infinite(), "powf({base:?}, {k}) in base {B}");
+                        assert_eq!(got.repr().sign(), Sign::from(negative), "powf({base:?}, {k})");
+                    }
+                    let by_powi = ctx.powi(base, k.into()).unwrap().value();
+                    assert_eq!(got.repr(), by_powi.repr(), "powf vs powi ({base:?}, {k})");
+                    assert_eq!(got.precision(), p);
+                }
+            }
+            // a non-integer exponent never carries the sign over (k/B is not an integer here)
+            for k in [1i32, 5, 7, -1, -5, -7] {
+                let y = Repr::<B>::new(k.into(), -1);
+                for base in &zeros {
+                    let got = ctx.powf(base, &y, None).unwrap().value();
+                    if k > 0 {
+                        assert!(got.repr().is_pos_zero(), "powf({base:?}, {k}/{B})");
+                    } else {
+                        assert!(got.repr().is_infinite(), "powf({base:?}, {k}/{B})");
+                        assert_eq!(got.repr().sign(), Sign::Positive, "powf({base:?}, {k}/{B})");
+                    }
+                }
+            }
+        }
+        for p in [20, 50, 100, 500] {
+            check::<2>(p);
+            check::<3>(p);
+            check::<10>(p);
+        }
+
+        // through the convenience API
+        let neg_zero = -FBig::<mode::HalfEven>::ZERO.with_precision(53).value();
+        let three = FBig::<mode::HalfEven>::from(3u8);
+        assert!(neg_zero.powf(&three).repr().is_neg_zero());
+        assert_eq!(neg_zero.powf(&-three), FBig::<mode::HalfEven>::NEG_INFINITY);
+        assert!(neg_zero.powf(&FBig::from(2u8)).repr().is_pos_zero());
+    }
+
+    /// Powers are monotone in the base, also at the top of the exponent range. `2^isize::MAX`
+    /// normalizes to the significand 1 at the reserved exponent `isize::MAX`, so it is reported
+    /// as an overflow (`inf` under the nearest modes, the saturation endpoint
+    /// `(2^p − 1)·2^isize::MAX` — above the exact value — under `Down`), while the larger
+    /// `(2 + 2^-61)^isize::MAX ≈ 7.39·2^isize::MAX` has a full-width significand, hence an
+    /// exponent below the reserved one, and is returned.
+    #[test]
+    #[ignore = "the reserved exponent isize::MAX makes the representable set depend on the \
+                significand's trailing zeros; needs a crate-wide exponent-range model (see E145)"]
+    fn test_powi_monotone_at_exponent_ceiling() {
+        let n = IBig::from(isize::MAX);
+        let a = FBig::<mode::HalfEven, 2>::from_parts(IBig::from(2), 0)
+            .with_precision(64)
+            .value();
+        let b = FBig::<mode::HalfEven, 2>::from_parts(IBig::from((1u64 << 62) + 1), -61)
+            .with_precision(64)
+            .value();
+        assert!(a < b);
+        let (pa, pb) = (a.powi(n.clone()), b.powi(n.clone()));
+        assert!(pa <= pb, "HalfEven: {pa:?} > {pb:?}");
+
+        let (ad, bd) = (a.with_rounding::<mode::Down>(), b.with_rounding::<mode::Down>());
+        let (pad, pbd) = (ad.powi(n.clone()), bd.powi(n));
+        assert!(pad <= pbd, "Down: {pad:?} > {pbd:?}");
     }
 }

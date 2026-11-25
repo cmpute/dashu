@@ -2,7 +2,7 @@ use crate::{
     error::{assert_finite, FpError, FpResult},
     fbig::FBig,
     round::{Round, Rounded},
-    utils::{ceil_usize, digit_len, split_digits, split_digits_ref},
+    utils::{ceil_usize, digit_len, shl_digits, split_digits, split_digits_ref},
 };
 use core::marker::PhantomData;
 use dashu_base::{Approximation::*, EstimatedLog2, Sign};
@@ -17,10 +17,16 @@ use dashu_int::{DoubleWord, IBig, UBig};
 /// with zero exponent).
 ///
 /// When it's used together with a [Context], its precision will be limited so that
-/// `|significand| < base^precision`. As an intentional exception, the result of an inexact
-/// addition or subtraction may carry one extra guard digit, so `|significand|` can be up to
-/// `base^(precision+1)`; the guard digit is what lets a much-smaller operand be reduced to a
-/// sign-only sticky bit during alignment without mis-rounding.
+/// `|significand| < base^precision`. As an intentional exception, the result of an addition
+/// or subtraction of operands with opposite effective signs (a subtraction of magnitudes) may
+/// carry one extra guard digit, so `|significand|` can be up to `base^(precision+1)`; the
+/// guard digit is what lets a much-smaller operand be reduced to a sign-only sticky bit
+/// during alignment without mis-rounding. Such a result is rounded to `precision + 1` digits,
+/// and is reported exact when those digits hold the difference exactly (`1 - 20` at precision
+/// 1 is the exact `-19`). The guard digit is not one of the value's `precision` digits: the
+/// next arithmetic operation rounds it away — also one that leaves every value that fits its
+/// precision unchanged, such as adding zero or a one-element sum — and so does
+/// [`FBig::with_precision`] with a smaller precision.
 ///
 /// # Infinity and signed zero
 ///
@@ -54,6 +60,11 @@ pub struct Repr<const BASE: Word> {
     pub(crate) significand: IBig,
 
     /// The exponent of the floating point number.
+    #[cfg_attr(feature = "rkyv_v07", with(crate::third_party::rkyv_v07::Exponent))]
+    #[cfg_attr(
+        all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+        rkyv(with = crate::third_party::rkyv_v08::Exponent)
+    )]
     pub(crate) exponent: isize,
 }
 
@@ -101,6 +112,11 @@ pub struct Repr<const BASE: Word> {
 pub struct Context<RoundingMode: Round> {
     /// The precision of the floating point number.
     /// If set to zero, then the precision is unlimited.
+    #[cfg_attr(feature = "rkyv_v07", with(crate::third_party::rkyv_v07::Precision))]
+    #[cfg_attr(
+        all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+        rkyv(with = crate::third_party::rkyv_v08::Precision)
+    )]
     pub(crate) precision: usize,
     _marker: PhantomData<RoundingMode>,
 }
@@ -127,8 +143,7 @@ const fn negate_special_exponent(exp: isize) -> isize {
 /// or when the rounded significand's trailing zero digits fold (in `normalize`)
 /// across the sentinel. Such a value is not a valid finite result
 /// ([`Repr::check_finite_exponent`] rejects it), so callers with an error
-/// channel can map it to [`FpError::Overflow`],
-/// and callers without one (`with_precision`) return the proper infinity.
+/// channel can map it to [`FpError::Overflow`].
 pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
@@ -151,7 +166,10 @@ pub(crate) fn rounded_to_repr<const B: Word>(
 }
 
 /// Normalize a `(significand, exponent)` pair for base `B`: fold trailing base-`B` zero-digits
-/// from the significand into the exponent, and return the number of significant base-`B` digits.
+/// from the significand into the exponent, and return the number of base-`B` digits of the
+/// significand as it was given (trailing zeros included, like the precision that
+/// [`crate::FBig::from_parts`] infers). The exponent saturates at `isize::MAX` like it does in
+/// [`Repr::new`].
 ///
 /// The return triple is all-`Copy`, so it can be destructured in a `const fn` — unlike a pair
 /// carrying a [`Repr`], whose heap drop can't be const-evaluated. It is the shared core of
@@ -164,26 +182,27 @@ pub(crate) const fn normalize_word_const<const B: Word>(
         return (0, exponent, 0);
     }
 
-    let mut digits = 0;
+    let digits;
     if B.is_power_of_two() {
         let base_bits = B.trailing_zeros();
-        let shift = significand.trailing_zeros() / base_bits;
-        significand >>= shift * base_bits;
-        exponent += shift as isize;
         digits =
             ((DoubleWord::BITS - significand.leading_zeros() + base_bits - 1) / base_bits) as usize;
+        let shift = significand.trailing_zeros() / base_bits;
+        significand >>= shift * base_bits;
+        exponent = exponent.saturating_add(shift as isize);
     } else {
-        let mut pow: DoubleWord = 1;
+        // count the digits by division: a running power of the base would overflow the double
+        // word for the significands at or above its largest power that fits
+        let mut count = 0;
+        let mut rest = significand;
+        while rest > 0 {
+            rest /= B as DoubleWord;
+            count += 1;
+        }
+        digits = count;
         while significand % (B as DoubleWord) == 0 {
             significand /= B as DoubleWord;
-            exponent += 1;
-        }
-        while let Some(next) = pow.checked_mul(B as DoubleWord) {
-            digits += 1;
-            if next > significand {
-                break;
-            }
-            pow = next;
+            exponent = exponent.saturating_add(1);
         }
     }
     (significand, exponent, digits)
@@ -335,12 +354,15 @@ impl<const B: Word> Repr<B> {
     /// assert!(Repr::<2>::zero().is_int());
     /// assert!(Repr::<10>::one().is_int());
     /// assert!(!Repr::<16>::new(123.into(), -1).is_int());
+    /// // negative zero is the integer 0 as well
+    /// assert!(Repr::<10>::neg_zero().is_int());
     /// ```
     pub const fn is_int(&self) -> bool {
         if self.is_infinite() {
             false
         } else {
-            self.exponent >= 0
+            // `-0` carries its sign in a `-1` exponent sentinel, it has no fractional part
+            self.exponent >= 0 || self.significand.is_zero()
         }
     }
 
@@ -404,6 +426,32 @@ impl<const B: Word> Repr<B> {
             }
         } else {
             Ok(())
+        }
+    }
+
+    /// Create a normalized `Repr` for `significand · B^exponent` (nonzero significand) from an
+    /// exponent that is not yet confined to the `isize` range, as the difference or sum of two
+    /// operand exponents is. The range check runs on the *normalized* exponent — trailing zero
+    /// digits of the significand are folded in first — so a value is reported out of range
+    /// only when it really is: [`FpError::Overflow`] when the exponent reaches `isize::MAX`,
+    /// [`FpError::Underflow`] when it reaches `isize::MIN` (the sentinel exponents).
+    pub(crate) fn new_wide(significand: IBig, exponent: i128) -> Result<Self, FpError> {
+        debug_assert!(!significand.is_zero());
+        let sign = significand.sign();
+        let Repr {
+            significand,
+            exponent: folded,
+        } = Self::new(significand, 0);
+        let exponent = exponent + folded as i128;
+        if exponent >= isize::MAX as i128 {
+            Err(FpError::Overflow(sign))
+        } else if exponent <= isize::MIN as i128 {
+            Err(FpError::Underflow(sign))
+        } else {
+            Ok(Repr {
+                significand,
+                exponent: exponent as isize,
+            })
         }
     }
 
@@ -551,8 +599,13 @@ impl<const B: Word> Repr<B> {
         self.exponent + (self.digits_ub() as isize) < -1
     }
 
-    /// Create a [Repr] from the significand and exponent. This
+    /// Create a [Repr] for the value `significand * B^exponent`. This
     /// constructor will normalize the representation.
+    ///
+    /// A zero significand gives `+0` whatever the exponent is. The special values (`-0` and
+    /// the infinities) are not values of this form: build them with [`Repr::neg_zero`],
+    /// [`Repr::infinity`] and [`Repr::neg_infinity`]. In particular the parts returned by
+    /// [`Repr::into_parts`] for a special value do not give that value back.
     ///
     /// # Examples
     ///
@@ -566,9 +619,30 @@ impl<const B: Word> Repr<B> {
     /// let b = Repr::<10>::new(400.into(), -2);
     /// assert_eq!(b.significand(), &IBig::from(4));
     /// assert_eq!(b.exponent(), 0);
+    ///
+    /// // zero is `+0` at every exponent
+    /// assert!(Repr::<10>::new(IBig::ZERO, -1).is_pos_zero());
+    /// assert!(Repr::<10>::new(IBig::ZERO, isize::MAX).is_pos_zero());
     /// ```
     #[inline]
     pub fn new(significand: IBig, exponent: isize) -> Self {
+        if significand.is_zero() {
+            return Self::zero();
+        }
+        Self {
+            significand,
+            exponent,
+        }
+        .normalize()
+    }
+
+    /// Rebuild a [Repr] from its encoded `(significand, exponent)` pair, as [`Repr::into_parts`]
+    /// returns it. Unlike [`Repr::new`], a zero significand is read as the special value its
+    /// exponent encodes (`+0`, `-0`, `+inf`, `-inf`, see the struct-level docs); any other
+    /// exponent of a zero significand gives `+0`. This is what the deserializers use.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    #[inline]
+    pub(crate) fn from_encoded_parts(significand: IBig, exponent: isize) -> Self {
         Self {
             significand,
             exponent,
@@ -625,6 +699,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Convert the float number into raw `(signficand, exponent)` parts
+    ///
+    /// For a special value these are the parts of its encoding (a zero significand with the
+    /// exponent described in the type-level docs), which [`Repr::new`] reads as `+0`.
     ///
     /// # Examples
     ///
@@ -782,6 +859,79 @@ impl<R: Round> Context<R> {
         } else {
             Exact(repr)
         }
+    }
+
+    /// Round the exact value `significand · B^exponent` (nonzero significand, exponent not yet
+    /// confined to the `isize` range) to the desired precision, and only then check the
+    /// exponent range (see [`Repr::new_wide`]). Checking the unrounded exponent instead
+    /// misreports a wide exact value whose lowest digit lies below the range while its
+    /// *rounded* form lies inside it (`15 · 2^isize::MIN` at one digit is `2^(isize::MIN + 4)`).
+    pub(crate) fn repr_round_wide<const B: Word>(
+        &self,
+        significand: IBig,
+        exponent: i128,
+    ) -> FpResult<Repr<B>> {
+        debug_assert!(!significand.is_zero());
+        // strip trailing zero digits first, so the split below sees a genuine low part
+        let Repr {
+            significand,
+            exponent: folded,
+        } = Repr::<B>::new(significand, 0);
+        let exponent = exponent + folded as i128;
+
+        let digits = digit_len::<B>(&significand);
+        if self.is_limited() && digits > self.precision {
+            let shift = digits - self.precision;
+            let (signif_hi, signif_lo) = split_digits::<B>(significand, shift);
+            let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
+            let repr = Repr::new_wide(signif_hi + adjust, exponent + shift as i128)?;
+            Ok(Inexact(repr, adjust))
+        } else {
+            Ok(Exact(Repr::new_wide(significand, exponent)?))
+        }
+    }
+
+    /// Round `v + δ` to this context's precision, where `δ` is a nonzero perturbation with the
+    /// sign `sticky` that is too small to be visible next to `v`: with `pad = max(0, precision +
+    /// 1 − digits(v))`, it must satisfy `|δ| ≤ B^(v.exponent − pad − 2)`.
+    ///
+    /// Such a `δ` can only act as a sticky part: every rounding boundary (a representable value
+    /// or a midpoint between two) near `v` is a multiple of half a unit in the last place of the
+    /// `precision + 1`-digit grid `v` is padded to, so none lies strictly between `v` and
+    /// `v + δ`, and `v + δ` rounds like `v` with one extra unit two digits further down. This is
+    /// how a function whose value is a known closed form plus a negligible tail (`exp(x) = 1 + x
+    /// + …` for a tiny `x`, `hypot(a, b) = |a| + …` for a negligible `b`) is rounded directly —
+    /// the Ziv loop would need a working precision proportional to `log(1/|δ|)` to see the tail.
+    ///
+    /// `v` must be finite and nonzero and the precision limited. The result is always inexact.
+    pub(crate) fn round_sticky<const B: Word>(
+        &self,
+        v: &Repr<B>,
+        sticky: Sign,
+    ) -> FpResult<FBig<R, B>> {
+        debug_assert!(self.is_limited() && v.is_finite() && !v.significand.is_zero());
+        let pad = (self.precision + 1).saturating_sub(v.digits()) + 2;
+        let unit = match sticky {
+            Sign::Positive => IBig::ONE,
+            Sign::Negative => IBig::NEG_ONE,
+        };
+        // Round in a frame whose exponent is zero, then restore the exponent with a range
+        // check: the padded significand's own exponent can lie below `isize::MIN`.
+        let rounded = self.repr_round(Repr {
+            significand: shl_digits::<B>(&v.significand, pad) + unit,
+            exponent: 0,
+        });
+        let exponent = rounded.value_ref().exponent as i128 + v.exponent as i128 - pad as i128;
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(v.sign()));
+        }
+        if exponent <= isize::MIN as i128 {
+            return Err(FpError::Underflow(v.sign()));
+        }
+        Ok(rounded.map(|mut r| {
+            r.exponent = exponent as isize;
+            FBig::new(r, *self)
+        }))
     }
 
     /// Round the repr to the desired precision

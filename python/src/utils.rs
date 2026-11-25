@@ -81,7 +81,8 @@ pub fn auto(ob: UniInput, py: Python<'_>) -> PyResult<Py<PyAny>> {
         BUint(v) => v.clone().into_py_any(py)?,
         BInt(v) => fit_ibig(v.0.clone())?,
         OBInt(v) => fit_ibig(v)?,
-        Float(v) => match v.try_into() {
+        // at the default precision, as `FBig(v)` does
+        Float(v) => match fbig_from_f64(v) {
             Ok(big) => FPy(big).into_py_any(py)?,
             Err(e) => return Err(conversion_error_to_py(e)),
         },

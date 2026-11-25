@@ -83,3 +83,101 @@ fn dbig_rkyv_roundtrip() {
         assert_eq!(v2.precision(), v.precision(), "DBig precision round-trip failed");
     }
 }
+
+#[test]
+fn special_values_rkyv_roundtrip() {
+    // The infinities are marked by the exponents `isize::MAX` / `isize::MIN`, which do not fit
+    // the (narrower) archived exponent as they are, and the zeros by `0` / `-1`.
+    let values = [
+        F::INFINITY,
+        F::NEG_INFINITY,
+        F::INFINITY.with_precision(10).value(),
+        F::ZERO,
+        -F::ZERO,
+    ];
+    for v in &values {
+        let bytes = to_bytes::<_, 1024>(v).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let v2 = unsafe { from_bytes_unchecked::<F>(&bytes) }.unwrap();
+        assert_eq!(v2.repr().exponent(), v.repr().exponent(), "{:?}", v.repr());
+        assert_eq!(v2.repr(), v.repr());
+        assert_eq!(v2.precision(), v.precision());
+    }
+    for v in [DBig::INFINITY, DBig::NEG_INFINITY] {
+        let bytes = to_bytes::<_, 1024>(&v).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let v2 = unsafe { from_bytes_unchecked::<DBig>(&bytes) }.unwrap();
+        assert_eq!(v2, v);
+        assert!(v2.repr().is_infinite());
+    }
+    let reprs = [
+        Repr::<2>::infinity(),
+        Repr::<2>::neg_infinity(),
+        Repr::<2>::zero(),
+        Repr::<2>::neg_zero(),
+    ];
+    for r in &reprs {
+        let bytes = to_bytes::<_, 1024>(r).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let r2 = unsafe { from_bytes_unchecked::<Repr<2>>(&bytes) }.unwrap();
+        assert_eq!(r2.exponent(), r.exponent(), "{r:?}");
+        assert_eq!(r2, *r);
+    }
+}
+
+#[test]
+fn exponent_range_rkyv_roundtrip() {
+    // every exponent strictly inside the archived (32-bit) range round-trips
+    let max = i32::MAX as isize;
+    let min = i32::MIN as isize;
+    for exponent in [max - 1, min + 1, 1 << 20, -(1 << 20)] {
+        let v = F::from_parts(3.into(), exponent);
+        let bytes = to_bytes::<_, 1024>(&v).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let v2 = unsafe { from_bytes_unchecked::<F>(&bytes) }.unwrap();
+        assert_eq!(v2.repr().exponent(), exponent);
+        assert_eq!(v2, v);
+    }
+}
+
+// An exponent outside the archived range is refused instead of being truncated (it used to come
+// back as a different number). rkyv 0.7 gives a field no way to return an error, hence the panic.
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "the exponent is too large for the archived representation")]
+fn exponent_out_of_range_rkyv() {
+    let v = F::from_parts(3.into(), 1 << 31);
+    let _ = to_bytes::<_, 1024>(&v);
+}
+
+#[test]
+fn precision_range_rkyv_roundtrip() {
+    // every precision that the archived (32-bit) representation holds round-trips
+    for precision in [0usize, 1, 5, 1 << 20, u32::MAX as usize] {
+        let v = DBig::from(3).with_precision(precision).value();
+        let bytes = to_bytes::<_, 1024>(&v).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let v2 = unsafe { from_bytes_unchecked::<DBig>(&bytes) }.unwrap();
+        assert_eq!(v2.precision(), precision);
+        assert_eq!(v2.repr(), v.repr());
+    }
+}
+
+// A precision outside the archived range is refused instead of being truncated (2^32 + 5 used to
+// come back as 5, and 2^32 as 0, which means unlimited). rkyv 0.7 gives a field no way to return
+// an error, hence the panic.
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "the precision is too large for the archived representation")]
+fn precision_out_of_range_rkyv() {
+    let v = DBig::from(3).with_precision((1 << 32) + 5).value();
+    let _ = to_bytes::<_, 1024>(&v);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "the precision is too large for the archived representation")]
+fn precision_wrapping_to_unlimited_rkyv() {
+    let v = F::from(3u8).with_precision(1 << 32).value();
+    let _ = to_bytes::<_, 1024>(&v);
+}

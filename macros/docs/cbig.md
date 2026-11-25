@@ -22,6 +22,12 @@ let o = cbig!(0o3 + 0o4i);         // 3 + 4i
 assert_eq!(z, h);
 assert_eq!(z, b);
 assert_eq!(z, o);
+
+// either coefficient can have an exponent, with or without a sign
+let e = cbig!(1.5e2 + 2e-3i);      // 150 + 0.002i
+let x = cbig!(0x1p4 - 0x1p-2i);    // 16 - 0.25i
+assert_eq!(e, cbig!(1.5e2, 2e-3));
+assert_eq!(x, cbig!(0x1p4, -0x1p-2));
 ```
 
 The result's precision is the larger of the two coefficients' (the smaller-precision part is
@@ -30,7 +36,15 @@ widened exactly, so only the precision cap changes):
 ```rust
 # use dashu_macros::cbig;
 let z = cbig!(3.125 + 4i); // re has 4 decimal digits, im has 1
-assert_eq!(z.precision(), 13); // decimal digits converted to bits
+assert_eq!(z.precision(), 14); // decimal digits converted to bits
+```
+
+A coefficient with `n` decimal (or octal) digits gets as many bits as the largest `n`-digit
+integer needs, so integers are never truncated by the conversion:
+
+```rust
+# use dashu_macros::cbig;
+assert_eq!(cbig!(9 + 999i), cbig!(0x9 + 0x3e7i));
 ```
 
 When both coefficients are small enough (their significands fit in a

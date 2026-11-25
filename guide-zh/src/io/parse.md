@@ -60,7 +60,7 @@ assert_eq!(RBig::from_str_expanded(&format!("{:#}", x.in_expanded(10)), 10)?, x)
 
 ## 解析复数
 
-`CBig::FromStr` 接受与 `Display` 输出相同的代数 $a+bi$ 文法：一个可选的实部项加上一个可选的带符号虚部项（至少需要一项）；系数为 1 时可以省略（`i`、`-i`）。MPC 风格的括号形式 `(re im)` **不被**接受。
+`CBig::FromStr` 接受与 `Display` 输出相同的代数 $a+bi$ 文法：一个可选的实部项加上一个可选的带符号虚部项（至少需要一项）；系数为 1 时可以省略（`i`、`-i`）。每个系数遵循 `FBig` 的文法（包括带符号的指数，例如 `1+2e-3i`），也可以是 `inf` / `-inf`。在大于 18 的进制中（`i` 是数字），虚部项必须改以 `*i` 结尾。MPC 风格的括号形式 `(re im)` **不被**接受。
 
 ```rust
 use dashu::complex::CBig;

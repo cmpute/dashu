@@ -20,6 +20,9 @@ use crate::{
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
+        trig::{
+            bottom_exp, even_negligible, odd_negligible, square_negligible, top_exp, TinyScale,
+        },
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -38,10 +41,20 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
+        // Exact results first: a zero carrying unlimited precision (`FBig::ZERO`,
+        // `try_from(0.0)`) must not trip the limited-precision assertion.
         if x.significand.is_zero() {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return r;
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(x.sign()));
         }
         // sinh(x) = (exp_m1(x) - exp_m1(-x)) / 2  (cancellation-free). Both `exp_m1` come from the
         // Ball-based `exp_compute`; the subtraction/division roundings, the `exp_m1` errors *and
@@ -56,7 +69,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -82,10 +95,18 @@ impl<R: ErrorBounds> Context<R> {
             // cosh(±inf) = +inf
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // cosh(±0) = 1
             return Ok(Exact(FBig::new(Repr::one(), *self)));
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(x) = 1 + δ` with `0 < δ ≤ x²`.
+        if let Some(r) = self.tiny_even(x, Sign::Positive, 0) {
+            return Ok(r);
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(Sign::Positive));
         }
 
         // cosh(x) = (exp_m1(x) + exp_m1(-x)) / 2 + 1 (no cancellation: same-sign sum). Both
@@ -99,7 +120,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -132,16 +153,28 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(Exact(FBig::new(Repr::infinity(), *self))),
             );
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             return (
                 Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
                 Ok(Exact(FBig::new(Repr::one(), *self))),
             );
         }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `sinh(x) = x + δ` and `cosh(x) = 1 + δ'` (see `sinh` / `cosh`). The
+        // two shortcuts engage at different magnitudes, so either may leave its half to the loop.
+        match (self.tiny_odd(x, true), self.tiny_even(x, Sign::Positive, 0)) {
+            (Some(s), Some(c)) => return (s, Ok(c)),
+            (Some(s), None) => return (s, self.cosh(x, cache)),
+            (None, Some(c)) => return (self.sinh(x, cache), Ok(c)),
+            (None, None) => {}
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
+        }
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
-        // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
+        // pair via `ziv_pair_irrational` (retry while either endpoint straddles a boundary); the input's own
         // rounding is folded by `exp_compute` from the raw `x`. For huge |x|, `exp_m1` overflows
         // inside the closure and propagates to both slots; sinh(±huge) = ±inf, cosh(±huge) = +inf,
         // so each slot's overflow sign is remapped below.
@@ -151,7 +184,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+        let (sinh_r, cosh_r) = self.ziv_pair_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -190,10 +223,19 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // sinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
+        }
+        assert_limited_precision(self.precision);
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(x.sign()));
+        }
+        // at the bottom of the exponent range: `π·x`, placed at the exponent of `x` (forming
+        // `π·x` at the working precision underflows there, for a result that may not)
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Pi, reborrow_cache(&mut cache)) {
+            return r;
         }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
@@ -203,8 +245,9 @@ impl<R: ErrorBounds> Context<R> {
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -218,7 +261,7 @@ impl<R: ErrorBounds> Context<R> {
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
-        .map_err(|_| FpError::Overflow(x.sign()))
+        .map_err(|_| odd_range_error(x))
     }
 
     /// Hyperbolic cosine of `x·π`, i.e. `cosh(x·π)`.
@@ -235,10 +278,20 @@ impl<R: ErrorBounds> Context<R> {
             // cosh(±inf) = +inf
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // cosh(±0) = 1
             return Ok(Exact(FBig::new(Repr::one(), *self)));
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(π·x) = 1 + δ` with `0 < δ ≤ (π·x)² < x²·B^4` (`|π·x| ≤ 1`).
+        if top_exp(x) < -2 {
+            if let Some(r) = self.tiny_even(x, Sign::Positive, 4) {
+                return Ok(r);
+            }
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return Err(FpError::Overflow(Sign::Positive));
         }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
@@ -248,8 +301,9 @@ impl<R: ErrorBounds> Context<R> {
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -284,23 +338,34 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(Exact(FBig::new(Repr::infinity(), *self))),
             );
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             return (
                 Ok(Exact(FBig::new(signed_zero_repr(x), *self))),
                 Ok(Exact(FBig::new(Repr::one(), *self))),
             );
         }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `cosh(π·x) = 1 + δ` with `0 < δ ≤ (π·x)² < x²·B^4` (`|π·x| ≤ 1`).
+        if top_exp(x) < -2 {
+            if let Some(r) = self.tiny_even(x, Sign::Positive, 4) {
+                return (self.sinh_pi(x, cache), Ok(r));
+            }
+        }
+        if exp_certainly_overflows(x) {
+            // far past the exponent range: no need to reduce an astronomically large argument
+            return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
+        }
 
-        // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
+        // Certified as a pair via `ziv_pair_irrational` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
         // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
         // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
         // the growing work precision, as before). Sized once, outside the loop.
         let initial_guard = self.base_guard_digits::<B>()
             + 10
-            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+            + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
+            + pi_argument_guard(x);
+        let (sinh_r, cosh_r) = self.ziv_pair_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -320,7 +385,7 @@ impl<R: ErrorBounds> Context<R> {
             Ok((sh.to_value_radius::<R>(&ctx), ch.to_value_radius::<R>(&ctx)))
         });
         (
-            sinh_r.map_err(|_| FpError::Overflow(x.sign())),
+            sinh_r.map_err(|_| odd_range_error(x)),
             cosh_r.map_err(|_| FpError::Overflow(Sign::Positive)),
         )
     }
@@ -330,6 +395,9 @@ impl<R: ErrorBounds> Context<R> {
     /// the omitted tail is bounded by the first omitted term (< 1 ulp, as for the sine series).
     fn sinh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(odd_negligible(x, wp));
+        }
         let x2 = x.mul(x, wp)?;
         let mut sum = x.clone();
         let mut term = x.clone();
@@ -350,6 +418,9 @@ impl<R: ErrorBounds> Context<R> {
     /// (see [`sinh_series`](Self::sinh_series)).
     fn cosh_series<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(even_negligible(wp));
+        }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
         let mut sum = one.clone();
@@ -378,10 +449,14 @@ impl<R: ErrorBounds> Context<R> {
             let one = FBig::new(Repr::one(), *self);
             return Ok(Exact(one * x.sign()));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // tanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return r;
         }
 
         // For sufficiently large |x|, tanh(x) = sign(x)·(1 − δ) with 0 < δ = 2/(e^{2|x|}+1) below
@@ -414,7 +489,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let two_x = x + x;
@@ -440,10 +515,14 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Ok(Exact(FBig::new(Repr::infinity_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asinh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return r;
         }
 
         // asinh(x) = sign(x) · ln_1p(|x| + x²/(sqrt(x²+1)+1)) — the x²/(sqrt+1) form avoids the
@@ -459,10 +538,16 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let sign = x.sign();
             let wp = work.precision;
+            if square_dominates(x, wp) {
+                // asinh(x) = sign·(ln(2|x|) + δ), 0 < δ < 1/(4x²): below the last place
+                let res = ln_2x_ball(&work, x, reborrow_cache(&mut cache))?;
+                let result = if sign == Sign::Negative { -res } else { res };
+                return Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)));
+            }
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
             let abs_x_ball = if sign == Sign::Negative {
                 -x_ball
@@ -476,16 +561,8 @@ impl<R: ErrorBounds> Context<R> {
                     let arg = abs_x_ball.add(&x_sq_ball.div(&sqrt_plus_one, wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
-                // |x| so large that x² overflows: asinh(x) ≈ sign·ln(2|x|).
-                Err(FpError::Overflow(_)) => {
-                    let two_abs = Repr::new((x.significand() * IBig::from(2)).abs(), x.exponent());
-                    work.ln_compute::<B>(
-                        &two_abs,
-                        work.precision,
-                        false,
-                        reborrow_cache(&mut cache),
-                    )
-                }
+                // |x| so large that x² overflows (taken by the asymptotic branch above).
+                Err(FpError::Overflow(_)) => ln_2x_ball(&work, x, reborrow_cache(&mut cache)),
                 Err(other) => unreachable!("sqr: {other:?}"),
             }?;
             let result = if sign == Sign::Negative { -res } else { res };
@@ -505,7 +582,6 @@ impl<R: ErrorBounds> Context<R> {
             }
             return Ok(Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         // Domain x ≥ 1, compared *exactly* (no precision argument) because `1` is a vertical
         // tangent of `acosh`: `1 + 10⁻¹⁵⁵` at 100 digits rounds onto `1`, but its true value is
         // `√2·10⁻⁷⁸`, not `0`.
@@ -517,6 +593,8 @@ impl<R: ErrorBounds> Context<R> {
             core::cmp::Ordering::Equal => return Ok(Exact(FBig::new(Repr::zero(), *self))),
             core::cmp::Ordering::Greater => {}
         }
+        // after the exact `acosh(1) = 0` row, which needs no precision to round to
+        assert_limited_precision(self.precision);
 
         // acosh(x) = ln_1p((x-1) + sqrt((x-1)(x+1))) — the (x-1)(x+1) form avoids the `x²−1`
         // cancellation near x = 1. The composition is tracked as a [`Ball`] from the rounded input
@@ -533,9 +611,14 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
+            if square_dominates(x, wp) {
+                // acosh(x) = ln(2x) − δ, 0 < δ < 1/(2x²): below the last place
+                let res = ln_2x_ball(&work, x, reborrow_cache(&mut cache))?;
+                return Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)));
+            }
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
             let one = Ball::exact_int(IBig::ONE, wp);
             let xm1_ball = x_ball.sub(&one, wp)?;
@@ -545,11 +628,8 @@ impl<R: ErrorBounds> Context<R> {
                     let arg = xm1_ball.add(&prod_ball.sqrt(wp)?, wp)?;
                     work.ln_1p_ball::<B>(&arg, reborrow_cache(&mut cache))
                 }
-                // (x-1)(x+1) overflowed: acosh(x) ≈ ln(2x).
-                Err(FpError::Overflow(_)) => {
-                    let two_x = Repr::new(x.significand() * IBig::from(2), x.exponent());
-                    work.ln_compute::<B>(&two_x, work.precision, false, reborrow_cache(&mut cache))
-                }
+                // (x-1)(x+1) overflowed (taken by the asymptotic branch above).
+                Err(FpError::Overflow(_)) => ln_2x_ball(&work, x, reborrow_cache(&mut cache)),
                 Err(other) => unreachable!("mul: {other:?}"),
             }?;
             Ok(res.to_value_radius::<R>(&Context::<R>::new(wp)))
@@ -565,7 +645,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::OutOfDomain);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // atanh(±0) = ±0
             return Ok(Exact(FBig::new(signed_zero_repr(x), *self)));
@@ -580,6 +659,12 @@ impl<R: ErrorBounds> Context<R> {
             }
             _ => {}
         }
+        // after the exact `atanh(±1) = ±∞` row, which needs no precision to round to
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return r;
+        }
 
         // atanh(x) = ln_1p(2x/(1-x)) / 2. The ratio and the `ln_1p` input error are tracked as a
         // [`Ball`]; near |x| = 1 the `2x/(1-x)` division amplifies, but the Ball tracks it (Ziv
@@ -590,7 +675,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);
@@ -787,8 +872,8 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the absolute value is greater than or equal to 1 (out of domain;
-    /// `|x| = 1` is infinite and `|x| > 1` is not real).
+    /// Panics if the absolute value is greater than 1 (out of domain: not real). At
+    /// `|x| = 1` the result is the signed infinity.
     ///
     /// # Examples
     ///
@@ -804,6 +889,65 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     pub fn atanh(&self) -> Self {
         self.context.unwrap_fp(self.context.atanh(&self.repr, None))
     }
+}
+
+/// Is `e^|x|` (and so `sinh`, `cosh` and their ×π variants) certainly beyond the exponent
+/// range? `|x| ≥ 2^(usize::BITS + 7)` is more than `2·isize::MAX·ln(B) + ln 2` for any word-sized
+/// base, i.e. a result past `B^(2·isize::MAX)` — out of range at any precision. The functions
+/// answer such an argument directly: their reduction would otherwise need `ln(B)` to as many
+/// digits as the argument has integer digits.
+fn exp_certainly_overflows<const B: Word>(x: &Repr<B>) -> bool {
+    x.log2_bounds().0 > (usize::BITS + 7) as f32
+}
+
+/// The range error of `sinh(π·x)` when its loop fails: an overflow with the sign of `x` for
+/// an `|x| ≥ 1` (whichever intermediate left the range — `e^(−|t|)` underflows on the way to
+/// an overflowing `e^|t|`), an underflow with that sign for a fraction (`π·x` itself is below
+/// the range). The intermediate's own error carries neither.
+fn odd_range_error<const B: Word>(x: &Repr<B>) -> FpError {
+    if top_exp(x) < 0 {
+        FpError::Underflow(x.sign())
+    } else {
+        FpError::Overflow(x.sign())
+    }
+}
+
+/// Extra guard digits for the ×π hyperbolics: the integer digits of the argument.
+///
+/// Their exponent `t = π·x` is formed at the working precision, so it carries a *relative*
+/// error of a few work-ulps — an *absolute* error of `|x|` times that, which is what the
+/// exponential turns into the relative error of the result. Without these digits a large
+/// argument at a low precision leaves `t` uncertain by whole units (`x = 2^45` at 1 bit: by
+/// `2^39`), and the first attempts carry a radius astronomically larger than the result.
+///
+/// Capped: an argument of more than a few hundred digits overflows the exponent range whatever
+/// the base, which the exponential kernel reports before any radius matters.
+fn pi_argument_guard<const B: Word>(x: &Repr<B>) -> usize {
+    const CAP: isize = 4 * usize::BITS as isize;
+    top_exp(x).clamp(0, CAP) as usize + 2
+}
+
+/// Is `|x| ≥ B^(wp/2 + 3)`, so that `x² ≥ B^(wp + 5)` lies wholly beyond the working precision?
+/// Then `asinh(|x|)` and `acosh(|x|)` are `ln(2|x|)` to within `1/(2x²)`, less than one work-ulp
+/// of a logarithm that is itself above 1 — and the textbook compositions should not be formed
+/// at all: their `x² + 1`, `(x − 1)(x + 1)` and `1 + arg` align a unit against a magnitude of
+/// `x²`, digit for digit, however astronomical the exponent.
+fn square_dominates<const B: Word>(x: &Repr<B>, wp: usize) -> bool {
+    bottom_exp(x) > (wp / 2 + 2) as isize
+}
+
+/// `ln(2|x|)` widened by one ulp: `asinh(|x|)` / `acosh(|x|)` when [`square_dominates`]. The
+/// doubling is exact, and `ln_compute` folds the rounding of its argument itself.
+fn ln_2x_ball<const B: Word>(
+    work: &Context<mode::HalfEven>,
+    x: &Repr<B>,
+    cache: Option<&mut ConstCache>,
+) -> Result<Ball<B>, FpError> {
+    let two_abs = Repr::new((x.significand() * IBig::from(2)).abs(), x.exponent());
+    let mut ball = work.ln_compute::<B>(&two_abs, work.precision, false, cache)?;
+    let ulp = ulp_mag::<B>(&ball.mid, work.precision);
+    ball.add_error(ulp);
+    Ok(ball)
 }
 
 /// `±0` `Repr` carrying the sign of `x` (used by the odd hyperbolics at zero input).
@@ -1346,12 +1490,16 @@ mod tests {
                             };
                             let got = r.value();
                             assert_eq!(got.repr(), &want, "{name} tanh(±{mag}) p={p}");
-                            let expected_adj = if $stays {
+                            // The flag is the adjustment applied to the *truncated*
+                            // significand `±0.99…9`: none when the result is that value, a
+                            // carry of the magnitude when it stays at `±1` — the same flag the
+                            // Ziv path reports just below the saturation threshold.
+                            let expected_adj = if !$stays {
                                 Rounding::NoOp
                             } else if sign == Sign::Positive {
-                                Rounding::SubOne
-                            } else {
                                 Rounding::AddOne
+                            } else {
+                                Rounding::SubOne
                             };
                             assert_eq!(got_adj, expected_adj, "{name} flag tanh(±{mag}) p={p}");
                             assert_eq!(

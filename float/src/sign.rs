@@ -32,6 +32,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// * [FBig::ZERO] if the number is zero
     /// * [FBig::NEG_ONE] if the number is negative (including `-inf`)
     ///
+    /// Like those constants, the result has unlimited precision (it is exact), so combining
+    /// it with `self` — e.g. `x * x.signum()` — keeps the precision of `self`.
+    ///
     /// # Examples
     /// ```
     /// # use core::str::FromStr;
@@ -39,6 +42,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # use dashu_float::DBig;
     /// assert_eq!(DBig::from_str("2.01")?.signum(), DBig::ONE);
     /// assert_eq!(DBig::from_str("-1.234")?.signum(), DBig::NEG_ONE);
+    /// assert_eq!(DBig::from_str("2.01")?.signum().precision(), 0);
     /// # Ok::<(), ParseError>(())
     /// ```
     pub const fn signum(&self) -> Self {
@@ -56,7 +60,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
             significand,
             exponent: 0,
         };
-        Self::new(repr, Context::new(1))
+        Self::new(repr, Context::new(0))
     }
 }
 

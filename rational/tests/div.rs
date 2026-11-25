@@ -200,3 +200,38 @@ fn test_div_with_int() {
     assert_eq!(ibig!(-3) / rbig!(~9/5), rbig!(~-5/3));
     assert_eq!(ibig!(-4) / rbig!(-2 / 3), rbig!(6));
 }
+
+#[test]
+fn test_inv() {
+    use dashu_base::Inverse;
+
+    assert_eq!(rbig!(2).inv(), rbig!(1 / 2));
+    assert_eq!((&rbig!(-2 / 3)).inv(), rbig!(-3 / 2));
+    assert_eq!(rbig!(~-6/9).inv(), rbig!(~-9/6));
+    assert_eq!((&rbig!(~1)).inv(), rbig!(~1));
+}
+
+// the inverse of zero is a division by zero, like `ONE / ZERO` and `ZERO.pow(-1)`
+#[test]
+#[should_panic(expected = "Divisor or denominator must not be zero")]
+fn test_inv_zero_rbig() {
+    let _ = dashu_base::Inverse::inv(rbig!(0));
+}
+
+#[test]
+#[should_panic(expected = "Divisor or denominator must not be zero")]
+fn test_inv_zero_rbig_ref() {
+    let _ = dashu_base::Inverse::inv(&rbig!(0));
+}
+
+#[test]
+#[should_panic(expected = "Divisor or denominator must not be zero")]
+fn test_inv_zero_relaxed() {
+    let _ = dashu_base::Inverse::inv(rbig!(~0));
+}
+
+#[test]
+#[should_panic(expected = "Divisor or denominator must not be zero")]
+fn test_inv_zero_relaxed_ref() {
+    let _ = dashu_base::Inverse::inv(&rbig!(~0));
+}

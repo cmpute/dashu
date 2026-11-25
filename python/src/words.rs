@@ -1,8 +1,9 @@
+use crate::convert::extract_index;
 use crate::types::PyWords;
 
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult,
-    exceptions::{PyIndexError, PyTypeError, PyValueError},
+    exceptions::{PyIndexError, PyMemoryError, PyTypeError, PyValueError},
     prelude::*,
     types::PySlice,
 };
@@ -40,7 +41,8 @@ impl PyWords {
     }
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let py = index.py();
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize
@@ -93,7 +95,8 @@ impl PyWords {
         }
     }
     fn __setitem__(&mut self, index: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>) -> PyResult<()> {
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             let value: Word = value.extract()?;
 
             // parse negative index
@@ -158,7 +161,8 @@ impl PyWords {
         }
     }
     fn __delitem__(&mut self, index: &Bound<'_, PyAny>) -> PyResult<()> {
-        if let Ok(n) = index.extract::<isize>() {
+        if let Some(n) = extract_index(index) {
+            let n = n?;
             // parse negative index
             let n = if n < 0 {
                 (self.0.len() as isize + n) as usize
@@ -223,15 +227,21 @@ impl PyWords {
         }
         Ok(Self(out))
     }
-    fn __mul__(&self, count: isize) -> Self {
-        if count <= 0 {
-            Self(Vec::new())
-        } else {
-            let mut out = Vec::with_capacity(count as usize * self.0.len());
-            for _ in 0..count {
-                out.extend(self.0.iter());
-            }
-            Self(out)
+    /// Repeat the words `count` times, as for a `list`. A length that cannot be allocated
+    /// raises `MemoryError` (instead of a panic, or an abort of the process).
+    fn __mul__(&self, count: isize) -> PyResult<Self> {
+        if count <= 0 || self.0.is_empty() {
+            return Ok(Self(Vec::new()));
         }
+        let too_large = || PyMemoryError::new_err("the repeated Words would be too large");
+        let len = (count as usize)
+            .checked_mul(self.0.len())
+            .ok_or_else(too_large)?;
+        let mut out = Vec::new();
+        out.try_reserve_exact(len).map_err(|_| too_large())?;
+        for _ in 0..count {
+            out.extend(self.0.iter());
+        }
+        Ok(Self(out))
     }
 }

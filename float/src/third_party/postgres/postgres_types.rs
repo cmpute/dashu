@@ -13,8 +13,10 @@ impl<'a> FromSql<'a> for Numeric {
     }
 
     fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn error::Error + Sync + Send>> {
-        assert!(raw.len() >= 8);
         assert!(*ty == Type::NUMERIC);
+        if raw.len() < 8 {
+            return Err("invalid NUMERIC value: the header is truncated".into());
+        }
 
         #[inline(always)]
         fn read16(bytes: &[u8]) -> u16 {
@@ -34,11 +36,20 @@ impl<'a> FromSql<'a> for Numeric {
             0xC000 => return Err(ConversionError::OutOfBounds.into()), // nan
             0xD000 => return Ok(Numeric::infinity()),
             0xF000 => return Ok(Numeric::neg_infinity()),
-            _ => panic!(),
+            _ => return Err("invalid NUMERIC value: unknown sign".into()),
         };
 
         // precision (in base 10 digits)
         let scale = read16(&raw[6..8]);
+
+        // the digits (in base NBASE = 10000), each of them in 0..NBASE
+        let digits = &raw[8..];
+        if digits.len() != num_digits * 2 {
+            return Err("invalid NUMERIC value: the digits do not match the header".into());
+        }
+        if digits.chunks(2).any(|bytes| read16(bytes) >= 10000) {
+            return Err("invalid NUMERIC value: digit out of range".into());
+        }
 
         // parse the digits through the iterator
         Ok(Self {
@@ -46,11 +57,7 @@ impl<'a> FromSql<'a> for Numeric {
             is_inf: false,
             weight,
             dscale: scale,
-            digits: raw[8..]
-                .chunks(2)
-                .take(num_digits)
-                .map(|bytes| read16(bytes) as i16)
-                .collect(),
+            digits: digits.chunks(2).map(|bytes| read16(bytes) as i16).collect(),
         })
     }
 }

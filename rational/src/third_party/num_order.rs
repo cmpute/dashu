@@ -92,6 +92,22 @@ impl NumHash for Repr {
         const HASH_NEGINF: i128 = i128::MIN + 1;
 
         let ub = (&self.denominator) % M127U; // denom is always positive in Ratio
+        if ub == 0 && !self.numerator.is_zero() && (&self.numerator) % M127 == 0 {
+            // The modulus divides both components, so the fraction is not in the lowest
+            // terms (it is a `Relaxed`, which only cancels powers of two). The hash has to
+            // depend on the value alone, so cancel the modulus before hashing.
+            let m = UBig::from(M127U);
+            let (mut num, mut den) = (self.numerator.clone(), self.denominator.clone());
+            while (&den) % M127U == 0 && (&num) % M127 == 0 {
+                num /= &m;
+                den /= &m;
+            }
+            return Repr {
+                numerator: num,
+                denominator: den,
+            }
+            .num_hash(state);
+        }
         let binv = if ub != 0 {
             MInt::new(ub, &M127U).inv().unwrap()
         } else {
@@ -243,6 +259,14 @@ macro_rules! impl_num_ord_with_float {
                 }
 
                 // step 2: compare sign
+                if self.numerator.is_zero() {
+                    // Zero has no magnitude to estimate in the steps below (its bit length
+                    // is not a logarithm), so it's decided by the sign of the float alone.
+                    return match other.sign() {
+                        Sign::Positive => Some(Ordering::Less),
+                        Sign::Negative => Some(Ordering::Greater),
+                    };
+                }
                 let sign = match (self.numerator.sign(), other.sign()) {
                     (Sign::Positive, Sign::Positive) => Sign::Positive,
                     (Sign::Positive, Sign::Negative) => return Some(Ordering::Greater),

@@ -3,7 +3,7 @@
 //! `Sum` is exact-accumulating: since complex addition is componentwise, the real and imaginary
 //! parts are summed independently via `FBig`'s exact-accumulating `Sum` (each axis accumulates its
 //! `Repr`s losslessly and rounds once), so the result is the correctly-rounded complex sum. `Product`
-//! folds with the binary `*` operator (componentwise near-correct). The impls are concrete
+//! folds with the binary `*` operator (each product correctly rounded per component). The impls are concrete
 //! (`Sum`/`Sum<&CBig>`, `Product`/`Product<&CBig>`) rather than generic over `Add`/`Mul`, matching
 //! the narrowed iter surface used for `FBig`.
 

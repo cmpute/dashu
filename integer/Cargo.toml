@@ -28,6 +28,8 @@ tuning = ["std"]
 rand = ["rand_v010"]
 num-traits = ["num-traits_v02"]
 num-integer = ["num-integer_v01"]
+# the traits from num-integer are based on the traits from num-traits
+num-integer_v01 = ["dep:num-integer_v01", "num-traits_v02"]
 rkyv = ["rkyv_v08"]
 
 [dependencies]

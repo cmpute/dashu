@@ -7,15 +7,22 @@
 //!
 //! Mirroring `dashu-float`, the power family lives alongside `exp` in a single module.
 
-use crate::ball::CBall;
+use crate::ball::{kernel_ball, powi_is_exact, CBall};
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CfpResult, Context};
-use dashu_base::Approximation::*;
+use crate::repr::{combine_parts, exact, reborrow_cache, riemann, CRounded, CfpResult, Context};
 use dashu_base::{BitTest, Sign};
 use dashu_float::round::ErrorBounds;
 use dashu_float::{Ball, Repr};
 use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError};
-use dashu_int::{IBig, Word};
+use dashu_int::{IBig, UBig, Word};
+
+/// An exact signed zero at the float context `f`.
+fn zero_part<R: ErrorBounds, const B: Word>(
+    sign: Sign,
+    f: FloatCtxt<R>,
+) -> dashu_base::Approximation<FBig<R, B>, dashu_float::round::Rounding> {
+    dashu_base::Approximation::Exact(FBig::from_repr(Repr::zero_with_sign(sign), f))
+}
 
 /// Guard digits (base-B) for `exp`. Composes a real `exp`, a `sin_cos`, and two products.
 const EXP_GUARD: usize = 14;
@@ -24,7 +31,71 @@ const EXP_GUARD: usize = 14;
 /// cancellation-prone path, so a larger guard than the bare arithmetic ops.
 const POWF_GUARD: usize = 22;
 
+/// The largest `k` for which a real exponent `m/2ᵏ` is evaluated through the exact
+/// square-root chain (see [`Context::powf`]).
+const POWF_DYADIC_MAX_SQRTS: usize = 64;
+
+/// The widest integer numerator (in bits) `powf` will lift out of a real exponent. An exponent
+/// stored as `1·B^(10¹⁸)` is an "integer" too, but materializing it would allocate its whole
+/// value; anything this large over- or underflows through the general path anyway.
+const POWF_INT_EXPONENT_MAX_BITS: usize = 256;
+
+/// Left-to-right binary exponentiation `startⁿ` (`n ≥ 1`) on a complex ball. Every product's
+/// compounding rounding is tracked, and an all-exact chain keeps `rad == 0` on both components.
+fn pow_chain<const B: Word>(start: &CBall<B>, n: &UBig, pw: usize) -> Result<CBall<B>, FpError> {
+    let nlen = n.bit_len();
+    let mut acc = start.clone();
+    for i in (0..nlen - 1).rev() {
+        acc = acc.sqr(pw)?;
+        if n.bit(i) {
+            acc = acc.mul(start, pw)?;
+        }
+    }
+    Ok(acc)
+}
+
+/// Write a finite real exponent as `m / 2ᵏ` with `m` an integer of at most
+/// [`POWF_INT_EXPONENT_MAX_BITS`] bits and `0 ≤ k ≤` [`POWF_DYADIC_MAX_SQRTS`], if it has that
+/// form (`k` minimal). In base 10 this recognizes `0.5 = 1/2`, `0.75 = 3/4`, … as well.
+fn dyadic_exponent<const B: Word>(w: &Repr<B>) -> Option<(IBig, usize)> {
+    if w.is_infinite() || w.significand().is_zero() {
+        return None;
+    }
+    // work at unlimited precision: the doublings are exact
+    let x = FloatCtxt::<dashu_float::round::mode::Zero>::new(0);
+    let two = Repr::<B>::new(IBig::from(2u8), 0);
+    let mut t = w.clone();
+    for k in 0..=POWF_DYADIC_MAX_SQRTS {
+        // a normalized `Repr` is an integer iff its exponent is non-negative
+        if t.exponent() >= 0 {
+            let digits = (t.exponent() as usize).checked_add(t.digits_ub())?;
+            // `digits` base-B digits fit in `digits·⌈log₂B⌉` bits
+            let bits = digits.checked_mul((Word::BITS - (B - 1).leading_zeros()) as usize)?;
+            if bits > POWF_INT_EXPONENT_MAX_BITS {
+                return None;
+            }
+            let m = t.significand() * IBig::from(B).pow(t.exponent() as usize);
+            return Some((m, k));
+        }
+        // a doubling shortens the fraction by at most one digit; a fraction longer than the
+        // remaining budget cannot clear
+        if t.exponent().unsigned_abs() > POWF_DYADIC_MAX_SQRTS - k {
+            return None;
+        }
+        t = x.mul(&t, &two).ok()?.value().into_repr();
+    }
+    None
+}
+
 impl<R: ErrorBounds> Context<R> {
+    /// The exact constant `1 + 0i` at this context's precision.
+    fn exact_one<const B: Word>(&self) -> CRounded<R, B> {
+        exact(
+            FBig::from_repr(Repr::one(), self.float()),
+            FBig::from_repr(Repr::zero(), self.float()),
+        )
+    }
+
     /// Raise a complex number to an integer power under this context (context layer), correctly
     /// rounded via a Ziv loop over the binary-exponentiation (repeated-squaring) chain. No cache.
     ///
@@ -32,14 +103,21 @@ impl<R: ErrorBounds> Context<R> {
     /// sign-dependent overflow/underflow propagates from the closure with `?`. The chain runs on
     /// a `CBall`, so each squaring's compounding relative error joins the radius mechanically
     /// — and an all-exact chain keeps `rad == 0`, which is what certifies an
-    /// exactly-representable `zⁿ` under the directed modes. A base with identical parts takes
-    /// the exact `t·(1+i)` lattice shortcut instead (see the branch below).
+    /// exactly-representable `zⁿ` under the directed modes. A base whose parts have identical
+    /// magnitudes takes the exact `t·(1±i)` lattice shortcut instead (see the branch below).
+    ///
+    /// At unlimited precision a non-negative power is computed exactly (like `z·z`); a negative
+    /// one panics, since a reciprocal is not exactly representable in general.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited and the exponent is negative.
     pub fn powi<const B: Word>(&self, z: &CBig<R, B>, exp: IBig) -> CfpResult<R, B> {
         let (sign, n) = exp.into_parts();
         if n.is_zero() {
-            // z⁰ = 1 is exact at every precision, so the unlimited-precision constant is the
-            // correctly rounded result under every mode
-            return Ok(Exact(CBig::ONE));
+            // z⁰ = 1 is exact at every precision; the result carries this context's precision
+            // like every other power does
+            return Ok(self.exact_one());
         }
         let negative = sign == Sign::Negative;
         if z.is_infinite() {
@@ -49,21 +127,82 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::Indeterminate);
         }
 
+        if self.precision() == 0 && !negative {
+            return self.powi_unlimited(z, &n);
+        }
+
+        match self.powi_rounded(z, negative, &n) {
+            // The chain reports the sign of whichever intermediate product left the exponent
+            // range (a square, so `Positive`). For a real base the sign of the true result is
+            // known — negative iff the base is negative and the exponent odd — and it is what
+            // the signed zero / infinity of the convenience layer must carry.
+            Err(e @ (FpError::Overflow(_) | FpError::Underflow(_)))
+                if z.im().significand().is_zero() =>
+            {
+                let sign = if z.re().sign() == Sign::Negative && n.bit(0) {
+                    Sign::Negative
+                } else {
+                    Sign::Positive
+                };
+                Err(match e {
+                    FpError::Overflow(_) => FpError::Overflow(sign),
+                    _ => FpError::Underflow(sign),
+                })
+            }
+            other => other,
+        }
+    }
+
+    /// `zⁿ` (`n ≥ 1`) at unlimited precision: the squaring chain on exact products.
+    fn powi_unlimited<const B: Word>(&self, z: &CBig<R, B>, n: &UBig) -> CfpResult<R, B> {
+        let x = FloatCtxt::<R>::new(0);
+        // every op below is exact at unlimited precision; only a range error can surface
+        let mul = |a: &Repr<B>, b: &Repr<B>| x.mul(a, b).map(|r| r.value().into_repr());
+        let (a0, b0) = (z.re().clone(), z.im().clone());
+        let (mut a, mut b) = (a0.clone(), b0.clone());
+        for i in (0..n.bit_len() - 1).rev() {
+            // (a + bi)² = (a² − b²) + 2ab·i
+            let re = x.sub(&mul(&a, &a)?, &mul(&b, &b)?)?.value().into_repr();
+            let ab = mul(&a, &b)?;
+            let im = x.add(&ab, &ab)?.value().into_repr();
+            a = re;
+            b = im;
+            if n.bit(i) {
+                let re = x.sub(&mul(&a, &a0)?, &mul(&b, &b0)?)?.value().into_repr();
+                let im = x.add(&mul(&a, &b0)?, &mul(&b, &a0)?)?.value().into_repr();
+                a = re;
+                b = im;
+            }
+        }
+        Ok(exact(FBig::from_repr(a, self.float()), FBig::from_repr(b, self.float())))
+    }
+
+    /// The limited-precision `z^(±n)` (`n ≥ 1`) through the Ziv loop.
+    fn powi_rounded<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        negative: bool,
+        n: &UBig,
+    ) -> CfpResult<R, B> {
         let p = self.precision();
         let nlen = n.bit_len();
 
-        // Diagonal shortcut: z = t·(1+i) with *identical exact parts* ⇒ `zⁿ = tⁿ·(1+i)ⁿ`, where
-        // `(1+i)ⁿ` sits on the exact half-power-of-two lattice (magnitude `2^(n/2)` in steps of
-        // √2, arguments in multiples of π/4), so both components are the one certified real
-        // power `tⁿ` scaled by a power of two — and the zero component of an even power
-        // is *exactly* zero. The generic squaring chain cannot certify that zero: its `a² − b²`
-        // cancels onto exact 0 at every working precision (the parts are the same value), but
-        // the tracked radius stays a division-rounding ε > 0, which the strict zero-candidate
-        // certification (no nonzero real rounds to 0) correctly refuses — an endless retry. The
-        // near-diagonal z (parts *rounding* together at low precision but distinct) deliberately
-        // does not enter here: their true zero component is nonzero, and the retry that
-        // separates the squares is the certification working.
-        if z.re() == z.im() && !z.re().significand().is_zero() {
+        // Diagonal shortcut: z = t·(1±i) with parts of *identical exact magnitude* ⇒
+        // `zⁿ = tⁿ·(1±i)ⁿ`, where `(1±i)ⁿ` sits on the exact half-power-of-two lattice
+        // (magnitude `2^(n/2)` in steps of √2, arguments in multiples of π/4), so both
+        // components are the one certified real power `tⁿ` scaled by a power of two — and the
+        // zero component of an even power is *exactly* zero. The generic squaring chain cannot
+        // certify that zero: its `a² − b²` cancels onto exact 0 at every working precision (the
+        // parts have the same magnitude), but once the chain is inexact (a reciprocal, or a
+        // power too wide for the working precision) the tracked radius stays an ε > 0, which
+        // the strict zero-candidate certification (no nonzero real rounds to 0) correctly
+        // refuses — an endless retry. The anti-diagonal `t·(1−i)` is the conjugate lattice
+        // (`(1−i)ⁿ = conj((1+i)ⁿ)`). A near-diagonal z (parts *rounding* together at low
+        // precision but distinct) deliberately does not enter here: its true zero component is
+        // nonzero, and the retry that separates the squares is the certification working.
+        let diagonal = z.re() == z.im();
+        let anti_diagonal = !diagonal && *z.re() == -z.im().clone();
+        if (diagonal || anti_diagonal) && !z.re().significand().is_zero() {
             let [re, im] = self.ziv(nlen + 6, |guard| {
                 let pw = p + guard;
                 let fctx = FloatCtxt::<R>::new(pw);
@@ -73,8 +212,9 @@ impl<R: ErrorBounds> Context<R> {
                     IBig::from(n.clone())
                 };
                 // `tⁿ`, certified by the real Ziv loop under this mode (negative `n` included)
-                let tp =
-                    Ball::from_rounded(fctx.powi(z.re(), exp.clone())?.map(FBig::into_repr), pw);
+                let tp = kernel_ball(fctx.powi(z.re(), exp.clone())?, pw, |mid| {
+                    powi_is_exact(mid, z.re(), &exp, pw)
+                });
                 // `(1+i)ⁿ = 2^((n−r)/2)·(±1, ±1)` on the exact lattice: `r = n mod 2`, and the
                 // signs follow the angle `n·π/4` — `q = n mod 8` (floor) indexes the table.
                 let eight = IBig::from(8);
@@ -92,6 +232,8 @@ impl<R: ErrorBounds> Context<R> {
                     (1, -1),
                 ];
                 let (a, b) = lattice[usize::try_from(q).unwrap()];
+                // `(1−i)ⁿ` is the conjugate lattice point
+                let b = if anti_diagonal { -b } else { b };
                 // The lattice magnitude `2^k`, evaluated by the float `powi` in *this* base and
                 // certified by its own Ziv loop. For the binary base it is a bare exponent shift
                 // (exact at every precision); above it, it is exact whenever `2^k` fits the
@@ -104,11 +246,10 @@ impl<R: ErrorBounds> Context<R> {
                 // only for `B = 2` and silently wrong everywhere else (base-10 `(1+i)⁴` came out
                 // as `−100`). Here the ratio `log_B 2` is *computed*, so the conversion's own
                 // rounding joins the radius like any other.
-                let pow2 = Ball::from_rounded(
-                    fctx.powi(&Repr::<B>::new(IBig::from(2u8), 0), k)?
-                        .map(FBig::into_repr),
-                    pw,
-                );
+                let two = Repr::<B>::new(IBig::from(2u8), 0);
+                let pow2 = kernel_ball(fctx.powi(&two, k.clone())?, pw, |mid| {
+                    powi_is_exact(mid, &two, &k, pw)
+                });
                 let part = |v: i32| -> Result<Ball<B>, FpError> {
                     if v == 0 {
                         return Ok(Ball::exact(Repr::<B>::zero()));
@@ -141,14 +282,7 @@ impl<R: ErrorBounds> Context<R> {
             // tracked, and an all-exact chain keeps `rad == 0` on both components — which is
             // what lets the directed rounding modes certify the exactly-representable zⁿ (the
             // hand-written radius carried the same special case as an `Exact`-flag counter).
-            let mut acc = start.clone();
-            for i in (0..nlen - 1).rev() {
-                acc = acc.sqr(pw)?;
-                if n.bit(i) {
-                    acc = acc.mul(&start, pw)?;
-                }
-            }
-            Ok(acc.to_parts_radius(&fctx))
+            Ok(pow_chain(&start, n, pw)?.to_parts_radius(&fctx))
         })?;
         Ok(combine_parts(re, im))
     }
@@ -157,7 +291,8 @@ impl<R: ErrorBounds> Context<R> {
     /// from `dashu-float`'s (correctly-rounded) `exp` and `sin_cos`, wrapped in a Ziv loop that
     /// certifies both parts; the cache is threaded into both (the convenience layer passes `None`).
     ///
-    /// Special values: `exp(0) = 1`; `exp(+inf + i·finite) = +∞` (Riemann point);
+    /// Special values: `exp(±0 ± i·0) = 1 ± i·0` (the imaginary zero keeps its sign, so
+    /// `exp(conj z) = conj(exp z)`); `exp(+inf + i·finite) = +∞` (Riemann point);
     /// `exp(-inf + i·finite) = 0`; an infinite imaginary part makes the trig undefined
     /// (`Indeterminate`).
     pub fn exp<const B: Word>(
@@ -166,7 +301,12 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
         if z.is_zero() {
-            return Ok(exact(FBig::ONE, FBig::ZERO));
+            // exact at every precision; the result carries this context's precision (not the
+            // unlimited precision of a bare constant) and the sign of the imaginary zero
+            return Ok(exact(
+                FBig::from_repr(Repr::one(), self.float()),
+                FBig::from_repr(Repr::zero_with_sign(z.im().sign()), self.float()),
+            ));
         }
         if z.is_infinite() {
             if z.im().is_infinite() {
@@ -175,16 +315,39 @@ impl<R: ErrorBounds> Context<R> {
             return if z.re().sign() == Sign::Positive {
                 Ok(riemann(*self))
             } else {
-                Ok(exact(FBig::ZERO, FBig::ZERO))
+                Ok(exact(
+                    FBig::from_repr(Repr::zero(), self.float()),
+                    FBig::from_repr(Repr::zero(), self.float()),
+                ))
             };
+        }
+
+        // The shortcuts above are exact and need no precision; everything below is a
+        // limited-precision technique.
+        self.assert_limited();
+        let (x, y) = (z.re(), z.im());
+        let fctx = self.float();
+        // On the axes the result is a single real kernel per part, correctly rounded by the
+        // float layer: `exp(x ± 0i) = e^x ± 0i` and `exp(±0 + iy) = cos y + i·sin y`. (The
+        // composition below cannot certify these next to their closed forms — `cos y` for a
+        // tiny `y` is one ulp-fraction below 1 — without a working precision that grows with
+        // the exponent of the argument.)
+        if y.significand().is_zero() {
+            let re = fctx.exp(x, reborrow_cache(&mut cache))?;
+            return Ok(combine_parts(re, zero_part(y.sign(), fctx)));
+        }
+        if x.significand().is_zero() {
+            let (sin, cos) = fctx.sin_cos(y, reborrow_cache(&mut cache));
+            return Ok(combine_parts(cos?, sin?));
+        }
+        if let Some(result) = self.exp_tiny(z) {
+            return result;
         }
 
         // `e^x·(cos y + i·sin y)` through the ball composition (`CBall::exp`): the float
         // `exp`/`sin_cos` kernels run on the midpoints and the input radii (zero here — the
-        // entry is exact) propagate mechanically through the two tracked products. The Ziv
-        // driver asserts a limited context (the special-value shortcuts above are exact and
-        // need no precision); overflow from a large real part propagates from the closure
-        // with `?`.
+        // entry is exact) propagate mechanically through the two tracked products. Overflow
+        // from a large real part propagates from the closure with `?`.
         let p = self.precision();
         let [re, im] = self.ziv(EXP_GUARD, |guard| {
             let pw = p + guard;
@@ -196,13 +359,66 @@ impl<R: ErrorBounds> Context<R> {
         Ok(combine_parts(re, im))
     }
 
-    /// Raise `base` to a complex power under this context (context layer): `exp(w·log base)` on the
-    /// principal branch, correctly rounded via a Ziv loop. `powf(0, 0) = 1` (matching `FBig::powf`).
+    /// `exp(x + iy)` for nonzero `x` and `y` that are both tiny: `Some` when both parts are
+    /// decided here.
     ///
-    /// The result's error is amplified by the exponent magnitude `‖w·log base‖`: the outer `exp`
-    /// multiplies the error in `w·log base` by the result magnitude, so the per-part radius carries
-    /// a data-dependent `‖w·log base‖` factor (mirroring `FBig::powf`). Overflow (a large exponent)
-    /// propagates from the closure with `?`.
+    /// `Re = 1 + c` and `Im = y·(1 + c')` with
+    /// `c = (x − y²/2) + r`, `c' = (x − y²/6) + r'` and `|r|, |r'| <= x² + |x|·y² + y⁴/12`.
+    /// When `c` and `c'` are below everything the precision can show next to `1` and `y`, each
+    /// part is its closed form displaced by an invisible amount, and only the side matters:
+    /// the sign of `2x − y²` (resp. `6x − y²`), found exactly, when it dominates the
+    /// remainder. If it vanishes (`y² = 2x`, resp. `y² = 6x`) the remainder is `−x²/3` (resp.
+    /// `−x²/5`) to leading order, so the side is below. Left to the general path — which then
+    /// needs a working precision proportional to the exponents — only when the leading term
+    /// neither vanishes nor dominates.
+    fn exp_tiny<const B: Word>(&self, z: &CBig<R, B>) -> Option<CfpResult<R, B>> {
+        let (x, y) = (z.re(), z.im());
+        let fctx = self.float();
+        let p = self.precision();
+        // `|x| < B^tx`, `|y| < B^ty`
+        let tx = x.exponent() as i128 + x.digits_ub() as i128;
+        let ty = y.exponent() as i128 + y.digits_ub() as i128;
+        // `|c|, |c'| < 2|x| + y² < B^bound`, which has to be invisible next to `1` (padded to
+        // `p + 1` digits) and, relatively, next to `y` (padded to at least its own digits)
+        let bound = (tx + 1).max(2 * ty) + 1;
+        if bound > -((p + 1).max(y.digits()) as i128) - 2 {
+            return None;
+        }
+        // `2|r|, 6|r'| < B^remainder`
+        let remainder = (2 * tx).max(tx + 2 * ty).max(4 * ty) + 4;
+        let side = |factor: u8| {
+            let factor = Repr::<B>::new(IBig::from(factor), 0);
+            let leading = [(&factor, x, Sign::Positive), (y, y, Sign::Negative)];
+            match crate::wide::sign_and_magnitude(&leading) {
+                None => Some(Sign::Negative),
+                Some((sign, magnitude)) if magnitude > remainder => Some(sign),
+                Some(_) => None,
+            }
+        };
+        let (re_side, im_side) = (side(2)?, side(6)?);
+        let re = crate::wide::round_sticky(&fctx, &Repr::one(), re_side);
+        let im = crate::wide::round_sticky(&fctx, y, im_side * y.sign());
+        Some(crate::repr::combine_results(re, im))
+    }
+
+    /// Raise `base` to a complex power under this context (context layer): `exp(w·log base)` on the
+    /// principal branch, correctly rounded via a Ziv loop. `powf(z, 0) = 1` for every `z`
+    /// (including `powf(0, 0) = 1`, matching `FBig::powf`), and `powf(0, w) = 0` when `Re w > 0`.
+    ///
+    /// A real exponent of the form `m/2ᵏ` (an integer, a half-integer, …) is evaluated as
+    /// `(z^(1/2ᵏ))^m` through `k` principal square roots and the integer-power chain — the same
+    /// principal value, but through operations that are exact whenever their result is, so an
+    /// exactly-representable power (`i² = −1`, `(−1)^½ = i`, `4^½ = 2`, or a power landing
+    /// exactly on a rounding tie) is recognized instead of being approached forever by the
+    /// transcendental route. An integer exponent is simply [`powi`](Self::powi).
+    ///
+    /// Otherwise the result's error is amplified by the exponent magnitude `‖w·log base‖`: the
+    /// outer `exp` multiplies the error in `w·log base` by the result magnitude, so the per-part
+    /// radius carries a data-dependent `‖w·log base‖` factor (mirroring `FBig::powf`). Overflow
+    /// (a large exponent) propagates from the closure with `?`.
+    ///
+    /// A zero base with `Re w ≤ 0` (and `w ≠ 0`) is [`FpError::Indeterminate`], like
+    /// `powi(0, −1)`.
     pub fn powf<const B: Word>(
         &self,
         base: &CBig<R, B>,
@@ -210,7 +426,29 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> CfpResult<R, B> {
         if w.is_zero() {
-            return Ok(Exact(CBig::ONE)); // powf(z, 0) = 1, incl. powf(0, 0)
+            return Ok(self.exact_one()); // powf(z, 0) = 1, incl. powf(0, 0)
+        }
+        self.assert_limited();
+        if base.is_zero() && !w.is_infinite() {
+            // 0^w = exp(w·log 0) with log 0 = −∞: the modulus is 0^(Re w), so the power is 0
+            // for Re w > 0; for Re w < 0 it is a pole and for a purely imaginary w it has no
+            // limit at all.
+            return if w.re().sign() == Sign::Positive && !w.re().significand().is_zero() {
+                Ok(exact(
+                    FBig::from_repr(Repr::zero(), self.float()),
+                    FBig::from_repr(Repr::zero(), self.float()),
+                ))
+            } else {
+                Err(FpError::Indeterminate)
+            };
+        }
+        if w.im().significand().is_zero() && !base.is_infinite() {
+            if let Some((m, k)) = dyadic_exponent(w.re()) {
+                if k == 0 {
+                    return self.powi(base, m);
+                }
+                return self.powf_dyadic(base, m, k);
+            }
         }
         // Through the ball compositions: `log` folds its kernels' input radii, the complex
         // product is tracked by the ball rule, and `exp`'s fold amplifies the radius of
@@ -232,14 +470,36 @@ impl<R: ErrorBounds> Context<R> {
         })?;
         Ok(combine_parts(re, im))
     }
+
+    /// `base^(m/2ᵏ)` (`k ≥ 1`, `m ≠ 0`) as `(base^(1/2ᵏ))^m`: `k` tracked principal square roots,
+    /// then the integer-power chain. Each halving of the argument stays on the principal branch,
+    /// so this is exactly `exp((m/2ᵏ)·log base)`.
+    fn powf_dyadic<const B: Word>(&self, base: &CBig<R, B>, m: IBig, k: usize) -> CfpResult<R, B> {
+        let (sign, n) = m.into_parts();
+        let negative = sign == Sign::Negative;
+        let p = self.precision();
+        let [re, im] = self.ziv(POWF_GUARD + n.bit_len() + k, |guard| {
+            let pw = p + guard;
+            let fctx = FloatCtxt::<R>::new(pw);
+            let mut root = CBall::from_parts(base.re(), base.im(), pw);
+            for _ in 0..k {
+                root = root.sqrt(&fctx, pw)?;
+            }
+            let start = if negative { root.inv(pw)? } else { root };
+            Ok(pow_chain(&start, &n, pw)?.to_parts_radius(&fctx))
+        })?;
+        Ok(combine_parts(re, im))
+    }
 }
 
 impl<R: ErrorBounds, const B: Word> CBig<R, B> {
-    /// Integer power (convenience layer).
+    /// Integer power (convenience layer). A non-negative power of an unlimited-precision value
+    /// is exact.
     ///
     /// # Panics
     ///
-    /// Panics on an indeterminate / out-of-domain result (e.g. `0⁻¹`).
+    /// Panics on an indeterminate / out-of-domain result (e.g. `0⁻¹`), or if the precision is
+    /// unlimited and the exponent is negative.
     #[inline]
     pub fn powi(&self, exp: IBig) -> Self {
         self.context().unwrap_cfp(self.context().powi(self, exp))
@@ -258,7 +518,12 @@ impl<R: ErrorBounds, const B: Word> CBig<R, B> {
     /// Complex power `self^w` (convenience layer).
     ///
     /// `powf(z, 0) = 1` (including `powf(0, 0) = 1`), matching `FBig::powf` and the real `0⁰ = 1`
-    /// convention.
+    /// convention; `powf(0, w) = 0` when `Re w > 0`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited (unless `w` is zero), or on an indeterminate result
+    /// (a zero base with `Re w ≤ 0`, an infinite operand).
     #[inline]
     pub fn powf(&self, w: &Self) -> Self {
         self.context()
@@ -573,5 +838,26 @@ mod tests {
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_powf_unlimited_precision_panics() {
         let _ = C::ONE.powf(&C::ONE);
+    }
+    // `powf` lifts a real exponent `m/2ᵏ` out of any base; anything else (a non-dyadic
+    // fraction, too many halvings, a numerator too large to materialize) takes the general path.
+    #[test]
+    fn dyadic_exponent_recognition() {
+        let r2 = |s: i64, e: isize| Repr::<2>::new(IBig::from(s), e);
+        let r10 = |s: i64, e: isize| Repr::<10>::new(IBig::from(s), e);
+        assert_eq!(dyadic_exponent(&r2(5, 0)), Some((IBig::from(5), 0)));
+        assert_eq!(dyadic_exponent(&r2(-3, 4)), Some((IBig::from(-48), 0)));
+        assert_eq!(dyadic_exponent(&r2(1, -1)), Some((IBig::from(1), 1)));
+        assert_eq!(dyadic_exponent(&r2(-3, -5)), Some((IBig::from(-3), 5)));
+        assert_eq!(dyadic_exponent(&r2(1, -64)), Some((IBig::from(1), 64)));
+        assert_eq!(dyadic_exponent(&r2(1, -65)), None);
+        assert_eq!(dyadic_exponent(&r2(1, 300)), None); // an integer, but 301 bits
+        assert_eq!(dyadic_exponent(&r2(0, 0)), None);
+        assert_eq!(dyadic_exponent(&Repr::<2>::infinity()), None);
+        assert_eq!(dyadic_exponent(&r10(5, -1)), Some((IBig::from(1), 1))); // 0.5
+        assert_eq!(dyadic_exponent(&r10(75, -2)), Some((IBig::from(3), 2))); // 0.75
+        assert_eq!(dyadic_exponent(&r10(2, 1)), Some((IBig::from(20), 0)));
+        assert_eq!(dyadic_exponent(&r10(2, -1)), None); // 0.2 = 1/5
+        assert_eq!(dyadic_exponent(&r10(1, 100)), None);
     }
 }

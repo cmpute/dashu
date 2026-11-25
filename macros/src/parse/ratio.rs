@@ -95,21 +95,23 @@ pub fn parse_static_ratio(embedded: bool, input: TokenStream) -> TokenStream {
 
 fn parse_ratio_with_error(input: TokenStream) -> Result<(IBig, UBig, bool), ParseError> {
     let mut num_val: Option<_> = None;
-    let mut num_neg = false;
+    let mut num_sign: Option<Sign> = None;
     let mut den_val: Option<_> = None;
-    let mut den_neg = false;
+    let mut den_sign: Option<Sign> = None;
     let mut den_marked = false;
     let mut relaxed = false;
     let mut base_marked = false;
     let mut base: Option<_> = None;
 
-    // parse tokens
+    // parse tokens: [~] [sign] num [/ [sign] den] [base N]
     for token in input {
+        // the denominator is only expected right after the `/`
+        let den_expected = den_marked && den_val.is_none() && !base_marked;
         match token {
             TokenTree::Literal(lit) => {
                 if num_val.is_none() {
                     num_val = Some(lit.to_string());
-                } else if den_val.is_none() {
+                } else if den_expected {
                     den_val = Some(lit.to_string());
                 } else if base.is_none() && base_marked {
                     base = Some(lit.to_string());
@@ -120,39 +122,42 @@ fn parse_ratio_with_error(input: TokenStream) -> Result<(IBig, UBig, bool), Pars
             TokenTree::Ident(ident) => {
                 if num_val.is_none() {
                     num_val = Some(ident.to_string())
-                } else if den_val.is_none() {
+                } else if den_expected {
                     den_val = Some(ident.to_string());
-                } else if base.is_none() && ident == "base" {
+                } else if !base_marked && ident == "base" {
                     base_marked = true
                 } else {
                     return Err(ParseError::InvalidDigit);
                 }
             }
             TokenTree::Punct(punct) => {
-                if punct.as_char() == '/' {
-                    if !den_marked && !base_marked {
-                        den_marked = true;
-                    } else {
-                        return Err(ParseError::InvalidDigit);
+                let sign = match punct.as_char() {
+                    '/' => {
+                        if num_val.is_some() && !den_marked && !base_marked {
+                            den_marked = true;
+                            continue;
+                        } else {
+                            return Err(ParseError::InvalidDigit);
+                        }
                     }
-                } else if punct.as_char() == '~' {
-                    if num_val.is_none() && den_val.is_none() {
-                        relaxed = true;
-                    } else {
-                        return Err(ParseError::InvalidDigit);
+                    '~' => {
+                        if num_val.is_none() && !relaxed {
+                            relaxed = true;
+                            continue;
+                        } else {
+                            return Err(ParseError::InvalidDigit);
+                        }
                     }
-                } else if num_val.is_none() {
-                    if punct.as_char() == '-' {
-                        num_neg = true;
-                    } else if punct.as_char() != '+' {
-                        return Err(ParseError::InvalidDigit);
-                    }
-                } else if den_val.is_none() {
-                    if punct.as_char() == '-' {
-                        den_neg = true;
-                    } else if punct.as_char() != '+' {
-                        return Err(ParseError::InvalidDigit);
-                    }
+                    '-' => Sign::Negative,
+                    '+' => Sign::Positive,
+                    _ => return Err(ParseError::InvalidDigit),
+                };
+
+                // at most one sign in front of each of the numerator and the denominator
+                if num_val.is_none() && num_sign.is_none() {
+                    num_sign = Some(sign);
+                } else if den_expected && den_sign.is_none() {
+                    den_sign = Some(sign);
                 } else {
                     return Err(ParseError::InvalidDigit);
                 }
@@ -160,6 +165,11 @@ fn parse_ratio_with_error(input: TokenStream) -> Result<(IBig, UBig, bool), Pars
             _ => return Err(ParseError::InvalidDigit),
         }
     }
+    if den_marked && den_val.is_none() {
+        return Err(ParseError::NoDigits);
+    }
+    let num_sign = num_sign.unwrap_or(Sign::Positive);
+    let den_sign = den_sign.unwrap_or(Sign::Positive);
 
     // generate expressions
     let num_val = num_val.ok_or(ParseError::NoDigits)?;
@@ -191,10 +201,77 @@ fn parse_ratio_with_error(input: TokenStream) -> Result<(IBig, UBig, bool), Pars
 
     // calculate components
     let (num, den) = if relaxed {
-        Relaxed::from_parts_signed(Sign::from(num_neg) * num, Sign::from(den_neg) * den)
-            .into_parts()
+        Relaxed::from_parts_signed(num_sign * num, den_sign * den).into_parts()
     } else {
-        RBig::from_parts_signed(Sign::from(num_neg) * num, Sign::from(den_neg) * den).into_parts()
+        RBig::from_parts_signed(num_sign * num, den_sign * den).into_parts()
     };
     Ok((num, den, relaxed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(text: &str) -> Result<(IBig, UBig, bool), ParseError> {
+        parse_ratio_with_error(text.parse().unwrap())
+    }
+
+    #[test]
+    fn test_accepted_forms() {
+        let half = |neg: bool, relaxed| {
+            Ok((IBig::from(if neg { -1 } else { 1 }), UBig::from(2u8), relaxed))
+        };
+        assert_eq!(parse("1/2"), half(false, false));
+        assert_eq!(parse("-1/2"), half(true, false));
+        assert_eq!(parse("1/-2"), half(true, false));
+        assert_eq!(parse("-1/-2"), half(false, false));
+        assert_eq!(parse("+1/+2"), half(false, false));
+        assert_eq!(parse("~-1/2"), half(true, true));
+        assert_eq!(parse("-~1/2"), half(true, true));
+
+        // the denominator is optional, with or without a base
+        let ten = Ok((IBig::from(10), UBig::ONE, false));
+        assert_eq!(parse("10"), ten);
+        assert_eq!(parse("a base 16"), ten);
+        assert_eq!(parse("a/1 base 16"), ten);
+        assert_eq!(parse("-a base 16"), Ok((IBig::from(-10), UBig::ONE, false)));
+        assert_eq!(parse("~c base 32"), Ok((IBig::from(12), UBig::ONE, true)));
+        assert_eq!(parse("0 base 2"), Ok((IBig::ZERO, UBig::ONE, false)));
+        // `base` itself is a valid digit string in a large enough base
+        assert_eq!(parse("base/base base 36"), Ok((IBig::ONE, UBig::ONE, false)));
+    }
+
+    #[test]
+    fn test_rejected_forms() {
+        for text in [
+            // two numbers need a `/` between them
+            "1 2",
+            "1 - 2",
+            "3 + 4",
+            "1 2 /",
+            "1 2 base 10",
+            "a b base 16",
+            // dangling or repeated separators
+            "1/",
+            "/2",
+            "1/ /2",
+            "1/2/3",
+            "1 base 10 / 2",
+            // repeated signs and misplaced markers
+            "--1/2",
+            "+-1/2",
+            "1/--2",
+            "1-/2",
+            "1/2-",
+            "~~1/2",
+            "1~/2",
+            "1/~2",
+            // malformed base
+            "1/2 base",
+            "1/2 base 10 10",
+            "1/2 base base 10",
+        ] {
+            assert!(parse(text).is_err(), "{:?} was accepted", text);
+        }
+    }
 }

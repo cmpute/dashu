@@ -36,6 +36,9 @@ assert_eq!(a.precision(), 5);
 let b = fbig!(0x0003.ef00p-2); // 8 hexadecimal digits = 32 binary digits
 assert_eq!(b.precision(), 32);
 assert_eq!(b.digits(), 10); // 0x3ef only has 10 effective bits
+
+let z = fbig!(0.00); // a zero literal has the precision of its digits as well
+assert_eq!(z.precision(), 3);
 ```
 
 For numbers that are small enough (significand fits in a [u32]),

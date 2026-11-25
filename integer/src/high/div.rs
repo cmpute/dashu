@@ -216,7 +216,9 @@ pub fn div_high(numer: &UBig, denom: &UBig, out_words: usize) -> Option<UBig> {
     }
     let (bn, bd) = (numer.bit_len(), denom.bit_len());
     let band = bn.checked_sub(bd)?;
-    if !((n * WORD_BITS as usize - 2)..=(n * WORD_BITS as usize + 2)).contains(&band) {
+    // A window whose bit size does not even fit in a `usize` can never match the band.
+    let window_bits = n.checked_mul(WORD_BITS as usize)?;
+    if !((window_bits - 2)..=window_bits.checked_add(2)?).contains(&band) {
         return None;
     }
 

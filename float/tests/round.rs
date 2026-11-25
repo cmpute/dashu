@@ -298,3 +298,665 @@ fn test_quantize_ulp_invariant() -> Result<(), ParseError> {
 fn test_quantize_inf() {
     let _ = DBig::INFINITY.quantize(0);
 }
+
+// ---------------------------------------------------------------------------
+// Regressions for the rounding-operation reports of the Hegel triage
+// (see triage/float-arith.md).
+// ---------------------------------------------------------------------------
+
+mod triage {
+    use dashu_base::{Approximation, Sign};
+    use dashu_float::{
+        round::{mode, Round, Rounding},
+        Context, DBig, FBig, Repr, Word,
+    };
+    use dashu_int::IBig;
+    use std::panic::catch_unwind;
+
+    fn fbig<R: Round, const B: Word>(sig: i64, exp: isize, precision: usize) -> FBig<R, B> {
+        FBig::from_repr(Repr::new(sig.into(), exp), Context::new(0))
+            .with_precision(precision)
+            .value()
+    }
+
+    /// Assert two floats are identical: same value, same sign of zero, same precision.
+    #[track_caller]
+    fn assert_same<R: Round, const B: Word>(a: &FBig<R, B>, b: &FBig<R, B>) {
+        assert_eq!(a.repr(), b.repr());
+        assert_eq!(a.sign(), b.sign(), "{a:?} vs {b:?}");
+        assert_eq!(a.precision(), b.precision(), "{a:?} vs {b:?}");
+    }
+
+    /// (significand, exponent) samples around the radix point: integers, values below one
+    /// that the cheap magnitude estimate does and does not recognize as such, and mixed ones.
+    const SAMPLES: [(i64, isize); 16] = [
+        (0, 0),
+        (1, 0),
+        (12, 0),
+        (12, 3),
+        (1, -1),
+        (5, -1),
+        (3, -2),
+        (99, -2),
+        (5, -3),
+        (1, -5),
+        (15, -1),
+        (125, -1),
+        (1234, -3),
+        (123456789, -4),
+        (1, -70),
+        (987654321, -9),
+    ];
+
+    /// Rounding a negative number with a zero integer part yields `-0` from every
+    /// round-to-integer operation (IEEE 754: the sign of the operand is kept): `ceil` used to
+    /// return `+0` where `trunc` and `round` returned `-0`.
+    #[test]
+    fn test_round_to_integer_keeps_sign_of_zero() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                for (sig, exp) in SAMPLES {
+                    for sign in [1, -1] {
+                        let x = fbig::<R, B>(sign * sig, exp, precision);
+                        let x = if sig == 0 && sign < 0 { -x } else { x };
+                        for (name, y) in [
+                            ("trunc", x.trunc()),
+                            ("ceil", x.ceil()),
+                            ("floor", x.floor()),
+                            ("round", x.round()),
+                        ] {
+                            assert!(y.repr().exponent() >= 0 || y.repr().is_neg_zero());
+                            if y.repr().significand().is_zero() {
+                                assert_eq!(y.sign(), x.sign(), "{name}({x:?}) = {y:?}");
+                            }
+                        }
+                        // the integer bracket is consistent
+                        assert!(x.floor() <= x && x <= x.ceil());
+                        assert!(x.ceil() - x.floor() <= FBig::<R, B>::ONE);
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Down, 10>();
+        check::<mode::Up, 2>();
+
+        use core::str::FromStr;
+        for s in ["-0.1", "-0.5", "-0.05", "-0.99"] {
+            let x = DBig::from_str(s).unwrap();
+            assert!(x.ceil().repr().is_neg_zero(), "ceil({s})");
+            assert!(x.trunc().repr().is_neg_zero(), "trunc({s})");
+        }
+        assert_eq!(DBig::from_str("-1.5").unwrap().ceil(), DBig::from(-1));
+        assert!(DBig::from_str("0.5").unwrap().floor().repr().is_pos_zero());
+        assert!(DBig::from_str("-0").unwrap().ceil().repr().is_neg_zero());
+    }
+
+    /// `split_at_point()` is `(trunc(), fract())` — value, sign of zero and precision — and,
+    /// like them, rejects the infinities. Its zero parts used to be `+0` for negative inputs,
+    /// and `+inf` came back as `(inf, 0)`.
+    #[test]
+    fn test_split_at_point_matches_trunc_fract() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                for (sig, exp) in SAMPLES {
+                    for sign in [1, -1] {
+                        let x = fbig::<R, B>(sign * sig, exp, precision);
+                        let x = if sig == 0 && sign < 0 { -x } else { x };
+                        let (trunc, fract) = x.clone().split_at_point();
+                        assert_same(&trunc, &x.trunc());
+                        assert_same(&fract, &x.fract());
+                        // both parts carry the sign of the input
+                        assert_eq!(trunc.sign(), x.sign());
+                        assert_eq!(fract.sign(), x.sign());
+                        // and they add back to it exactly
+                        let sum = Context::<R>::new(0)
+                            .add(trunc.repr(), fract.repr())
+                            .unwrap()
+                            .value();
+                        assert_eq!(sum.repr(), x.repr());
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::HalfEven, 3>();
+
+        for x in [DBig::INFINITY, DBig::NEG_INFINITY] {
+            assert!(catch_unwind(|| x.trunc()).is_err());
+            assert!(catch_unwind(|| x.fract()).is_err());
+            let y = x.clone();
+            assert!(catch_unwind(move || y.split_at_point()).is_err());
+        }
+    }
+
+    /// A number below one in magnitude is its own fractional part, precision included,
+    /// whether or not the cheap magnitude estimate recognizes it as below one. `fract()` used
+    /// to reset the precision to the number of fractional digits for values in `[0.01, 1)`.
+    #[test]
+    fn test_fract_below_one_is_identity() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [1usize, 2, 3, 5, 20, 50, 100, 500] {
+                for exp in [-1isize, -2, -3, -5, -40] {
+                    for sig in [1i64, -1] {
+                        let x = fbig::<R, B>(sig, exp, precision);
+                        assert_same(&x.fract(), &x);
+                        let t = x.trunc();
+                        assert!(t.repr().significand().is_zero());
+                        assert_eq!((t.sign(), t.precision()), (x.sign(), 0));
+                    }
+                }
+            }
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::Zero, 2>();
+
+        // a nonzero integral part still leaves the number of fractional digits as precision
+        let x = fbig::<mode::HalfAway, 10>(1234, -3, 7);
+        assert_eq!(x.fract().precision(), 3);
+        assert_eq!(x.trunc().precision(), 4);
+    }
+
+    /// `quantize` keeps the sign of a negative value that rounds to zero (like `round()` and
+    /// IEEE 754 `quantize`), and a zero result is never mistaken for a special value whatever
+    /// the quantum exponent is (`-1` is the exponent of the `-0` encoding).
+    #[test]
+    fn test_quantize_zero_result_sign() {
+        fn check<R: Round, const B: Word>(rounds_to_zero: bool) {
+            for precision in [20usize, 50, 100, 500] {
+                for exp in [-1isize, 0, 1, 5, isize::MAX - 1, isize::MAX] {
+                    for sign in [1i64, -1] {
+                        // far below half a quantum
+                        let x = fbig::<R, B>(sign, exp.saturating_sub(40), precision);
+                        let q = x.quantize(exp);
+                        let (value, rounding) = match q {
+                            Approximation::Inexact(v, r) => (v, r),
+                            Approximation::Exact(v) => panic!("exact: {v:?}"),
+                        };
+                        if rounds_to_zero {
+                            assert!(value.repr().significand().is_zero());
+                            assert_eq!(value.sign(), x.sign(), "{x:?}.quantize({exp})");
+                            assert_eq!(value.precision(), 0);
+                            assert_eq!(rounding, Rounding::NoOp);
+                        } else if exp == isize::MAX {
+                            // one quantum is `B^isize::MAX`, beyond the largest exponent:
+                            // rounding away from zero overflows (see
+                            // `test_quantize_overflow_saturates`)
+                            assert!(value.repr().is_infinite());
+                            assert_eq!(value.sign(), x.sign());
+                        } else {
+                            // rounded away from zero to one quantum
+                            assert_eq!(value.repr(), &Repr::new(sign.into(), exp));
+                            assert_eq!(value.precision(), 1);
+                        }
+                    }
+                }
+            }
+        }
+        check::<mode::Zero, 2>(true);
+        check::<mode::HalfAway, 10>(true);
+        check::<mode::HalfEven, 2>(true);
+        check::<mode::Away, 10>(false);
+
+        use core::str::FromStr;
+        let x = DBig::from_str("-0.3").unwrap();
+        assert!(x.round().repr().is_neg_zero());
+        assert!(x.quantize(0).value().repr().is_neg_zero());
+        assert!(DBig::from_str("-1")
+            .unwrap()
+            .quantize(1)
+            .value()
+            .repr()
+            .is_neg_zero());
+        assert!(DBig::from_str("0.03")
+            .unwrap()
+            .quantize(-1)
+            .value()
+            .repr()
+            .is_pos_zero());
+        let b = FBig::<mode::Zero, 2>::from_parts(IBig::from(-1), -2); // -0.25
+        assert!(b.quantize(0).value().repr().is_neg_zero());
+        // a nonzero result is unaffected
+        assert_eq!(
+            DBig::from_str("-7").unwrap().quantize(1),
+            Approximation::Inexact(DBig::from_parts(IBig::from(-1), 1), Rounding::SubOne)
+        );
+    }
+
+    /// `quantize` accepts any `isize` quantum exponent: the distance to the stored exponent
+    /// is computed without overflow (a finer quantum near `isize::MIN` used to panic with
+    /// "attempt to subtract with overflow" in debug builds).
+    #[test]
+    fn test_quantize_extreme_exponents() {
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                let one = fbig::<R, B>(1, 0, precision);
+                for exp in [isize::MIN / 2, isize::MIN + 2, isize::MIN + 1, isize::MIN] {
+                    let q = one.quantize(exp);
+                    assert!(matches!(q, Approximation::Exact(_)));
+                    let q = q.value();
+                    assert_eq!(q, one);
+                    assert_eq!(q.precision(), exp.unsigned_abs() + 1);
+                }
+                // the opposite ends of the exponent range
+                let tiny = fbig::<R, B>(3, isize::MIN + 1, precision);
+                assert!(matches!(tiny.quantize(isize::MAX), Approximation::Inexact(_, _)));
+                let huge = fbig::<R, B>(3, isize::MAX - 1, precision);
+                let q = huge.quantize(isize::MIN + 1);
+                assert_eq!(q.clone().value(), huge);
+                // the exponent distance (isize::MAX - 1) - (isize::MIN + 1), plus the digits
+                assert_eq!(q.value().precision(), usize::MAX - 2 + huge.repr().digits());
+            }
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::Zero, 2>();
+        assert_eq!(Sign::Positive, DBig::ONE.quantize(isize::MIN).value().sign());
+    }
+
+    /// A multiple of the quantum that lands on or beyond the `isize::MAX` sentinel exponent
+    /// is an overflow, resolved by the rounding mode like `<<` and `*` resolve theirs. It used
+    /// to come back as `1 * B^isize::MAX`: a nonzero significand at the sentinel exponent,
+    /// and a factor `B` too small when the carry went to `B^(isize::MAX + 1)` (F13).
+    #[test]
+    fn test_quantize_overflow_saturates() {
+        use Approximation::Inexact;
+        type Away = FBig<mode::HalfAway, 10>;
+        const MAX: isize = isize::MAX;
+
+        // 9.6 * 10^MAX to a multiple of 10^MAX is 10^(MAX + 1)
+        let q = fbig::<mode::HalfAway, 10>(96, MAX - 1, 2).quantize(MAX);
+        assert_eq!(q, Inexact(Away::INFINITY, Rounding::AddOne));
+        // 9.6 * 10^(MAX - 1) to a multiple of 10^(MAX - 1) is 10^MAX
+        let q = fbig::<mode::HalfAway, 10>(96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::INFINITY, Rounding::AddOne));
+        let q = fbig::<mode::HalfAway, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::NEG_INFINITY, Rounding::SubOne));
+        // the same overflow as a shift to that exponent
+        assert_eq!(fbig::<mode::HalfAway, 10>(1, MAX - 1, 2) << 1, Away::INFINITY);
+        // without a carry the result is ordinary
+        let q = fbig::<mode::HalfAway, 10>(94, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::from_parts(9.into(), MAX - 1), Rounding::NoOp));
+
+        // the directed modes only overflow in their own direction
+        let q = fbig::<mode::Up, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q.value().repr(), &Repr::new((-9).into(), MAX - 1));
+        let q = fbig::<mode::Down, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(FBig::NEG_INFINITY, Rounding::SubOne));
+        let q = fbig::<mode::Zero, 10>(96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q.value().repr(), &Repr::new(9.into(), MAX - 1));
+        // toward zero, an out-of-range multiple is the overflow endpoint of its precision
+        let q = fbig::<mode::Zero, 10>(96, MAX - 1, 2).quantize(MAX).value();
+        let overflow = Err(dashu_float::FpError::Overflow(Sign::Positive));
+        assert_same(&q, &Context::<mode::Zero>::new(1).unwrap_fp(overflow));
+
+        // base 2, at every test precision: 1.11…1 * 2^(MAX - 1) rounds up to 2^MAX
+        for precision in [20usize, 50, 100, 500] {
+            let ones = (IBig::ONE << precision) - 1;
+            let x = FBig::<mode::HalfEven, 2>::from_parts(ones, MAX - precision as isize);
+            assert_eq!(x.precision(), precision);
+            let q = x.quantize(MAX - 1);
+            assert_eq!(q, Inexact(FBig::INFINITY, Rounding::AddOne));
+            let q = (-x.clone()).quantize(MAX - 1);
+            assert_eq!(q, Inexact(FBig::NEG_INFINITY, Rounding::SubOne));
+            // one quantum lower there is room for the carry
+            let q = (x >> 1).quantize(MAX - 2);
+            assert_eq!(q.value().repr(), &Repr::new(IBig::ONE, MAX - 1));
+        }
+    }
+}
+
+// An unlimited-precision value is exact, so its error bounds are zero under every mode. The
+// directed modes `Down` and `Up` used to ask for its ulp, which panics.
+#[test]
+fn test_error_bounds_unlimited_precision() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        FBig, Repr,
+    };
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        for repr in [
+            Repr::<B>::one(),
+            Repr::neg_one(),
+            Repr::zero(),
+            Repr::neg_zero(),
+            Repr::new(7.into(), 0),
+            Repr::new((-7).into(), -3),
+        ] {
+            let f = FBig::<R, B>::from_repr(repr, dashu_float::Context::new(0));
+            let (l, r, incl_l, incl_r) = R::error_bounds(&f);
+            assert!(l.repr().is_pos_zero() && r.repr().is_pos_zero());
+            assert!(incl_l && incl_r);
+        }
+    }
+    check::<mode::Zero, 2>();
+    check::<mode::Away, 2>();
+    check::<mode::Down, 2>();
+    check::<mode::Up, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::Down, 10>();
+    check::<mode::Up, 10>();
+    check::<mode::Down, 3>();
+    check::<mode::Up, 3>();
+}
+
+// The error bounds describe the values that round to a float, so rounding either end of the
+// reported interval (or anything just inside it) at the float's precision must give the float
+// back. In an odd base half an ulp has no finite expansion, and the round-to-nearest bounds
+// used to be rounded *up* to the next digit (2/3 of an ulp in base 3), reaching into the
+// neighbors' territory.
+#[test]
+fn test_error_bounds_round_back() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, FBig,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: dashu_int::Word>() {
+        let exact = Context::<R>::new(0);
+        for precision in [1usize, 2, 3, 20, 50, 100, 500] {
+            let context = Context::<R>::new(precision);
+            // significands with `precision` digits, at a few exponents and both signs; they
+            // include the power of the base, below which the floats are denser
+            let top = IBig::from(B).pow(precision);
+            let low = IBig::from(B).pow(precision - 1);
+            let mut sigs = vec![
+                top.clone() - 1,
+                low.clone() + 1,
+                (top.clone() + low.clone()) / 2,
+                low.clone(),
+            ];
+            if precision == 1 {
+                sigs = (1..B as i32).map(IBig::from).collect();
+            }
+            for sig in sigs {
+                for exp in [-7isize, 0, 5] {
+                    for sign in [1, -1] {
+                        let f = FBig::<R, B>::from_repr(
+                            dashu_float::Repr::new(sig.clone() * sign, exp),
+                            context,
+                        );
+                        let (l, r, incl_l, incl_r) = R::error_bounds(&f);
+                        let ulp = f.ulp();
+                        // a point 1/B^3 of an ulp inside each bound, and the bound itself if
+                        // it is included
+                        let step = dashu_float::Repr::new(IBig::ONE, ulp.repr().exponent() - 3);
+                        let lower = exact.sub(f.repr(), l.repr()).unwrap().value();
+                        let upper = exact.add(f.repr(), r.repr()).unwrap().value();
+                        let mut points = Vec::new();
+                        if !l.repr().is_pos_zero() {
+                            points.push(exact.add(lower.repr(), &step).unwrap().value());
+                        }
+                        if !r.repr().is_pos_zero() {
+                            points.push(exact.sub(upper.repr(), &step).unwrap().value());
+                        }
+                        if incl_l {
+                            points.push(lower.clone());
+                        }
+                        if incl_r {
+                            points.push(upper.clone());
+                        }
+                        for x in points {
+                            let rounded = x.clone().with_precision(precision).value();
+                            assert_eq!(rounded, f, "base {B}, precision {precision}: {x:?}");
+                        }
+                        // and the bounds are not needlessly narrow: together they span at
+                        // least 99% of an ulp (away from the powers of the base, where the
+                        // side facing zero is shorter)
+                        if sig == low {
+                            continue;
+                        }
+                        let width = exact.add(l.repr(), r.repr()).unwrap().value();
+                        let hundred = dashu_float::Repr::new(100.into(), 0);
+                        let ninety_nine = dashu_float::Repr::new(99.into(), 0);
+                        assert!(
+                            exact.mul(width.repr(), &hundred).unwrap().value()
+                                >= exact.mul(ulp.repr(), &ninety_nine).unwrap().value(),
+                            "base {B}, precision {precision}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    check::<mode::HalfAway, 3>();
+    check::<mode::HalfEven, 3>();
+    check::<mode::HalfAway, 7>();
+    check::<mode::HalfEven, 7>();
+    check::<mode::HalfAway, 35>();
+    check::<mode::HalfEven, 35>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 10>();
+    check::<mode::HalfEven, 10>();
+    check::<mode::Zero, 3>();
+    check::<mode::Away, 3>();
+    check::<mode::Down, 3>();
+    check::<mode::Up, 3>();
+    check::<mode::Down, 10>();
+    check::<mode::Up, 2>();
+
+    // the reported case: in base 3 at one digit, 44/27 = 1.6296... rounds to 2, so it must
+    // lie outside the interval reported for 1
+    let one = FBig::<mode::HalfAway, 3>::from_repr(dashu_float::Repr::one(), Context::new(1));
+    let (_, r, _, _) = mode::HalfAway::error_bounds(&one);
+    let x = FBig::<mode::HalfAway, 3>::from_parts(IBig::from(44), -3);
+    assert!(x > exact_sum(&one, &r));
+    fn exact_sum<const B: dashu_int::Word>(
+        a: &FBig<mode::HalfAway, B>,
+        b: &FBig<mode::HalfAway, B>,
+    ) -> FBig<mode::HalfAway, B> {
+        Context::<mode::HalfAway>::new(0)
+            .add(a.repr(), b.repr())
+            .unwrap()
+            .value()
+    }
+}
+
+/// `ErrorBounds::error_bounds` describes the rounding preimage of a value: the bounds themselves
+/// round to it exactly when flagged inclusive, points just inside always do, and points just
+/// outside never do.
+///
+/// Regression: at a power of the base the neighbour toward zero lies in the finer binade below,
+/// but the bound on that side was a full ulp (so e.g. at 3 decimal digits `[0.995, 1.005)` was
+/// claimed for `1.00` instead of `[0.9995, 1.005)`), and the ties-to-even inclusion flags read
+/// the parity of the normalized significand instead of the significand at the precision.
+#[test]
+fn test_error_bounds_are_the_rounding_preimage() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, FBig, Repr,
+    };
+    use dashu_int::{IBig, Word};
+
+    fn check<R: ErrorBounds, const B: Word>(p: usize, y: &Repr<B>) {
+        let exact = |r: Repr<B>| FBig::<R, B>::from_repr(r, Context::new(0));
+        let rounds_to_y = |v: &FBig<R, B>| v.clone().with_precision(p).value().repr() == y;
+        let (l, r, incl_l, incl_r) =
+            R::error_bounds(&FBig::<R, B>::from_repr(y.clone(), Context::new(p)));
+        let y_exact = exact(y.clone());
+        assert!(rounds_to_y(&y_exact));
+        for (bound, incl, left) in [(l, incl_l, true), (r, incl_r, false)] {
+            let bound = exact(bound.into_repr());
+            let step = |v: &FBig<R, B>, eps: &FBig<R, B>, outward: bool| {
+                if left == outward {
+                    v - eps
+                } else {
+                    v + eps
+                }
+            };
+            if bound.repr().significand().is_zero() {
+                // one-sided preimage: the value itself is the (inclusive) edge
+                assert!(incl, "{y:?} at {p} digits: a zero bound must be inclusive");
+                let eps = exact(Repr::new(IBig::ONE, y.exponent() - p as isize - 5));
+                assert!(!rounds_to_y(&step(&y_exact, &eps, true)), "{y:?} at {p} digits");
+            } else {
+                let eps = exact(Repr::new(
+                    bound.repr().significand().clone(),
+                    bound.repr().exponent() - 3,
+                ));
+                let edge = step(&y_exact, &bound, true);
+                assert_eq!(rounds_to_y(&edge), incl, "{y:?} at {p} digits, edge {edge:?}");
+                assert!(rounds_to_y(&step(&edge, &eps, false)), "{y:?} at {p} digits: inside");
+                assert!(!rounds_to_y(&step(&edge, &eps, true)), "{y:?} at {p} digits: outside");
+            }
+        }
+    }
+
+    fn sweep<const B: Word>() {
+        for p in 1..=3usize {
+            let hi = IBig::from(B).pow(p);
+            let mut sig = IBig::ONE;
+            while sig < hi {
+                for exp in -2..=2 {
+                    for s in [sig.clone(), -sig.clone()] {
+                        let y = Repr::<B>::new(s, exp);
+                        check::<mode::Zero, B>(p, &y);
+                        check::<mode::Away, B>(p, &y);
+                        check::<mode::Down, B>(p, &y);
+                        check::<mode::Up, B>(p, &y);
+                        check::<mode::HalfEven, B>(p, &y);
+                        check::<mode::HalfAway, B>(p, &y);
+                    }
+                }
+                sig += IBig::ONE;
+            }
+        }
+    }
+    // (even bases only: an odd base has no representable half-ulp)
+    sweep::<2>();
+    sweep::<4>();
+    sweep::<10>();
+}
+
+/// `ErrorBounds::error_bounds` describes the set of reals that round to a value. At a power of
+/// the base that set is lopsided: the representable values just inside it (towards zero) are
+/// `B` times denser, so it reaches only `ulp/B` (half of that to nearest) on that side. The
+/// bounds used to be symmetric there, which let the Ziv loop certify a value from the binade
+/// below as the power of the base (`acos_unit(2^-52, 3)` at 1 bit returned 1, not 0.5).
+#[test]
+fn test_error_bounds_at_power_of_base() {
+    use dashu_float::round::{mode, ErrorBounds};
+    use dashu_float::FBig;
+
+    // A point just inside each nonzero bound must round to `y`, a point just outside must not.
+    fn check<R: ErrorBounds, const B: dashu_float::Word>(sig: i32, exp: isize, p: usize) {
+        let y = FBig::<R, B>::from_parts(sig.into(), exp)
+            .with_precision(p)
+            .unwrap();
+        let (l, r, _, _) = R::error_bounds(&y);
+        let y0 = y.clone().with_precision(0).value();
+        for (bound, below) in [(l, true), (r, false)] {
+            if bound.repr().significand().is_zero() {
+                continue;
+            }
+            let bound = bound.with_precision(0).value();
+            let delta = bound.clone() >> 4;
+            for (offset, inside) in [(&bound - &delta, true), (&bound + &delta, false)] {
+                let point = if below { &y0 - offset } else { &y0 + offset };
+                let rounded = point.clone().with_precision(p).value();
+                assert_eq!(
+                    rounded == y,
+                    inside,
+                    "{} at {p} digits (base {B}): {} rounds to {}",
+                    y,
+                    point,
+                    rounded
+                );
+            }
+        }
+    }
+    fn check_all<const B: dashu_float::Word>(sig: i32, exp: isize, p: usize) {
+        check::<mode::Zero, B>(sig, exp, p);
+        check::<mode::Away, B>(sig, exp, p);
+        check::<mode::Up, B>(sig, exp, p);
+        check::<mode::Down, B>(sig, exp, p);
+        check::<mode::HalfEven, B>(sig, exp, p);
+        check::<mode::HalfAway, B>(sig, exp, p);
+    }
+    for p in [1usize, 2, 5, 20] {
+        for exp in [-3isize, 0, 4] {
+            // powers of the base, both signs
+            check_all::<2>(1, exp, p);
+            check_all::<2>(-1, exp, p);
+            check_all::<10>(1, exp, p);
+            check_all::<10>(-1, exp, p);
+        }
+    }
+    // ordinary values keep their symmetric bounds
+    for p in [2usize, 5, 20] {
+        check_all::<2>(3, -1, p);
+        check_all::<2>(-3, 2, p);
+        check_all::<10>(7, 0, p);
+        check_all::<10>(-25, -1, p);
+    }
+}
+
+/// `ErrorBounds::error_bounds` describes the set of reals that round to a value. Check the
+/// defining property on both endpoints, in particular at a power of the base, where the gap to
+/// the neighbour on the toward-zero side is `B` times narrower than the ulp: an endpoint
+/// marked inclusive must round back to the value, and one marked exclusive must not.
+#[test]
+fn test_error_bounds_preimage_probes() {
+    use dashu_float::round::{mode, ErrorBounds};
+    use dashu_float::{Context, FBig, Repr};
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds, const B: u64>(sig: i64, exp: isize, p: usize) {
+        let f: FBig<R, B> = FBig::from_repr(Repr::new(IBig::from(sig), exp), Context::new(p));
+        let (lb, rb, incl_l, incl_r) = R::error_bounds(&f);
+        let exact = |v: &FBig<R, B>| FBig::<R, B>::from_repr(v.repr().clone(), Context::new(0));
+        let rounds_to_f = |x: FBig<R, B>| x.with_precision(p).value().repr() == f.repr();
+        let lo = exact(&f) - exact(&lb);
+        let hi = exact(&f) + exact(&rb);
+        assert_eq!(rounds_to_f(lo.clone()), incl_l, "low endpoint of {f:?} (p={p})");
+        assert_eq!(rounds_to_f(hi.clone()), incl_r, "high endpoint of {f:?} (p={p})");
+        // a point strictly inside each half rounds to f, a point just outside does not
+        let tiny: FBig<R, B> =
+            FBig::from_repr(Repr::new(IBig::ONE, exp - 3 * p as isize - 8), Context::new(0));
+        if !lb.repr().significand().is_zero() {
+            assert!(rounds_to_f(lo.clone() + tiny.clone()), "inside low of {f:?} (p={p})");
+        }
+        if !rb.repr().significand().is_zero() {
+            assert!(rounds_to_f(hi.clone() - tiny.clone()), "inside high of {f:?} (p={p})");
+        }
+        assert!(!rounds_to_f(lo - tiny.clone()), "outside low of {f:?} (p={p})");
+        assert!(!rounds_to_f(hi + tiny), "outside high of {f:?} (p={p})");
+    }
+
+    macro_rules! all_modes {
+        ($base:literal, $sig:expr, $exp:expr, $p:expr) => {{
+            check::<mode::Zero, $base>($sig, $exp, $p);
+            check::<mode::Away, $base>($sig, $exp, $p);
+            check::<mode::Down, $base>($sig, $exp, $p);
+            check::<mode::Up, $base>($sig, $exp, $p);
+            check::<mode::HalfAway, $base>($sig, $exp, $p);
+            check::<mode::HalfEven, $base>($sig, $exp, $p);
+        }};
+    }
+    for p in [1usize, 2, 12, 20, 50, 100, 500] {
+        for sign in [1i64, -1] {
+            // powers of the base (the asymmetric case), their neighbours, and generic values
+            all_modes!(2, sign, 6, p);
+            all_modes!(2, sign, -3, p);
+            all_modes!(10, sign, 2, p);
+            all_modes!(10, sign, -5, p);
+            if p >= 12 {
+                all_modes!(2, sign * 4095, -6, p); // odd (p = 12) / padded-even significand
+                all_modes!(2, sign * 2047, -5, p);
+                all_modes!(2, sign * 5, 0, p);
+                all_modes!(10, sign * 25, 0, p); // odd last digit
+                all_modes!(10, sign * 12, 0, p); // even last digit
+                all_modes!(10, sign * 999, -1, p);
+            }
+        }
+    }
+    // a full-width even decimal significand: a tie rounds *to* it under HalfEven
+    check::<mode::HalfEven, 10>(2, 1, 1);
+    check::<mode::HalfEven, 10>(12, 0, 2);
+    check::<mode::HalfEven, 10>(13, 0, 2);
+}

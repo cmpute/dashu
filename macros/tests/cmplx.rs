@@ -28,7 +28,42 @@ fn test_cbig_decimal_default() {
     assert_eq!(cbig!(-3, -4), cbig!(-3 - 4i));
 
     // decimal precision: derived from the digits, converted to bits
-    assert_eq!(cbig!(3 + 4i).precision(), 3);
+    // (enough bits to hold any integer with as many decimal digits)
+    assert_eq!(cbig!(3 + 4i).precision(), 4);
+    assert_eq!(cbig!(999).precision(), 10);
+}
+
+#[test]
+fn test_cbig_decimal_integers_exact() {
+    // every decimal (and octal) integer coefficient converts exactly: these used to be
+    // truncated to 8, 64, 98 and 998
+    assert_eq!(cbig!(9), cbig!(0x9));
+    assert_eq!(cbig!(65), cbig!(0x41));
+    assert_eq!(cbig!(99), cbig!(0x63));
+    assert_eq!(cbig!(999), cbig!(0x3e7));
+    assert_eq!(cbig!(9 + 65i), cbig!(0x9 + 0x41i));
+    assert_eq!(cbig!(-9, -99), cbig!(-0x9 - 0x63i));
+    assert_eq!(cbig!(7), cbig!(0x7));
+    assert_eq!(cbig!(63), cbig!(0x3f));
+    assert_eq!(cbig!(0o7 + 0o77i), cbig!(0x7 + 0x3fi));
+    assert_eq!(cbig!(0o777), cbig!(0x1ff));
+    assert_eq!(cbig!(9e2), cbig!(0x384));
+    assert_eq!(
+        cbig!(99999999999999999999 + 18446744073709551617i),
+        cbig!(0x56bc75e2d630fffff + 0x10000000000000001i)
+    );
+    assert_eq!(*static_cbig!(9 + 99i), cbig!(0x9 + 0x63i));
+    assert_eq!(cbig!(9).re().to_string(), "1001");
+}
+
+#[test]
+fn test_cbig_negative_zero() {
+    // the sign of a zero coefficient is kept, as by `CBig::from_str`
+    assert!(cbig!(-0.0).re().is_neg_zero());
+    assert!(cbig!(1 - 0.0i).im().is_neg_zero());
+    assert!(cbig!(-0x0, 1).re().is_neg_zero());
+    assert!(cbig!(0.0).re().is_pos_zero());
+    assert!(cbig!(-0.0).im().is_pos_zero());
 }
 
 #[test]
@@ -59,6 +94,31 @@ fn test_cbig_fractional_decimal() {
     assert_eq!(cbig!(0.5).re().to_string(), "0.1"); // 0.5 = 0.1₂
     assert_eq!(cbig!(0.25).re().to_string(), "0.01"); // 0.25 = 0.01₂
     assert_eq!(cbig!(3.5 + 2.25i), cbig!(_0b11.1 + _0b10.01i));
+}
+
+#[test]
+#[rustfmt::skip::macros(cbig, static_cbig)]
+fn test_cbig_signed_exponent() {
+    // A sign inside the literal can belong to an exponent, also in the imaginary coefficient
+    // (as in `CBig::from_str`); the pair form parses each coefficient on its own.
+    assert_eq!(cbig!(1 + 2e-3i), cbig!(1, 2e-3));
+    assert_eq!(cbig!(1 - 2e+3i), cbig!(1, -2e3));
+    assert_eq!(cbig!(1 + 0x1p-2i), cbig!(1, 0x1p-2));
+    assert_eq!(cbig!(0x1p-2i), cbig!(0, 0x1p-2));
+    assert_eq!(cbig!(-0x1p-2i), cbig!(0, -0x1p-2));
+    assert_eq!(cbig!(1e-5i), cbig!(0, 1e-5));
+    assert_eq!(cbig!(-1.5e+2 - 2.5e-1i), cbig!(-1.5e2, -2.5e-1));
+    assert_eq!(cbig!(0x1234p-4 - 0x5678p-8i), cbig!(0x1234p-4, -0x5678p-8));
+    assert_eq!(cbig!(1e-2 - i), cbig!(1e-2, -1));
+    assert_eq!(cbig!(1e-2 + i), cbig!(1e-2, 1));
+    assert_eq!(*static_cbig!(1 + 2e-3i), cbig!(1, 2e-3));
+
+    assert_eq!(cbig!(1 + 0x1p-2i).im().to_string(), "0.01");
+    assert_eq!(cbig!(0x1p-2i).re().to_string(), "0");
+
+    // `e` is a digit of a hexadecimal coefficient, not an exponent marker
+    assert_eq!(cbig!(0x1e - 3i), cbig!(0x1e, -3));
+    assert_eq!(cbig!(0x1e-3i).re().to_string(), "11110");
 }
 
 #[test]

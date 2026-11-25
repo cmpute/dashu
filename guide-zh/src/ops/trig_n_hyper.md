@@ -16,4 +16,4 @@
 
 $$\sin(x+iy) = \sin x\cosh y + i\cos x\sinh y, \qquad \cos(x+iy) = \cos x\cosh y - i\sin x\sinh y.$$
 
-×π 函数族将实数 `sin_cos_pi` 与缩放参数的双曲 `sinh_cosh_pi` 复合。双曲函数通过旋转恒等式 `sinh z = -i\sin(iz)`、`cosh z = \cos(iz)`、`tanh z = -i\tan(iz)` 复用圆函数——即对实部和虚部做一次精确互换，因此两族共享舍入验证。反函数（圆函数与双曲函数）遵循 Kahan 有符号零支割线公式。完整的 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。
+×π 函数族将实数 `sin_cos_pi` 与缩放参数的双曲 `sinh_cosh_pi` 复合。双曲函数通过旋转恒等式 `sinh z = -i\sin(iz)`、`cosh z = \cos(iz)`、`tanh z = -i\tan(iz)` 复用圆函数，并以对实部和虚部的一次精确互换来求值（`sinh(x+iy)` 即 `sin(y+ix)` 互换两部），从而不会对已舍入的分量取负：两族在所有舍入模式（包括定向舍入）下共享舍入验证。反函数（圆函数与双曲函数）遵循 Kahan 有符号零支割线公式。完整的 Annex G 特殊值和支割线表请参见[标准合规性](../compliance.md)。

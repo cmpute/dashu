@@ -1,9 +1,9 @@
 use dashu_base::{
     utils::{next_down, next_up},
     Approximation::*,
-    BitTest, EstimatedLog2, PowerOfTwo, Sign, UnsignedAbs,
+    BitTest, EstimatedLog2, Sign, UnsignedAbs,
 };
-use dashu_int::{IBig, UBig};
+use dashu_int::IBig;
 
 use crate::{
     ball::{ulps, Ball},
@@ -14,6 +14,7 @@ use crate::{
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round},
+    utils::Factored,
 };
 use core::cmp::Ordering;
 
@@ -30,6 +31,10 @@ fn const_extra_digits<const B: Word>(mag_bit_len: usize) -> usize {
 impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
     fn log2_bounds(&self) -> (f32, f32) {
+        // an infinity has a zero significand as well, but its magnitude is not zero
+        if self.is_infinite() {
+            return (f32::INFINITY, f32::INFINITY);
+        }
         if self.significand.is_zero() {
             return (f32::NEG_INFINITY, f32::NEG_INFINITY);
         }
@@ -42,16 +47,32 @@ impl<const B: Word> EstimatedLog2 for Repr<B> {
         } else {
             B.log2_bounds()
         };
-        let e = self.exponent as f32;
-        let (lb, ub) = if self.exponent >= 0 {
-            (logs_lb + e * logb_lb, logs_ub + e * logb_ub)
+        // The exponent is an arbitrary `isize`, while an f32 holds only 24 bits exactly: beyond
+        // 2^24 the conversion of the exponent alone moves the estimate by whole units, in
+        // either direction. So the sum is formed in f64 and widened by a bound on what the
+        // f64 operations (the exponent conversion, the product and the sum, each within 2^-53
+        // relative) can have lost, before it is narrowed to f32 outwards.
+        fn bound(log_signif: f32, exponent: isize, log_base: f32) -> (f64, f64) {
+            let scaled = exponent as f64 * log_base as f64;
+            let sum = log_signif as f64 + scaled;
+            let magnitude = |x: f64| if x < 0.0 { -x } else { x };
+            (
+                sum,
+                (magnitude(log_signif as f64) + magnitude(scaled)) * (1.0 / (1u64 << 50) as f64),
+            )
+        }
+        let ((lb, lb_slack), (ub, ub_slack)) = if self.exponent >= 0 {
+            (bound(logs_lb, self.exponent, logb_lb), bound(logs_ub, self.exponent, logb_ub))
         } else {
-            (logs_lb + e * logb_ub, logs_ub + e * logb_lb)
+            (bound(logs_lb, self.exponent, logb_ub), bound(logs_ub, self.exponent, logb_lb))
         };
-        (next_down(lb), next_up(ub))
+        (next_down((lb - lb_slack) as f32), next_up((ub + ub_slack) as f32))
     }
 
     fn log2_est(&self) -> f32 {
+        if self.is_infinite() {
+            return f32::INFINITY;
+        }
         let logs = self.significand.log2_est();
         let logb = if B.is_power_of_two() {
             B.trailing_zeros() as f32
@@ -363,7 +384,11 @@ impl<R: Round> Context<R> {
             let (e_base, x1) = if e >= 2 || e <= -2 {
                 let d = x_ball.mid.digits_ub() as isize - 1;
                 let e_base = e.saturating_add(d);
-                (e_base, x_ball.shift(-e_base)) // value sig·B^(−d) ∈ [B^(−2), B)
+                // value sig·B^(−d) ∈ [B^(−2), B). The shift is applied in two halves: `−e_base`
+                // itself overflows for the lowest exponent (`e_base = isize::MIN`, e.g. the
+                // `1·B^isize::MIN` a directed-mode underflow saturates to).
+                let half = e_base / 2;
+                (e_base, x_ball.shift(-half).shift(-(e_base - half)))
             } else {
                 (0, x_ball)
             };
@@ -612,19 +637,27 @@ impl<R: ErrorBounds> Context<R> {
         // value such as `FBig::ONE` or the one from `try_from(0.0)` must still resolve
         // ln/ln_1p exactly rather than tripping the limited-precision assertion below.
         if !one_plus && x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // ln(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // ln(1) = +0
         }
         if one_plus && x.significand.is_zero() {
             // ln_1p(±0) = ±0
-            let zero = if x.is_neg_zero() {
-                FBig::new(Repr::neg_zero(), *self)
-            } else {
-                FBig::ZERO
-            };
-            return Ok(Exact(zero));
+            return Ok(Exact(FBig::new(x.clone(), *self)));
         }
 
         assert_limited_precision(self.precision);
+
+        // A tiny `ln_1p` argument: `ln(1 + x) = x − x²/2 + …` is `x` plus a tail of magnitude
+        // below `x²` (for `|x| < 1/2`) on the negative side. Once that tail is below everything
+        // the rounding of `x` can see, the result is `x` rounded with a negative sticky part
+        // ([`Context::round_sticky`]) — the Ziv loop would need a working precision
+        // proportional to `log(1/|x|)` to tell the result from `x` itself.
+        if one_plus {
+            let hi = x.exponent as i128 + x.digits_ub() as i128; // |x| < B^hi
+            let pad = (self.precision as i128 + 1 - x.digits_lb() as i128).max(0);
+            if hi < 0 && 2 * hi <= x.exponent as i128 - pad - 2 {
+                return self.round_sticky(x, Sign::Negative);
+            }
+        }
 
         // Correct rounding via the Ziv loop: `ln_compute` evaluates the atanh series at `p + guard`
         // and reports a provable error radius; the driver retries with more guard digits until the
@@ -693,24 +726,16 @@ impl<R: ErrorBounds> Context<R> {
         // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
         // rejects via its limited-precision assertion.
         if x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // log2(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // log2(1) = +0
         }
 
         // Exact power-of-two shortcut: if x = 2^k for an integer k, log2(x) = k. This is *required*
-        // for directed rounding — the Ziv loop below cannot certify an exactly-representable
-        // result whose true value sits on a rounding boundary (its shrinking error interval
-        // always straddles the boundary), so without this shortcut log2(2^-159) under `Up` would
-        // exhaust the retry cap and return k + 1 ulp instead of the exact k.
-        //
-        // log2(x) = log2(significand) + exponent·log2(B). With significand = 2^m this is an exact
-        // integer whenever log2(B) is integral (B a power of two), or — for a non-power-of-two
-        // base — when the exponent is zero.
-        let mag = (&x.significand).unsigned_abs();
-        if mag.is_power_of_two() && (x.exponent == 0 || B.is_power_of_two()) {
-            let m = mag.trailing_zeros().unwrap(); // = log2(significand)
-            let log2_b = B.trailing_zeros() as isize;
-            let k = IBig::from(m) + IBig::from(x.exponent) * IBig::from(log2_b);
-            return Ok(self.convert_int::<B>(k));
+        // — the Ziv loop below cannot certify an exactly-representable result whose true value
+        // sits on a rounding boundary (its shrinking error interval always straddles the
+        // boundary). A power of two is recognized in any base, whatever the sign of its
+        // exponent: in base 10, `0.5 = 5·10⁻¹`, `0.25 = 25·10⁻²`, … are powers of two too.
+        if let Some(k) = exact_int_log::<B>(&x.significand, x.exponent, &[2]) {
+            return Ok(self.convert_int::<B>(IBig::from(k)));
         }
 
         assert_limited_precision(self.precision);
@@ -786,7 +811,7 @@ impl<R: ErrorBounds> Context<R> {
         // Exact shortcuts first — they also cover unlimited precision, which the Ziv loop below
         // rejects via its limited-precision assertion.
         if x.is_one() {
-            return Ok(Exact(FBig::ZERO)); // log10(1) = +0
+            return Ok(Exact(FBig::new(Repr::zero(), *self))); // log10(1) = +0
         }
 
         // Exact power-of-ten shortcut: if x = 10^m for an integer m, log10(x) = m. This is *required*
@@ -819,39 +844,32 @@ impl<R: ErrorBounds> Context<R> {
     }
 }
 
-/// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`; otherwise `None`.
+/// If `x = sig·B^e` (`sig` nonzero, `x > 0` in magnitude) is exactly `t^m` for some integer `m`,
+/// where `t` is the product of the distinct primes `target` (`[2]` for a power of two, `[2, 5]`
+/// for a power of ten), return `m`; otherwise `None`.
 ///
-/// `10^m = 2^m·5^m`, so `x` is a power of ten iff the 2-valuation and 5-valuation of `sig·B^e`
-/// coincide and `x` has no other prime factor. [`UBig::remove_word`] divides out all 2s and 5s from
-/// both the base and the significand, returning each valuation as the removed exponent (and leaving
-/// any non-{2,5} prime factor behind as a cofactor ≠ 1). The base `B = 2^p·5^q·s` (with `s` coprime
-/// to 10) contributes `p·e` to the 2-valuation and `q·e` to the 5-valuation, and `s` must not
-/// appear (unless `e = 0`). The valuations may be negative (`x` a negative power of ten).
-fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
-    // base: divide out all 2s and 5s, getting (p, q, leftover)
-    let mut rest = UBig::from_word(B);
-    let p = rest.remove_word(2)? as isize; // B ≥ 2, so never None
-    let q = rest.remove_word(5).unwrap() as isize;
-    // the leftover would give `x` a non-{2,5} prime factor when e ≠ 0
-    if !rest.is_one() && e != 0 {
+/// Decided on prime valuations ([`Factored`]): `x` is a power of `t` iff every prime of `t`
+/// carries the same exponent `m`, every other prime of the base the exponent zero, and no other
+/// prime factor is left. The valuations include the base's contribution `multiplicity · e`, so a
+/// negative exponent is handled like any other (`0.5 = 5·10⁻¹ = 2⁻¹`) and no power of the base
+/// is ever built.
+fn exact_int_log<const B: Word>(sig: &IBig, e: isize, target: &[Word]) -> Option<i128> {
+    let factored = Factored::new::<B>(&sig.unsigned_abs(), e, target);
+    if !factored.cofactor.is_one() {
         return None;
     }
+    let m = factored.exponent_of(target[0]);
+    factored
+        .primes
+        .iter()
+        .all(|&(q, exp)| exp == if target.contains(&q) { m } else { 0 })
+        .then_some(m)
+}
 
-    // significand: divide out all 2s and 5s, getting (v2, v5, cofactor)
-    let mut sig_abs = sig.unsigned_abs();
-    let v2_sig = sig_abs.remove_word(2)? as isize; // non-zero upstream, so never None
-    let v5 = sig_abs.remove_word(5).unwrap() as isize;
-    // after removing every 2 and 5 the significand must be 1 (no other prime factor)
-    if sig_abs != UBig::ONE {
-        return None;
-    }
-
-    // `p*e` / `q*e` can overflow `isize` for an exotic base (B a large power of 2) at extreme
-    // exponents on 32-bit; the true log10 would not fit `isize` then, so bail rather than compare
-    // wrapped values that could falsely match.
-    let v2 = v2_sig.checked_add(p.checked_mul(e)?)?;
-    let v5 = v5.checked_add(q.checked_mul(e)?)?;
-    (v2 == v5).then_some(v2)
+/// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`. (`m` can exceed `isize`
+/// in a base that is a higher power of ten: `100^e = 10^(2e)`.)
+fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<i128> {
+    exact_int_log::<B>(sig, e, &[2, 5])
 }
 
 #[cfg(test)]
@@ -913,10 +931,14 @@ mod tests {
     #[test]
     fn test_exact_pow10_log_overflow() {
         // `p*e` overflows isize for a base that is a large power of two at an extreme exponent
-        // (on 32-bit and 64-bit alike); the exact log wouldn't fit isize, so it must be None, not
-        // a wrapped value that could falsely compare equal and return a wrong `Some`.
+        // (on 32-bit and 64-bit alike); the valuations are compared in `i128`, so it must be
+        // None, not a wrapped value that could falsely compare equal and return a wrong `Some`.
         assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MAX), None);
         assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MIN), None);
+        // a power of ten whose logarithm does not fit `isize` is still recognized (the Ziv
+        // loop could never certify it under a directed mode)
+        assert_eq!(exact_pow10_log::<100>(&IBig::ONE, isize::MAX), Some(2 * isize::MAX as i128));
+        assert_eq!(exact_pow10_log::<100>(&IBig::ONE, isize::MIN), Some(2 * isize::MIN as i128));
         // sanity: the normal path is unaffected.
         assert_eq!(exact_pow10_log::<10>(&IBig::ONE, 5), Some(5));
     }

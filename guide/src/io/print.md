@@ -28,7 +28,7 @@ assert_eq!(format!("{}", DBig::from_str("12.34")?), "12.34");
 assert_eq!(format!("{:.1}", DBig::from_str("12.34")?), "12.3");
 ```
 
-For scientific notation use `LowerExp`/`UpperExp`: the exponent marker is `e`/`E` in base 10 and `@` in other bases. Infinities render as `inf` / `-inf` under both `Display` and `Debug`.
+For scientific notation use `LowerExp`/`UpperExp`: the exponent marker is `e`/`E` in base 10 and `@` in other bases. Infinities render as `inf` / `-inf` under both `Display` and `Debug`; under `Display` and the scientific formats they honor the width, fill, alignment, `+` and `0` flags like a finite number does (`{:+8}` gives `    +inf`), while the precision does not apply to them.
 
 ```rust
 use core::str::FromStr;
@@ -50,7 +50,7 @@ assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 ```
 
-For the positional (decimal) expansion use `in_expanded(10)`. `{:.N}` prints exactly `N` fractional digits; the `#` flag detects the repetend and parenthesizes it:
+For the positional (decimal) expansion use `in_expanded(10)`. `{:.N}` prints exactly `N` fractional digits (rounded to nearest); the `#` flag prints the exact value instead — a finite expansion in full, a repeating one with its repetend detected and parenthesized:
 
 ```rust
 use dashu::rational::RBig;
@@ -62,7 +62,7 @@ assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 
 ## Complex Formatting
 
-`CBig` `Display` uses the algebraic $a+bi$ notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (`i`, not `1i`), and a zero imaginary part is omitted.
+`CBig` `Display` uses the algebraic $a+bi$ notation: the imaginary term always carries an explicit sign, a unit coefficient is elided (`i`, not `1i`), and a zero imaginary part is omitted. In bases above 18 the letter `i` is itself a digit, so there the imaginary term is written with an explicit `*i` suffix and its coefficient is never elided (`1+2i*i`, `1*i`).
 
 ```rust
 use dashu::complex::CBig;

@@ -5,11 +5,13 @@ use crate::{
     ball::{ulps, Ball},
     error::{assert_finite, assert_limited_precision, FpError, FpResult},
     fbig::FBig,
+    mag::Mag,
     math::cache::{reborrow_cache, ConstCache},
     repr::{Context, Repr, Word},
     round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
+    utils::Factored,
 };
-use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign};
+use dashu_base::{Approximation::*, BitTest, DivRemEuclid, EstimatedLog2, Sign, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 
 // `|x|` (in log2) above which exp's reduction quotient `s = floor(x/ln B)` might overflow `isize`,
@@ -45,6 +47,98 @@ pub(crate) const fn pow_chain_guard<const B: Word>(n: usize) -> usize {
     } else {
         n
     }
+}
+
+/// `exp(x)` with its scale split off — see [`Context::exp_reduced`].
+pub(crate) struct ExpReduced<const B: Word> {
+    /// `exp(x)·B^(−shift)`, or `exp_m1(x)` itself when `shift` is `None`.
+    pub(crate) ball: Ball<B>,
+    /// The split-off scale `s` (`exp(x) = ball·B^s`); `None` for the unscaled `exp_m1` series.
+    /// It is wider than an exponent: the ball's own exponent is about `−precision`, so a
+    /// representable result can have `s` up to `precision` past `isize::MAX`.
+    pub(crate) shift: Option<i128>,
+    /// The precision the ball was computed at (the working precision plus the reduction's
+    /// extra digits).
+    pub(crate) precision: usize,
+}
+
+/// `ball · B^s`, as a range error when the scaled midpoint's exponent leaves the finite range.
+/// (`Ball::shift` saturates the exponent instead, which silently changes the value by the
+/// clipped power of the base — a result `2^260` too large next to `isize::MIN`.)
+fn shift_in_range<const B: Word>(ball: &Ball<B>, s: i128) -> Result<Ball<B>, FpError> {
+    if !ball.mid.significand().is_zero() {
+        let exponent = (ball.mid.exponent() as i128).saturating_add(s);
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(ball.mid.sign()));
+        }
+        if exponent <= isize::MIN as i128 {
+            return Err(FpError::Underflow(ball.mid.sign()));
+        }
+    }
+    // in two halves: the scale itself can exceed `isize` while the scaled exponent fits
+    let half = clamp_exponent(s / 2);
+    Ok(ball.shift(half).shift(clamp_exponent(s - half as i128)))
+}
+
+/// An `i128` exponent as an `isize`, saturating strictly inside the sentinels.
+fn clamp_exponent(e: i128) -> isize {
+    e.clamp(isize::MIN as i128 + 1, isize::MAX as i128 - 1) as isize
+}
+
+/// A [`Ball`] with its scale kept apart: the value is `ball · B^exp`, with the ball's midpoint
+/// normalized to a zero exponent. The `powi` squaring chain runs on these, so that neither an
+/// intermediate power nor the working-precision result can leave the `isize` exponent range
+/// when the rounded result fits it — and so that a result that does not fit is detected exactly,
+/// from the final exponent, rather than from wherever the chain happened to overflow.
+struct Scaled<const B: Word> {
+    ball: Ball<B>,
+    exp: i128,
+}
+
+impl<const B: Word> Scaled<B> {
+    fn new(ball: Ball<B>, exp: i128) -> Self {
+        // an exact exponent re-tag (a zero midpoint has no scale to move)
+        let d = if ball.mid.significand().is_zero() {
+            0
+        } else {
+            ball.mid.exponent()
+        };
+        Self {
+            ball: ball.shift(-d),
+            exp: exp.saturating_add(d as i128),
+        }
+    }
+
+    fn mul(&self, rhs: &Self, prec: usize) -> Result<Self, FpError> {
+        Ok(Self::new(self.ball.mul(&rhs.ball, prec)?, self.exp.saturating_add(rhs.exp)))
+    }
+
+    /// `self^k` (`k ≥ 2`) by left-to-right binary exponentiation. An exact chain keeps a zero
+    /// radius (the exactly-representable case no positive radius could certify).
+    fn pow(&self, k: &UBig, prec: usize) -> Result<Self, FpError> {
+        let nlen = k.bit_len();
+        debug_assert!(nlen >= 2, "pow requires k >= 2");
+        let mut res = self.mul(self, prec)?;
+        let mut p = nlen - 2;
+        loop {
+            if k.bit(p) {
+                res = res.mul(self, prec)?;
+            }
+            if p == 0 {
+                break;
+            }
+            p -= 1;
+            res = res.mul(&res, prec)?;
+        }
+        Ok(res)
+    }
+}
+
+/// Whether the finite `y` is an odd integer, decided on its representation: a normalized value
+/// with a positive exponent is a multiple of the base (so its parity is the base's, or the
+/// significand's when the base is odd), and one with a negative exponent is not an integer.
+fn is_odd_int<const B: Word>(y: &Repr<B>) -> bool {
+    y.is_int() && y.significand.bit(0) && (y.exponent == 0 || B % 2 == 1)
 }
 
 // Margin certifying a `powi` result is outside the finite range: the magnitude guard estimates the
@@ -133,22 +227,94 @@ impl<R: Round> Context<R> {
     /// Near-correct exp core: evaluate `exp(x)` (or `exp_m1(x)` when `minus_one`) at
     /// `work_precision`, returning a [`Ball`] whose radius is derived mechanically.
     ///
-    /// Shared by the Ziv-backed `exp`/`exp_m1` (which retry it) and usable directly where only a
-    /// near-correct value is needed. The caller must have pre-checked that the reduction quotient
-    /// `s = floor(x/ln B)` fits `isize` (astronomical `|x|` overflows and is handled before the
-    /// Ziv loop, since this closure can't return `Err`). `n` (the reduction power, `≈ √p`) is
-    /// derived from the *target* precision and is constant across retries.
+    /// Shared by the hyperbolic functions and base conversion, and usable directly where only a
+    /// near-correct value is needed. `n` (the reduction power, `≈ √p`) is derived from the
+    /// *target* precision and is constant across retries. A result outside the finite exponent
+    /// range is reported as a range error; callers whose *rounded* result can sit at the edge of
+    /// the range while this working-precision value does not fit use
+    /// [`exp_reduced`](Self::exp_reduced) and apply the scale after rounding.
     pub(crate) fn exp_compute<const B: Word>(
         &self,
         x: &Repr<B>,
         work_precision: usize,
         minus_one: bool,
         n: usize,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
+        let reduced = self.exp_reduced::<B>(x, work_precision, minus_one, n, cache)?;
+        let s = match reduced.shift {
+            Some(s) => s,
+            None => return Ok(reduced.ball), // the unscaled exp_m1 series
+        };
+        // B^s is an exact power-of-base shift: `exp(x) = B^s · exp(r)^(Bⁿ)`.
+        let v_shifted = match shift_in_range(&reduced.ball, s) {
+            Ok(v) => v,
+            // exp(x) is below the smallest representable magnitude, but exp_m1(x) = exp(x) − 1 is
+            // not out of range: it is −1 plus a positive residual of at most `‖ball‖·B^s`
+            Err(FpError::Underflow(_)) if minus_one => {
+                let rad = Mag::from_base_pow::<B>(clamp_exponent(s)).mul(&reduced.ball.mag());
+                return Ok(Ball::with_error(Repr::neg_one(), rad));
+            }
+            Err(e) => return Err(e),
+        };
+        if minus_one {
+            // exp_m1(x) = exp(x) − 1; the subtraction folds one rounding ulp.
+            let one = Ball::exact_int(IBig::ONE, reduced.precision);
+            Ok(v_shifted.sub(&one, reduced.precision)?)
+        } else {
+            Ok(v_shifted)
+        }
+    }
+
+    /// The exp core with its scale split off: `exp(x) = ball · B^shift` (`shift = Some(s)`), where
+    /// `ball ≈ exp(r)^(Bⁿ)` has a magnitude near one whatever `x` is.
+    ///
+    /// Keeping the scale apart is what lets the correctly-rounded callers work over the whole
+    /// exponent range: a working-precision value carries `guard` more digits than the rounded
+    /// result, so applying `B^s` *before* rounding pushes its exponent out of the `isize` range
+    /// for a result within `guard` digits of either end (and an exponent shift that saturates
+    /// there silently changes the value). They certify the ball in its own frame and scale the
+    /// rounded result ([`scale_rounded`](Self::scale_rounded)).
+    ///
+    /// When `minus_one` is set and `|x| < 1/B`, the Maclaurin series of `exp_m1` is evaluated
+    /// without any reduction and `shift` is `None`: the ball is then `exp_m1(x)` itself.
+    /// Otherwise `minus_one` has no effect here — the caller subtracts the one.
+    ///
+    /// An `|x|` beyond every finite result is reported as a range error up front, without
+    /// evaluating anything: the reduction would otherwise need `log_B|x|` extra digits of
+    /// `ln(B)` (`exp(2^100000000)` took minutes to report its overflow).
+    pub(crate) fn exp_reduced<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        work_precision: usize,
+        minus_one: bool,
+        n: usize,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<ExpReduced<B>, FpError> {
+        // `s = floor(x/ln B)` leaves `isize` when `|x| > isize::MAX·ln B`, and
+        // `log2(isize::MAX·ln B) < isize::BITS + 4.5` for every base that fits a word.
+        let (x_log2_lb, x_log2_ub) = x.log2_bounds();
+        if x_log2_lb > (isize::BITS + 6) as f32 {
+            return Err(if x.sign() == Sign::Positive {
+                FpError::Overflow(Sign::Positive)
+            } else {
+                FpError::Underflow(Sign::Positive)
+            });
+        }
+
         // exp(x) = B^s · exp(r)^(Bⁿ), with r = x − s·ln(B) reduced so |r| < B⁻ⁿ.
-        let context = Context::<mode::HalfEven>::new(work_precision);
-        let x_ball = Ball::from_rounded(context.repr_round_ref(x), work_precision);
+        // The input is rounded with as many extra digits as it has integer digits, so that its
+        // *absolute* error stays below one work-ulp of a value near one: the exponential turns
+        // an absolute input error into a relative output error, and an input rounded to the
+        // working precision alone (`x ≈ −5.8e18` at a handful of bits) is off by more than the
+        // whole reduction can absorb.
+        let extra = if x_log2_ub > 0.0 {
+            (x_log2_ub / B.log2_est()) as usize + 2
+        } else {
+            2
+        };
+        let context = Context::<mode::HalfEven>::new(work_precision + extra);
+        let x_ball = Ball::from_rounded(context.repr_round_ref(x), work_precision + extra);
 
         // When minus_one is true and |x| < 1/B, evaluate the Maclaurin series without scaling
         // (no Bⁿ reduction, no powering — n_eff = 0).
@@ -157,21 +323,15 @@ impl<R: Round> Context<R> {
         // reduction's `extra` digits ride along into the series, keeping the same guard
         // headroom the near-correct consumers (e.g. `with_base`) were tuned against.
         let (s, r_ball, n_eff, series_precision) = if no_scaling {
-            (0isize, x_ball, 0usize, work_precision)
+            (0i128, x_ball, 0usize, work_precision)
         } else {
             // The reduction quotient `s = floor(x / ln B)` amplifies ln(B)'s rounding error by
             // |x|: a 1-ulp error in ln(B) shifts `s` (and thus the result exponent) by ~|x|/ln B.
             // For large |x| the work precision is far too low to pin `s` — exp(5.7e14) at p=24 was
-            // certified with the exponent off by ~1000 — so compute ln(B) with `⌈log_B|x|⌉ + 2`
-            // extra digits, enough that the reduction contributes well under one work-ulp and the
-            // series/powering radius bounds the total error. (The bounds, not the point estimate,
-            // guard the inflation magnitude.)
-            let x_log2_ub = x_ball.mid.log2_bounds().1;
-            let extra = if x_log2_ub > 0.0 {
-                (x_log2_ub / B.log2_est()) as usize + 2
-            } else {
-                2
-            };
+            // certified with the exponent off by ~1000 — so compute ln(B) with the same
+            // `⌈log_B|x|⌉ + 2` extra digits as the input, enough that the reduction contributes
+            // well under one work-ulp and the series/powering radius bounds the total error. (The
+            // bounds, not the point estimate, guard the inflation magnitude.)
             // ln(B) as a ball: the cached bases (2, 10, powers of 2) are correctly rounded (the
             // fixed 8-ulp bound in `ln_base_ball` is sound there), while generic bases carry
             // `ln_compute`'s mechanical radius (their atanh series error can be far larger than 8).
@@ -181,16 +341,13 @@ impl<R: Round> Context<R> {
             // floor(x / ln B) on the midpoints — `div_rem_euclid` lives on FBig, so wrap the
             // bare mids (zero-cost) at their own working precisions (the old code's contexts).
             // LIMITED contexts: an unlimited-precision division would never terminate.
-            let (s_big, _) = FBig::new(x_ball.mid.clone(), context).div_rem_euclid(FBig::new(
-                logb_ball.mid.clone(),
-                Context::new(work_precision + extra),
-            ));
-            let s: isize = match s_big.try_into() {
+            let (s_big, _) = FBig::new(x_ball.mid.clone(), context)
+                .div_rem_euclid(FBig::new(logb_ball.mid.clone(), context));
+            let s: i128 = match s_big.try_into() {
                 Ok(s) => s,
                 Err(_) => {
-                    // |x| is astronomical — the reduction quotient overflows isize. The magnitude
-                    // gate in `exp_internal` is meant to catch this first; reaching here is a
-                    // gray-zone miss, so surface the range error it would have returned.
+                    // (unreachable behind the magnitude gate above, which bounds |x| by a
+                    // few times `isize::MAX`; kept as the range error it would be)
                     return Err(if x_sign == Sign::Positive {
                         FpError::Overflow(Sign::Positive)
                     } else {
@@ -235,24 +392,22 @@ impl<R: Round> Context<R> {
 
         if no_scaling {
             // exp_m1(x) = sum directly.
-            return Ok(sum);
+            return Ok(ExpReduced {
+                ball: sum,
+                shift: None,
+                precision: series_precision,
+            });
         }
         // Powering: exp(r)^(Bⁿ) = sum^Bⁿ, via binary exponentiation (the compounding rounding is
         // tracked by the Ball multiplications). The chain is exact only when the series sum is
         // exact (impossible here — sum ≈ exp(r) with |r| < B⁻ⁿ), so the exact flag is ignored.
         let bn = Repr::<B>::BASE.pow(n);
         let v_ball = sum.pow(&bn, series_precision)?;
-
-        // B^s is an exact power-of-base shift: `exp(x) = B^s · exp(r)^(Bⁿ)`.
-        let v_shifted = v_ball.shift(s);
-
-        if minus_one {
-            // exp_m1(x) = exp(x) − 1; the subtraction folds one rounding ulp.
-            let one = Ball::exact_int(IBig::ONE, series_precision);
-            Ok(v_shifted.sub(&one, series_precision)?)
-        } else {
-            Ok(v_shifted)
-        }
+        Ok(ExpReduced {
+            ball: v_ball,
+            shift: Some(s),
+            precision: series_precision,
+        })
     }
 
     /// `exp` of a *ball* input. [`exp_compute`](Self::exp_compute) evaluates on `x.mid`;
@@ -274,16 +429,59 @@ impl<R: Round> Context<R> {
         &self,
         x: &Ball<B>,
         work_precision: usize,
-        mut cache: Option<&mut ConstCache>,
+        cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
+        let (ball, s) = self.exp_ball_reduced::<B>(x, work_precision, cache)?;
+        shift_in_range(&ball, s)
+    }
+
+    /// [`exp_ball`](Self::exp_ball) with the scale split off as in
+    /// [`exp_reduced`](Self::exp_reduced): `exp(x) = ball · B^s`. The input-error fold is relative
+    /// to the result, so it is the same in the ball's own frame.
+    pub(crate) fn exp_ball_reduced<const B: Word>(
+        &self,
+        x: &Ball<B>,
+        work_precision: usize,
+        cache: Option<&mut ConstCache>,
+    ) -> Result<(Ball<B>, i128), FpError> {
         let n = 1usize << (self.precision.bit_len() / 2);
-        let mut result =
-            self.exp_compute::<B>(&x.mid, work_precision, false, n, reborrow_cache(&mut cache))?;
+        let reduced = self.exp_reduced::<B>(&x.mid, work_precision, false, n, cache)?;
+        let mut result = reduced.ball;
         if !x.rad.is_zero() {
             let factor = result.mag().mul(&x.rad.exp_upper());
             result.add_error(factor.mul(&x.rad));
         }
-        Ok(result)
+        let s = reduced
+            .shift
+            .expect("exp (as opposed to exp_m1) is always reduced");
+        Ok((result, s))
+    }
+
+    /// Apply the scale `B^shift` that was split off before rounding: the counterpart of
+    /// [`exp_reduced`](Self::exp_reduced) and of the `powi` chain's separate exponent. The
+    /// exponent is checked against the finite range here, on the *rounded* result — the one
+    /// place where "the result does not fit" is the same statement as "the function overflows".
+    pub(crate) fn scale_rounded<const B: Word>(
+        &self,
+        rounded: Rounded<FBig<R, B>>,
+        shift: i128,
+    ) -> FpResult<FBig<R, B>> {
+        let repr = &rounded.value_ref().repr;
+        if repr.significand.is_zero() {
+            return Ok(rounded); // zeros and infinities carry no scale
+        }
+        let sign = repr.sign();
+        let exponent = (repr.exponent as i128).saturating_add(shift);
+        if exponent >= isize::MAX as i128 {
+            Err(FpError::Overflow(sign))
+        } else if exponent <= isize::MIN as i128 {
+            Err(FpError::Underflow(sign))
+        } else {
+            Ok(rounded.map(|mut v| {
+                v.repr.exponent = exponent as isize;
+                v
+            }))
+        }
     }
 
     /// Directed saturation endpoint for an FBig result that has underflowed below the smallest
@@ -320,10 +518,9 @@ impl<R: Round> Context<R> {
     /// opposite-infinity direction) saturate to the largest finite `(Bᵖ−1) × B^{isize::MAX}` — the
     /// all-`(B−1)` significand at the max exponent, mirroring MPFR's `mpfr_setmax` (which fills the
     /// significand with all 1-bits *at the output precision* — the significand is `p` digits, not
-    /// the value's magnitude). The largest finite is ill-defined at unlimited precision, so this
-    /// panics when `precision == 0`.
+    /// the value's magnitude). The largest finite is ill-defined at unlimited precision, so the
+    /// inward modes panic when `precision == 0` (the infinite endpoint needs no precision).
     pub(crate) fn overflow_repr_endpoint<const B: Word>(&self, sign: Sign) -> Rounded<FBig<R, B>> {
-        assert_limited_precision(self.precision);
         let adj = if sign == Sign::Positive {
             R::round_low_part(&IBig::ONE, Sign::Positive, || Ordering::Greater)
         } else {
@@ -334,6 +531,7 @@ impl<R: Round> Context<R> {
             SubOne => Inexact(FBig::new(Repr::infinity_with_sign(Sign::Negative), *self), SubOne),
             _ => {
                 // Largest finite at this precision: (B^p − 1) × B^{isize::MAX}.
+                assert_limited_precision(self.precision);
                 let max_mag = Repr::<B>::BASE.pow(self.precision) - UBig::ONE;
                 Inexact(
                     FBig::new(Repr::new(IBig::from_parts(sign, max_mag), isize::MAX), *self),
@@ -389,7 +587,9 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         if n.is_zero() {
-            return Ok(Exact(FBig::ONE));
+            // the result carries this context like every other one: a precision-0 `FBig::ONE`
+            // would make the next limited-precision operation on it panic
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
         if n.is_one() {
             if negative {
@@ -399,11 +599,22 @@ impl<R: ErrorBounds> Context<R> {
             let repr = self.repr_round_ref(base);
             return self.finish_rounded(repr);
         }
+        // (±1)^n = ±1 for any exponent, exactly — also the only exactly representable result
+        // of an exponent beyond the squaring chain's range, which the `exp(y·ln x)` fallback
+        // could never certify (its logarithm is an exact zero behind a positive radius).
+        let odd = n.bit(0);
+        if base.exponent == 0 && (base.significand.is_one() || base.significand == IBig::NEG_ONE) {
+            let repr = if base.sign() == Sign::Negative && odd {
+                Repr::<B>::neg_one()
+            } else {
+                Repr::<B>::one()
+            };
+            return Ok(Exact(FBig::new(repr, *self)));
+        }
 
         // Zero base (±0): a positive exponent gives ±0, a negative one ±inf; the sign follows |n|'s
         // parity. Short-circuit before the magnitude pre-check (whose log2 estimate is meaningless
         // for zero) and before the squaring chain (which can't start from zero).
-        let odd = n.bit(0);
         if base.significand.is_zero() {
             let neg_sign = base.sign() == Sign::Negative && odd;
             if negative {
@@ -436,18 +647,15 @@ impl<R: ErrorBounds> Context<R> {
         let base_log2_ub = base_log2_ub as f64;
         let threshold = (isize::MAX as f64) * (B.log2_est() as f64);
         let threshold_certain = threshold + POWI_RANGE_MARGIN;
-        let exp_f64 = i64::try_from(&n).ok().map(|e| e as f64);
-        // `lb_side` certifies |base| > 1 by a wide margin; `ub_side` certifies |base| < 1. (For the
-        // None case |exp| is unbounded, so the bound's sign alone decides.) A negative exponent
-        // swaps which side over- vs underflows.
-        let lb_side = match exp_f64 {
-            Some(e) => e * base_log2_lb > threshold_certain,
-            None => base_log2_lb > 0.0,
-        };
-        let ub_side = match exp_f64 {
-            Some(e) => e * base_log2_ub < -threshold_certain,
-            None => base_log2_ub < 0.0,
-        };
+        // The exponent as an `f64` (rounded; `+∞` past the `f64` range, where any bound that is
+        // certain of its sign decides). An exponent that merely exceeds `i64` says nothing by
+        // itself: `0.999^(2^63)` is about `10^(-4e15)`, well inside the range.
+        let exp_f64 = n.to_f64().value();
+        // `lb_side` certifies |base| > 1 by a wide margin; `ub_side` certifies |base| < 1. A
+        // negative exponent swaps which side over- vs underflows. (A zero bound times an
+        // infinite exponent is NaN, which certifies nothing.)
+        let lb_side = exp_f64 * base_log2_lb > threshold_certain;
+        let ub_side = exp_f64 * base_log2_ub < -threshold_certain;
         if lb_side || ub_side {
             // |base|>1 (lb_side): positive exp → overflow, negative exp → underflow.
             // |base|<1 (ub_side): positive exp → underflow, negative exp → overflow.
@@ -460,19 +668,6 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
-        // |exp| doesn't fit i64 and the bounds straddle 0, so |base| is within the bounds of 1.
-        // If it is *exactly* ±1 the result is ±1 for any exponent (short-circuit so the squaring
-        // chain doesn't iterate over exp's enormous bit length); otherwise |base| ≈ 1 but ≠ 1, the
-        // huge power is still finite, and we fall through to compute it.
-        if exp_f64.is_none() && base.significand.is_one() && base.exponent == 0 {
-            let repr = if base.sign() == Sign::Negative && odd {
-                Repr::<B>::neg_one()
-            } else {
-                Repr::<B>::one()
-            };
-            return Ok(Exact(FBig::new(repr, *self)));
-        }
-
         let nlen = n.bit_len();
         // Exponents past `i64` make the squaring chain infeasible (`nlen - 1` squarings at a
         // working precision that grows with `nlen`) and, when the magnitude also overflows the
@@ -483,38 +678,41 @@ impl<R: ErrorBounds> Context<R> {
             let signed_exp = IBig::from_parts(exp_sign, n.clone());
             return self.powi_via_exp_log(base, &signed_exp);
         }
-        // The chain runs on the magnitude `start` (base, or its reciprocal for a negative
-        // exponent), whose range-error sign is the *intermediate* sign; remap any overflow/underflow
-        // to the true result sign (base sign × exponent parity) so the directed endpoint is correct.
-        let result_sign = Sign::from(base.sign() == Sign::Negative && odd);
+        // The chain runs on the base's significand (or its working-precision reciprocal for a
+        // negative exponent) with the scale `B^(±exponent·n)` accumulated apart, and the scale is
+        // applied to the *rounded* result — so the result is found, or found to be out of range,
+        // independently of where the base sits in the exponent range. (Run on the full values,
+        // `(3·2^j)^-2` reported an underflow for a result within `guard` digits of the smallest
+        // exponent: the working-precision value did not fit, though the rounded one does.)
         let initial_guard = nlen + self.base_guard_digits::<B>() + 2;
-        self.ziv(initial_guard, |guard| {
+        let unit = Repr::<B> {
+            significand: base.significand.clone(),
+            exponent: 0,
+        };
+        let mut scale = 0i128;
+        let rounded = self.ziv(initial_guard, |guard| {
             let pw = self.precision + guard;
             let work = Context::<mode::HalfEven>::new(pw);
-            // start from base (positive exponent, always exact) or its working-precision reciprocal
-            // (negative exponent, exact only when 1/base is exactly representable). A range error
-            // here (e.g. 1/base underflows for an extreme base) is remapped to the result sign and
-            // propagated — saturating would feed the chain an infinity or zero it can't recover from.
-            let start_ball = if negative {
-                match work.div(&Repr::<B>::one(), base) {
-                    Ok(v) => Ball::from_rounded(v.map(FBig::into_repr), pw),
-                    Err(FpError::Overflow(_)) => return Err(FpError::Overflow(result_sign)),
-                    Err(FpError::Underflow(_)) => return Err(FpError::Underflow(result_sign)),
-                    Err(e) => return Err(e),
-                }
+            // start from the significand (positive exponent, always exact) or its
+            // working-precision reciprocal (negative exponent, exact only when it is exactly
+            // representable)
+            let start = if negative {
+                let recip = work.div(&Repr::<B>::one(), &unit)?;
+                Scaled::new(
+                    Ball::from_rounded(recip.map(FBig::into_repr), pw),
+                    -(base.exponent as i128),
+                )
             } else {
-                Ball::exact(base.clone())
+                Scaled::new(Ball::exact(unit.clone()), base.exponent as i128)
             };
             // The squaring chain compounds the error mechanically; when the whole chain is exact
             // (exact start, no rounding anywhere) the radius stays 0 — the
             // exactly-representable directed-rounding case that no nonzero radius could certify.
-            let res_ball = start_ball.pow(&n, pw).map_err(|e| match e {
-                FpError::Overflow(_) => FpError::Overflow(result_sign),
-                FpError::Underflow(_) => FpError::Underflow(result_sign),
-                other => other,
-            })?;
-            Ok(res_ball.to_value_radius::<R>(&Context::<R>::new(pw)))
-        })
+            let power = start.pow(&n, pw)?;
+            scale = power.exp;
+            Ok(power.ball.to_value_radius::<R>(&Context::<R>::new(pw)))
+        })?;
+        self.scale_rounded(rounded, scale)
     }
 
     /// Raise the floating point number to an floating point power under this context.
@@ -522,7 +720,9 @@ impl<R: ErrorBounds> Context<R> {
     /// A non-integer exponent is correctly rounded via a Ziv loop. An integer-valued exponent
     /// delegates to [`powi`](Context::powi) (binary exponentiation), which also accepts a negative
     /// base — its sign is fixed by the exponent's parity — so `pow(-x, n)` is in domain here for
-    /// integer `n`. Both paths are correctly rounded.
+    /// integer `n`. Both paths are correctly rounded. A zero base follows the same rule:
+    /// `pow(-0, y)` is `-0` (or `-inf` for `y < 0`) when `y` is an odd integer, and `+0` (`+inf`)
+    /// for every other `y`.
     ///
     /// # Examples
     ///
@@ -542,7 +742,8 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless the result is trivially exact: the exponent
+    /// is zero or one, or the base is zero or one).
     pub fn powf<const B: Word>(
         &self,
         base: &Repr<B>,
@@ -552,34 +753,35 @@ impl<R: ErrorBounds> Context<R> {
         if base.is_infinite() || exp.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
-        // shortcuts
+        // Exact shortcuts first — they need no rounding, so they also cover unlimited precision
+        // (a zero made by `FBig::try_from(0.0)` carries precision 0), which everything below
+        // rejects.
         if exp.is_pos_zero() || exp.is_neg_zero() {
             // pow(x, ±0) = 1 for any base (IEEE 754 §9.2.1); `-0` is numerically zero, so it
             // must take the same shortcut as `+0` (otherwise a negative base falls through to
             // the OutOfDomain path below).
-            return Ok(Exact(FBig::ONE));
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         } else if exp.is_one() {
             let repr = self.repr_round_ref(base);
             return self.finish_rounded(repr);
         } else if base.significand.is_zero() {
-            // With a *float* exponent the result on a zero base is the positive one — this
-            // matches the common float-pow convention (e.g. CPython: `(-0.0) ** y == 0.0`),
-            // which doesn't track the parity of the exponent:
-            //   pow(±0, y > 0) = +0,    pow(±0, y < 0) = +inf.
-            // For the sign-correct result (e.g. `pow(-0, odd) = -0`), use the integer-exponent
-            // [`powi`](Context::powi). Short-circuiting here also avoids the negative-base path.
+            // A zero base (IEEE 754 §9.2.1, as `powi` does for an integer exponent):
+            //   pow(±0, y) = ±0 for an odd integer y > 0, +0 for any other y > 0;
+            //   pow(±0, y) = ±inf for an odd integer y < 0, +inf for any other y < 0.
+            // The parity is read off the exponent's representation, so no integer is built.
+            // Short-circuiting here also avoids the negative-base path.
+            let sign = Sign::from(base.sign() == Sign::Negative && is_odd_int(exp));
             return Ok(Exact(if exp.sign() == Sign::Negative {
-                FBig::new(Repr::infinity(), *self)
+                FBig::new(Repr::infinity_with_sign(sign), *self)
             } else {
-                FBig::ZERO
+                FBig::new(Repr::zero_with_sign(sign), *self)
             }));
         }
         if base.is_one() {
             // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
-            return Ok(Exact(FBig::ONE));
+            return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // Integer-valued exponent: delegate to the integer-power kernel (binary exponentiation),
         // itself correctly rounded via its own Ziv loop. This sidesteps the `exp(y·ln x)`
@@ -596,7 +798,106 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // `base` is positive here (negative non-integer base returned OutOfDomain above).
-        self.pow_exp_log(base, exp, cache)
+        // An exactly representable power (`4^0.5 = 2`, `0.25^1.5 = 0.125`) is resolved first: the
+        // Ziv loop cannot certify a true value that sits on a rounding boundary.
+        if let Some(result) = self.powf_exact(base, exp) {
+            return result;
+        }
+        self.pow_exp_log(base, exp, Sign::Positive, cache)
+    }
+
+    /// The value of `x^y` when it is a *rounding boundary* — exactly representable in base `B`
+    /// with at most `precision + 1` significant digits (a representable value or an exact tie) —
+    /// correctly rounded; `None` when it is not (the Ziv loop then converges on it). `x` is
+    /// positive, finite and not one; `y` is finite and nonzero.
+    ///
+    /// These are the results the `exp(y·ln x)` loop can never certify: its error interval has a
+    /// positive radius around a value that is itself the edge of a rounding preimage, so
+    /// `powf(4, 0.5)` under a directed mode doubled its working precision forever.
+    ///
+    /// Write `y = n/d` in lowest terms. `x^y` is rational only if `x` is a perfect `d`-th power
+    /// of a rational `r`, and then `x^y = rⁿ`. With `x` factored over the primes `qᵢ` of the
+    /// base, `x = c·Π qᵢ^Eᵢ` (`c` coprime to the base, [`Factored`]), that holds iff `d` divides
+    /// every `Eᵢ` and `c = γ^d`; the power is `γⁿ·Π qᵢ^(n·Eᵢ/d)`, which has a finite base-`B`
+    /// expansion iff `n > 0` or `γ = 1`. Everything is decided on these exponents, so neither
+    /// a power of the base nor an oversized root is ever built: `d` larger than every `|Eᵢ|` and
+    /// than the bit length of `c` rules the case out, and a result with more digits than the
+    /// rounding can see is left to the loop.
+    fn powf_exact<const B: Word>(&self, x: &Repr<B>, y: &Repr<B>) -> Option<FpResult<FBig<R, B>>> {
+        // y = ±n/d: the denominator collects the negative powers of the base's primes
+        let fy = Factored::new::<B>(&(&y.significand).unsigned_abs(), y.exponent, &[]);
+        let mut d: u128 = 1;
+        let mut n_mag = fy.cofactor.clone();
+        for &(q, w) in &fy.primes {
+            if w < 0 {
+                let power = (q as u128).checked_pow(u32::try_from(-w).ok()?)?;
+                d = d.checked_mul(power)?;
+            } else {
+                n_mag *= UBig::from(q).pow(usize::try_from(w).ok()?);
+            }
+        }
+        let d = i128::try_from(d).ok()?;
+        let n = i128::try_from(&n_mag).ok()?;
+        let n = if y.sign() == Sign::Negative { -n } else { n };
+
+        // x = c·Π qᵢ^Eᵢ must be a perfect d-th power
+        let fx = Factored::new::<B>(&(&x.significand).unsigned_abs(), x.exponent, &[]);
+        if fx.primes.iter().any(|&(_, e)| e % d != 0) {
+            return None;
+        }
+        let gamma = if fx.cofactor.is_one() {
+            UBig::ONE
+        } else {
+            // a d-th power of an integer ≥ 2 has more than d bits
+            let d = usize::try_from(d).ok()?;
+            if d >= fx.cofactor.bit_len() {
+                return None;
+            }
+            let root = fx.cofactor.nth_root(d);
+            if root.clone().pow(d) != fx.cofactor {
+                return None;
+            }
+            root
+        };
+        if n < 0 && !gamma.is_one() {
+            return None; // 1/γ^|n| has no finite expansion in this base
+        }
+
+        // x^y = γ^n · Π qᵢ^Fᵢ with Fᵢ = n·Eᵢ/d. Split off the largest power of the base,
+        // B^h with h = min ⌊Fᵢ/bᵢ⌋, so that x^y = m·B^h for an integer m not divisible by B.
+        let multiplicities = Factored::new::<B>(&UBig::ONE, 1, &[]).primes;
+        let mut exps = alloc::vec::Vec::with_capacity(fx.primes.len());
+        let mut h = i128::MAX;
+        for (&(q, e), &(_, b)) in fx.primes.iter().zip(&multiplicities) {
+            let f = (e / d).checked_mul(n)?;
+            h = h.min(f.div_euclid(b));
+            exps.push((q, f, b));
+        }
+        // the digits of m must fit what the rounding can see; bound its bit length first
+        let digit_bits = (Word::BITS - (B - 1).leading_zeros()) as u128; // ⌈log2 B⌉
+        let max_bits = (self.precision as u128 + 2) * digit_bits + 2;
+        let n_abs = n.unsigned_abs();
+        let mut bits = (gamma.bit_len() as u128 - 1).checked_mul(n_abs)?;
+        for &(q, f, b) in &exps {
+            let r = (f - b * h) as u128;
+            bits =
+                bits.checked_add(r.checked_mul((Word::BITS - 1 - q.leading_zeros()) as u128)?)?;
+        }
+        if bits > max_bits {
+            return None;
+        }
+        let mut m = gamma.pow(n_abs as usize);
+        for &(q, f, b) in &exps {
+            m *= UBig::from(q).pow((f - b * h) as usize);
+        }
+        // (m ≥ 1 and h are exact, so a range error here is the true verdict)
+        if h >= isize::MAX as i128 {
+            return Some(Err(FpError::Overflow(Sign::Positive)));
+        }
+        if h <= isize::MIN as i128 {
+            return Some(Err(FpError::Underflow(Sign::Positive)));
+        }
+        Some(self.finish_rounded(self.repr_round(Repr::new(m.into(), h as isize))))
     }
 
     /// `x^y = exp(y·ln x)` for `pos_base > 0`, correctly rounded via a Ziv loop — the shared core
@@ -614,13 +915,17 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// Overflow/underflow of `exp(y·ln x)` is detected inside the Ziv closure by `exp` itself
     /// (which returns `Err(Overflow)` / `Err(Underflow)`) and propagated — the result is positive
-    /// (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign; callers that need a
-    /// negative result (the `powi` fallback for a negative base) flip the sign of both the value
-    /// and the error.
+    /// (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign.
+    ///
+    /// `sign` is the sign of the result: `Negative` computes `−exp(y·ln x)` (the `powi` fallback
+    /// for a negative base and an odd exponent). The sign is applied to the working value
+    /// *before* it is rounded — negating a rounded magnitude instead would round a negative
+    /// result in the mirrored direction under `Up`/`Down` — and to a range error.
     fn pow_exp_log<const B: Word>(
         &self,
         pos_base: &Repr<B>,
         exp: &Repr<B>,
+        sign: Sign,
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         // The `exp_ball` powering chain amplifies the input radius by `Bⁿ` — the same compounding
@@ -631,7 +936,11 @@ impl<R: ErrorBounds> Context<R> {
         // chain length is charged twice.
         let initial_guard =
             self.base_guard_digits::<B>() + 10 + 2 * (1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        // The exponential is certified in its own frame (`exp(y·ln x) = ball · B^s`) and the
+        // scale applied to the rounded result, so a result next to either end of the exponent
+        // range is handled like any other (see `exp_reduced`).
+        let mut scale = 0i128;
+        let rounded = self.ziv(initial_guard, |guard| {
             let wp = self.precision + guard;
             // exp(y·ln x) as a Ball chain: the ln and the exponent rounding compose mechanically,
             // and the exp input error is folded in via `exp_ball`. The radius shrinks with guard
@@ -640,15 +949,29 @@ impl<R: ErrorBounds> Context<R> {
             let work = Context::<mode::HalfEven>::new(wp);
             let exp_input = Ball::from_rounded(work.repr_round_ref(exp), wp);
             let arg_ball = ln_ball.mul(&exp_input, wp)?;
-            let result_ball = self.exp_ball::<B>(&arg_ball, wp, reborrow_cache(&mut cache))?;
+            let (result_ball, s) =
+                self.exp_ball_reduced::<B>(&arg_ball, wp, reborrow_cache(&mut cache))?;
+            scale = s;
+            let result_ball = if sign == Sign::Negative {
+                -result_ball
+            } else {
+                result_ball
+            };
             Ok(result_ball.to_value_radius::<R>(&Context::<R>::new(wp)))
-        })
+        });
+        // a range error of the positive `exp(y·ln x)` is one of the signed result
+        let rounded = rounded.map_err(|e| match e {
+            FpError::Overflow(_) => FpError::Overflow(sign),
+            FpError::Underflow(_) => FpError::Underflow(sign),
+            e => e,
+        })?;
+        self.scale_rounded(rounded, scale)
     }
 
     /// `powi` fallback for exponents past the squaring chain's feasible bit length: compute
     /// `base^signed_exp = exp(signed_exp · ln|base|)`. The integer exponent is an exact float
     /// (significand `|signed_exp|`, exponent `0`), so this delegates to [`pow_exp_log`](Self::pow_exp_log)
-    /// — reusing its Ziv rounding — and then fixes the result sign from the
+    /// — reusing its Ziv rounding — with the result sign fixed from the
     /// exponent's parity for a negative base. The working precision never scales with
     /// `signed_exp.bit_length()`, so (unlike the squaring chain) this cannot allocate unboundedly.
     fn powi_via_exp_log<const B: Word>(
@@ -658,8 +981,8 @@ impl<R: ErrorBounds> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         let neg_base = base.sign() == Sign::Negative;
         // `(-base)^n = (-1)^n · base^n`, so the magnitude is always `|base|^n` and only the sign
-        // depends on parity. `pow_exp_log` returns the positive magnitude; flip it (and the
-        // overflow/underflow sign) when the base is negative and the exponent is odd.
+        // depends on parity. `pow_exp_log` applies it before rounding (and to a range error): the
+        // result is negative when the base is negative and the exponent is odd.
         let odd = signed_exp.clone().into_parts().1.bit(0);
         let result_sign = Sign::from(neg_base && odd);
         let base_mag = if neg_base {
@@ -669,12 +992,7 @@ impl<R: ErrorBounds> Context<R> {
             base.clone()
         };
         let exp_repr = Repr::new(signed_exp.clone(), 0);
-        match self.pow_exp_log(&base_mag, &exp_repr, None) {
-            Ok(rounded) => Ok(rounded.map(|v| v * result_sign)),
-            Err(FpError::Overflow(_)) => Err(FpError::Overflow(result_sign)),
-            Err(FpError::Underflow(_)) => Err(FpError::Underflow(result_sign)),
-            Err(e) => Err(e),
-        }
+        self.pow_exp_log(&base_mag, &exp_repr, result_sign, None)
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.
@@ -736,7 +1054,8 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return match x.sign() {
                 Sign::Positive => Ok(Exact(FBig::new(Repr::infinity(), *self))),
-                Sign::Negative => Ok(Exact(-FBig::ONE)), // exp_m1(−∞) = −1
+                // exp_m1(−∞) = −1
+                Sign::Negative => Ok(Exact(FBig::new(Repr::neg_one(), *self))),
             };
         }
         self.exp_internal(x, true, cache)
@@ -764,17 +1083,12 @@ impl<R: ErrorBounds> Context<R> {
             // These exact results need no rounding, so handle them before the
             // limited-precision assertion: a precision-0 (unlimited) FBig such as the
             // one produced by `try_from(0.0)` must still compute exp/exp_m1 exactly.
-            return match minus_one {
-                false => Ok(Exact(FBig::ONE)),
-                true => {
-                    let zero = if input_sign == Sign::Negative {
-                        FBig::new(Repr::neg_zero(), Context::new(0))
-                    } else {
-                        FBig::ZERO
-                    };
-                    Ok(Exact(zero))
-                }
-            };
+            // The result carries this context (a precision-0 `FBig::ONE` here made the next
+            // limited-precision operation on a limited-precision input's result panic).
+            return Ok(Exact(match minus_one {
+                false => FBig::new(Repr::one(), *self),
+                true => FBig::new(x.clone(), *self),
+            }));
         }
 
         assert_limited_precision(self.precision);
@@ -797,40 +1111,21 @@ impl<R: ErrorBounds> Context<R> {
             }
         }
 
-        // No-OOM magnitude gate: for an `x` whose exponent is near `isize::MAX`, the reduction
-        // quotient `s = floor(x/ln B)` in `exp_compute` would allocate a GB-scale `IBig`, so reject
-        // astronomical |x| here (via the cheap `log2_est` fast-skip) before the Ziv loop runs the
-        // division. The probe inflates `ln B` with the same `⌈log_B|x|⌉ + 2` extra digits
-        // `exp_compute` uses, so its `s` verdict matches the computation's. (`exp_compute` also
-        // re-checks `s.try_into()` as a gray-zone backstop, propagating an error if the gate and
-        // computation ever disagree — so a miss degrades to the directed endpoint, not a panic.)
-        // `abs` via the [`Abs`] trait (the `f32` inherent method is std-only before 1.85, and
-        // the MSRV workspace check compiles this crate without `std`); the explicit trait path
-        // needs no `use`, whose import would read as unused in std builds (the inherent wins)
-        if dashu_base::Abs::abs(x.log2_est()) > EXP_OVERFLOW_PROBE_LOG2 {
-            let x_log2_ub = x.log2_bounds().1;
-            let extra = if x_log2_ub > 0.0 {
-                (x_log2_ub / B.log2_est()) as usize + 2
-            } else {
-                2
-            };
-            let probe = Context::<R>::new(self.precision + 64 + extra);
-            let logb = probe.ln_base::<B>(reborrow_cache(&mut cache));
-            let x_probe = FBig::new(probe.repr_round_ref(x).value(), probe);
-            let s_probe = x_probe.div_rem_euclid(logb).0;
-            if <isize as core::convert::TryFrom<IBig>>::try_from(s_probe).is_err() {
-                // exp(huge +) overflows to +∞ (the directed endpoint handles every mode); exp(huge −)
-                // is a positive value below the smallest representable, so it underflows (the directed
-                // endpoint gives +0 / smallest-positive); exp_m1(huge −) ≈ −1 stays a finite value
-                // just above −1 (the short-circuit above usually catches this first).
-                return if input_sign == Sign::Positive {
-                    Err(FpError::Overflow(Sign::Positive))
-                } else if minus_one {
-                    Ok(self.near_one_endpoint::<B>(Sign::Negative))
-                } else {
-                    Err(FpError::Underflow(Sign::Positive))
-                };
+        // A tiny argument: `exp(x) = 1 + x + …` and `exp_m1(x) = x + x²/2 + …` are a known
+        // value plus a tail below everything the rounding can see, so they are rounded directly
+        // with the tail as a sticky part ([`Context::round_sticky`]). The Ziv loop would need a
+        // working precision proportional to `log(1/|x|)` to tell the result from that value.
+        let p = self.precision as i128;
+        let hi = x.exponent as i128 + x.digits_ub() as i128; // |x| < B^hi
+        if minus_one {
+            // 0 < exp_m1(x) − x < x² < B^(2·hi) for |x| < 1
+            let pad = (p + 1 - x.digits_lb() as i128).max(0);
+            if hi <= 0 && 2 * hi <= x.exponent as i128 - pad - 2 {
+                return self.round_sticky(x, Sign::Positive);
             }
+        } else if hi <= -(p + 3) {
+            // |exp(x) − 1| < 2·|x| < B^(hi + 1), on the side of x
+            return self.round_sticky(&Repr::one(), input_sign);
         }
 
         // Correct rounding via the Ziv loop. Guards: log_B(p) for the series summation/squaring
@@ -838,19 +1133,47 @@ impl<R: ErrorBounds> Context<R> {
         // since Ziv (not the guard count) now certifies correctness — plus the powering chain's
         // radius charge ([`pow_chain_guard`]). `n ≈ √p` is derived from the target precision and
         // is constant across retries.
+        //
+        // `exp` is certified in its own frame, `exp(x) = ball · B^s`, and the scale is applied to
+        // the rounded result (see `exp_reduced`): that is what makes a result within `guard`
+        // digits of either end of the exponent range come out, and an out-of-range one be
+        // reported, instead of the working-precision value saturating its exponent. `exp_m1`
+        // takes the same route once `x` is so large that the `− 1` is far below the result's last
+        // digit (it is `B^(−s)` in that frame, folded into the radius); below that its exponent
+        // is nowhere near the limits and the one is subtracted for real.
         let series_guard = self.base_guard_digits::<B>();
         let n = 1usize << (self.precision.bit_len() / 2);
-        self.ziv(series_guard + n + pow_chain_guard::<B>(n), |guard| {
-            Ok(self
-                .exp_compute::<B>(
-                    x,
-                    self.precision + guard,
-                    minus_one,
-                    n,
-                    reborrow_cache(&mut cache),
-                )?
-                .to_value_radius::<R>(&Context::<R>::new(self.precision + guard)))
-        })
+        let framed = !minus_one
+            || (input_sign == Sign::Positive && x.log2_bounds().0 > EXP_OVERFLOW_PROBE_LOG2);
+        let mut scale = 0i128;
+        let rounded = self.ziv(series_guard + n + pow_chain_guard::<B>(n), |guard| {
+            let wp = self.precision + guard;
+            let ctx = Context::<R>::new(wp);
+            if !framed {
+                return Ok(self
+                    .exp_compute::<B>(x, wp, minus_one, n, reborrow_cache(&mut cache))?
+                    .to_value_radius::<R>(&ctx));
+            }
+            let reduced = self.exp_reduced::<B>(x, wp, false, n, reborrow_cache(&mut cache))?;
+            let s = reduced
+                .shift
+                .expect("exp (as opposed to exp_m1) is always reduced");
+            let mut ball = reduced.ball;
+            if minus_one {
+                ball.add_error(Mag::from_base_pow::<B>(clamp_exponent(-s)));
+            }
+            scale = s;
+            Ok(ball.to_value_radius::<R>(&ctx))
+        });
+        match rounded {
+            Ok(rounded) => self.scale_rounded(rounded, scale),
+            // exp_m1 of a huge negative argument is −1 plus a positive residual below every
+            // digit (the short-circuit above catches it first; this is its backstop)
+            Err(FpError::Underflow(_)) if minus_one && input_sign == Sign::Negative => {
+                Ok(self.near_one_endpoint::<B>(Sign::Negative))
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -1422,8 +1745,8 @@ mod tests {
     #[test]
     fn test_powf_zero_base() {
         use crate::DBig;
-        // powf with a float exponent returns the *positive* result on a zero base
-        // (matching the common float-pow convention); use powi for the signed result.
+        // powf on a zero base keeps the base's sign only for an odd integer exponent (as powi
+        // does); every other exponent gives the positive result.
         let ctx = Context::<mode::HalfEven>::new(53);
         // powf(-0, 2.0) = +0 (NOT -0)
         let r = ctx

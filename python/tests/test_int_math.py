@@ -1,3 +1,6 @@
+from decimal import Decimal
+from fractions import Fraction
+
 from dashu import *
 
 
@@ -88,6 +91,236 @@ def test_chunks_words():
     assert UBig.from_chunks(n.to_chunks(10), 10) == n
     w = n.to_words()
     assert UBig.from_words(w) == n
+
+
+def test_ubig_subtraction_below_zero():
+    # the difference of two UBig (or a UBig and a non-negative int) is an IBig when it is
+    # negative, instead of a Rust panic
+    for result in (UBig(0) - 1, UBig(0) - UBig(1), 0 - UBig(1), UBig(3) - 10, 3 - UBig(10)):
+        assert isinstance(result, IBig)
+    assert UBig(0) - 1 == -1 and 0 - UBig(1) == -1
+    assert UBig(3) - UBig(10) == -7 and 3 - UBig(10) == -7
+    assert UBig(2**70) - UBig(2**71) == -(2**70)
+    # a non-negative difference stays a UBig
+    for result in (UBig(10) - 3, UBig(10) - UBig(10), 10 - UBig(3)):
+        assert isinstance(result, UBig)
+    assert UBig(10) - UBig(10) == 0 and 10 - UBig(3) == 7
+    assert UBig(1) - (-2) == 3
+
+    n = UBig(0)
+    n -= 1
+    assert isinstance(n, IBig) and n == -1
+    n = UBig(5)
+    n -= 2
+    assert isinstance(n, UBig) and n == 3
+
+
+def test_inplace_ops_agree_with_binary_ops():
+    # `m op= b` gives the same value as `m = m op b`, also when the operand (or the result)
+    # is not an unsigned integer, where the in-place form used to raise TypeError
+    import operator
+    ops = [
+        ("+", operator.add), ("-", operator.sub), ("*", operator.mul),
+        ("&", operator.and_), ("|", operator.or_), ("^", operator.xor),
+    ]
+    operands = [3, 0, -3, -1, -4, 2**70, -(2**70), UBig(3), IBig(-3)]
+    for cls, start in ((UBig, 10), (UBig, 0), (UBig, 12), (IBig, 10), (IBig, -10)):
+        for symbol, op in ops:
+            for b in operands:
+                scope = {"m": cls(start), "b": b}
+                exec(f"m {symbol}= b", {}, scope)
+                expected = op(start, int(b))
+                assert int(scope["m"]) == expected, (cls.__name__, start, symbol, b)
+                # a UBig only stays one while its value is not negative
+                assert isinstance(scope["m"], IBig if expected < 0 else (UBig, IBig))
+
+    m = UBig(10)
+    m += -3
+    assert isinstance(m, IBig) and m == 7
+    m = UBig(12)
+    m &= -4
+    assert isinstance(m, UBig) and m == 12
+
+    # non-integer operands fall back to the binary operators as well
+    m = IBig(1)
+    m += 0.5
+    assert isinstance(m, FBig) and m == 1.5
+    m = UBig(1)
+    m *= Fraction(1, 2)
+    assert isinstance(m, RBig) and m == Fraction(1, 2)
+
+
+def test_reflected_integer_ops():
+    # int on the left of %, divmod, &, |, ^ and ** used to raise TypeError
+    import operator
+    ops = [operator.mod, divmod, operator.and_, operator.or_, operator.xor,
+           operator.add, operator.sub, operator.mul, operator.floordiv]
+    for a in (7, 5, 0, -7, 2**70 + 1, -(2**70) - 1):
+        for b in (UBig(3), IBig(3), IBig(-3), UBig(2**65 + 1), IBig(-(2**65) - 1)):
+            for op in ops:
+                expected = op(a, int(b))
+                got = op(a, b)
+                if op is divmod:
+                    assert (int(got[0]), int(got[1])) == expected, (a, b)
+                else:
+                    assert int(got) == expected, (op.__name__, a, b)
+                    # the same type as with the dashu number on the left
+                    # (a Python int beyond 64 bits is always taken as an IBig)
+                    if abs(a) < 2**63:
+                        promoted = UBig(a) if a >= 0 else IBig(a)
+                        assert type(got) is type(op(promoted, b)), (op.__name__, a, b)
+
+    assert 2 ** UBig(10) == 1024 and isinstance(2 ** UBig(10), UBig)
+    assert (-2) ** IBig(3) == -8
+    assert pow(2, UBig(10), 7) == pow(2, 10, 7)
+    assert pow(-2, IBig(5), -7) == pow(-2, 5, -7)
+    # the exponent may be a dashu integer on either side
+    assert UBig(2) ** UBig(10) == 1024 and IBig(-2) ** IBig(3) == -8
+
+    # other numbers on the left of % are promoted like on the right
+    assert 7.5 % UBig(2) == UBig(15) / 2.0 % 2 == 1.5
+    assert isinstance(Fraction(7, 2) % UBig(2), RBig)
+    assert isinstance(Decimal("7.5") % IBig(2), DBig)
+    import pytest
+    with pytest.raises(TypeError):
+        1.5 & UBig(3)
+
+
+def test_integer_zero_division():
+    # division and modulo by an exact zero raise ZeroDivisionError (not a Rust panic)
+    import pytest
+    import operator
+    zeros = [0, UBig(0), IBig(0)]
+    for cls in (UBig, IBig):
+        for zero in zeros:
+            for op in (operator.mod, operator.floordiv, operator.truediv, divmod):
+                with pytest.raises(ZeroDivisionError):
+                    op(cls(5), zero)
+        for op in (operator.mod, operator.floordiv, operator.truediv, divmod):
+            with pytest.raises(ZeroDivisionError):
+                op(5, cls(0))
+        with pytest.raises(ZeroDivisionError):
+            cls(5) % 0.0
+        with pytest.raises(ZeroDivisionError):
+            cls(5) / RBig(0)
+        with pytest.raises(ZeroDivisionError):
+            Fraction(1, 2) / cls(0)
+        # true division by a float zero is a float division: infinity, as for FBig
+        assert (cls(5) / 0.0).is_infinite()
+
+
+def test_pow_zero_modulus():
+    # pow(x, e, 0) raises ValueError as for Python's int (not a Rust panic)
+    import pytest
+    for base in (UBig(2), IBig(2), IBig(-2)):
+        for modulus in (0, UBig(0), IBig(0)):
+            with pytest.raises(ValueError):
+                pow(base, 3, modulus)
+    with pytest.raises(ValueError):
+        pow(2, UBig(3), 0)
+    assert pow(IBig(2), 3, 5) == 3 and pow(IBig(2), 3, -5) == -2
+    # a negative result of a UBig power is an IBig rather than an error
+    assert pow(UBig(2), 3, -5) == -2
+    with pytest.raises(OverflowError):
+        UBig(1) ** (2**70)
+    with pytest.raises(TypeError):
+        UBig(2) ** -1
+
+
+def test_number_theory_zero_arguments():
+    import pytest
+    assert UBig(0).gcd(0) == 0 and UBig(0).gcd(6) == 6
+    assert tuple(int(x) for x in UBig(0).gcd_ext(0)) == (0, 0, 0)
+    assert UBig(0).is_multiple_of(0) and not UBig(5).is_multiple_of(0)
+    for n in (UBig(5), IBig(5)):
+        with pytest.raises(ValueError):
+            n.nth_root(0)
+    for n in (UBig(0), IBig(0)):
+        with pytest.raises(ValueError):
+            n.ilog(2)
+
+
+def test_augmented_assignment_leaves_other_references_alone():
+    # `n op= m` binds `n` to a new object, as for Python's int: it used to update the object
+    # in place, which changed every alias of it and members of sets under the set
+    import operator
+    ops = [
+        ("+", operator.add), ("-", operator.sub), ("*", operator.mul), ("&", operator.and_),
+        ("|", operator.or_), ("^", operator.xor), ("<<", operator.lshift),
+        (">>", operator.rshift),
+    ]
+    for cls in (UBig, IBig):
+        for symbol, op in ops:
+            # (a shift count is a plain int)
+            for b in (1, 3) if symbol in ("<<", ">>") else (1, 3, cls(2)):
+                scope = {"n": cls(5), "b": b}
+                scope["alias"] = scope["n"]
+                exec(f"n {symbol}= b", {}, scope)
+                assert scope["n"] == op(5, int(b)), (cls.__name__, symbol, b)
+                assert scope["alias"] == 5, (cls.__name__, symbol, b)
+                assert scope["alias"] is not scope["n"]
+
+    k = IBig(1)
+    s = {k}
+    k += 1
+    assert k == 2
+    assert IBig(1) in s and 1 in s and 2 not in s
+    d = {UBig(7): "x"}
+    for key in d:
+        key *= 2
+    assert d[7] == "x" and list(d) == [7]
+
+
+def test_integer_true_division_is_exact():
+    # `/` between integers is the exact quotient (an RBig), not the quotient truncated toward
+    # zero (UBig(7) / 2 was 3, and IBig(-7) / 2 was -3 while IBig(-7) // 2 is -4)
+    import math
+    values = [-(2**70) - 1, -7, -2, -1, 0, 1, 2, 3, 6, 7, 2**64, 2**70 + 1]
+    for a in values:
+        for b in values:
+            if b == 0:
+                continue
+            want = Fraction(a, b)
+            lefts = [IBig(a)] + ([UBig(a)] if a >= 0 else [])
+            rights = [IBig(b)] + ([UBig(b)] if b >= 0 else [])
+            results = [x / b for x in lefts] + [a / y for y in rights]
+            results += [x / y for x in lefts for y in rights]
+            for r in results:
+                assert isinstance(r, RBig) and r == want, (a, b)
+                # `/` and `//` agree on the direction of rounding
+                assert math.floor(r) == a // b
+    assert UBig(7) / 2 == 3.5 and IBig(-7) / 2 == -3.5 and -7 / IBig(2) == -3.5
+    assert 1 / UBig(3) == Fraction(1, 3) and math.isclose(float(1 / UBig(3)), 1 / 3)
+    assert UBig(6) / 2 == 3 and isinstance(UBig(6) / 2, RBig)
+    # other operand types are unaffected
+    assert isinstance(UBig(7) / 2.0, FBig) and UBig(7) / 2.0 == 3.5
+    assert isinstance(IBig(7) / DBig(2), DBig) and isinstance(UBig(7) / RBig(2), RBig)
+    assert isinstance(7.0 / UBig(2), FBig) and 7.0 / UBig(2) == 3.5
+
+
+def test_ubig_with_large_int_stays_ubig():
+    # the type of `UBig op int` depends on the signs only, not on whether the int fits in 63
+    # bits: with an int of 2**63 or more the result was an IBig even when it is not negative
+    import operator
+    ops = [operator.add, operator.sub, operator.mul, operator.or_, operator.xor, operator.and_]
+    ints = [0, 1, 2**63 - 1, 2**63, 2**64 - 1, 2**64, 2**100]
+    for a in ints:
+        for b in ints:
+            for op in ops:
+                want = op(a, b)
+                for r in (op(UBig(a), b), op(a, UBig(b)), op(UBig(a), UBig(b))):
+                    assert r == want, (op.__name__, a, b)
+                    assert type(r) is (UBig if want >= 0 else IBig), (op.__name__, a, b)
+                # an IBig operand keeps giving an IBig, and a negative int too
+                assert type(op(IBig(a), b)) is IBig or op is operator.and_
+                assert op(UBig(a), -b) == op(a, -b)
+    for a, b in [(UBig(2**64), 2**63), (2**64, UBig(1)), (UBig(2**100), 2**64)]:
+        assert isinstance(a - b, UBig) and int(a - b) == int(a) - int(b)
+    assert isinstance(UBig(1) - 2**64, IBig) and UBig(1) - 2**64 == 1 - 2**64
+    n = UBig(2**64)
+    n -= 2**63
+    assert isinstance(n, UBig) and n == 2**63
+    assert isinstance(UBig(1) + (-(2**64)), IBig)
 
 
 if __name__ == "__main__":

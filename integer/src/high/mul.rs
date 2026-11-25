@@ -29,22 +29,28 @@ use static_assertions::const_assert;
 /// the Karatsuba band (k = 72) and the recursion starts winning (measured
 /// 0.90x at 128 words, 0.67x at 320; see the `crossover_mulhigh` test).
 const THRESHOLD_SIMPLE_DEFAULT: usize = 96;
-// The recursive split needs l = n/4 >= 1 and 2*l + 2 <= n, which holds for every
-// n >= 6; the margin below keeps the recursion domain comfortably above that.
-const_assert!(THRESHOLD_SIMPLE_DEFAULT >= 8);
+const_assert!(THRESHOLD_SIMPLE_DEFAULT >= MIN_THRESHOLD_SIMPLE);
+
+/// Smallest usable value of the base-case threshold.
+///
+/// The recursive split needs l = n/4 >= 1 and 2*l + 2 <= n, which holds for every
+/// n >= 6; the margin keeps the recursion domain comfortably above that.
+/// Used to clamp runtime tuning values.
+pub(super) const MIN_THRESHOLD_SIMPLE: usize = 8;
 
 /// Environment-variable override for the base-case threshold.
 ///
 /// When the `tuning` feature is active the user may set
 /// `DASHU_THRESHOLD_MULHIGH_SIMPLE` to override the compile-time default.
+/// Values below [`MIN_THRESHOLD_SIMPLE`] are clamped to that constant.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_MULHIGH_SIMPLE") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::MIN_THRESHOLD_SIMPLE);
                 }
             }
         }
@@ -206,8 +212,11 @@ pub(super) fn mul_high_into(t: &mut [Word], ap: &[Word], bp: &[Word], memory: &m
         }
     }
 
-    // Dropped low-low block.
-    sticky |= ap[..l].iter().any(|&w| w != 0) && bp[..l].iter().any(|&w| w != 0);
+    // Dropped products: the low-low block, and the parts of the cross products that the
+    // recursive calls above never see (ap[..l] * bp[l..k] and ap[l..k] * bp[..l], which span
+    // columns l..n-1). Together they are ap[..l] * bp[..k] and ap[..k] * bp[..l].
+    let nonzero = |words: &[Word]| words.iter().any(|&w| w != 0);
+    sticky |= (nonzero(&ap[..l]) && nonzero(&bp[..k])) || (nonzero(&ap[..k]) && nonzero(&bp[..l]));
     // The two accumulator words below the window hold real product columns
     // (the exact block's boundary words, the cross windows' guard words and
     // the carries into them); they are dropped from the returned value, so

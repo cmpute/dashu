@@ -9,6 +9,7 @@ use core::str::FromStr;
 use dashu_base::{BitTest, Sign};
 use dashu_float::round::mode::Zero;
 use dashu_float::{FBig, Repr};
+use dashu_int::{UBig, Word};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -21,7 +22,8 @@ fn panic_cbig_syntax() -> ! {
 /// `CBig::from_parts_const`. Returns `None` for non-finite or too-large coefficients, in which
 /// case the caller falls back to the runtime heap path (`CBig::from_parts`).
 fn small_coeff(f: &FBig) -> Option<(Sign, u32, isize)> {
-    if f.repr().is_infinite() {
+    // a negative zero cannot be expressed as a `(sign, significand, exponent)` triple
+    if f.repr().is_infinite() || f.repr().is_neg_zero() {
         return None;
     }
     let (signif, exp) = f.clone().into_repr().into_parts();
@@ -40,8 +42,15 @@ fn small_coeff(f: &FBig) -> Option<(Sign, u32, isize)> {
 ///
 /// Hexadecimal and binary are parsed natively by the base-2 [`FBig`] `FromStr` (which also
 /// supports the C++ `0x…p…` hex-float syntax); octal and decimal are parsed at their own base and
-/// then converted to base 2, so integer coefficients convert exactly.
+/// then converted to base 2 by [`to_binary`], so integer coefficients convert exactly.
+///
+/// Panics with the syntax error message if the text is not a well-formed coefficient.
 fn parse_coeff(s: &str) -> FBig {
+    try_parse_coeff(s).unwrap_or_else(|| panic_cbig_syntax())
+}
+
+/// The fallible form of [`parse_coeff`]: `None` if the text is not a well-formed coefficient.
+fn try_parse_coeff(s: &str) -> Option<FBig> {
     let s = s.trim();
     // split off the sign (kept so the parser applies it) and a leading `_` escape (see `fbig!`);
     // trim the rest so `"+ 4"` (spaces around the algebraic sign) still parses
@@ -55,26 +64,42 @@ fn parse_coeff(s: &str) -> FBig {
     let digits = rest.strip_prefix('_').unwrap_or(rest);
 
     if digits.starts_with("0x") || digits.starts_with("0X") {
-        FBig::from_str(&format!("{sign}{digits}")).unwrap_or_else(|_| panic_cbig_syntax())
+        FBig::from_str(&format!("{sign}{digits}")).ok()
     } else if let Some(body) = digits
         .strip_prefix("0b")
         .or_else(|| digits.strip_prefix("0B"))
     {
-        FBig::from_str(&format!("{sign}{body}")).unwrap_or_else(|_| panic_cbig_syntax())
+        FBig::from_str(&format!("{sign}{body}")).ok()
     } else if let Some(body) = digits
         .strip_prefix("0o")
         .or_else(|| digits.strip_prefix("0O"))
     {
         FBig::<Zero, 8>::from_str(&format!("{sign}{body}"))
-            .unwrap_or_else(|_| panic_cbig_syntax())
-            .with_base::<2>()
-            .value()
+            .ok()
+            .map(to_binary)
     } else {
         FBig::<Zero, 10>::from_str(&format!("{sign}{digits}"))
-            .unwrap_or_else(|_| panic_cbig_syntax())
-            .with_base::<2>()
-            .value()
+            .ok()
+            .map(to_binary)
     }
+}
+
+/// Convert a parsed coefficient with `p` base-`B` digits of precision to base 2, with as many
+/// bits of precision as the largest `p`-digit integer needs (the bit length of `B^p - 1`), or
+/// as the coefficient itself needs when it is an integer scaled by a positive exponent (such as
+/// `9e2`), so that every integer coefficient converts exactly.
+fn to_binary<const B: Word>(f: FBig<Zero, B>) -> FBig {
+    let precision = f.precision();
+    if precision == 0 || f.repr().is_infinite() {
+        // unlimited precision: either exactly convertible, or rejected by the conversion
+        return f.with_base::<2>().value();
+    }
+    let mut bits = (UBig::from(B).pow(precision) - UBig::ONE).bit_len();
+    if f.repr().exponent() > 0 {
+        let int = f.to_int().value();
+        bits = bits.max(int.bit_len() - int.trailing_zeros().unwrap_or(0));
+    }
+    f.with_base_and_precision::<2>(bits).value()
 }
 
 /// Parse the algebraic `a+bi` form into a `(re, im)` pair of base-2 `FBig` coefficients. Mirrors
@@ -91,23 +116,30 @@ fn parse_algebraic(s: &str) -> (FBig, FBig) {
         panic_cbig_syntax();
     }
     let prefix = &s[..s.len() - 1];
-    let split = prefix.rfind(['+', '-']).filter(|&pos| pos > 0);
-    let (real_str, imag_str) = match split {
-        Some(pos) => (&prefix[..pos], &prefix[pos..]),
-        None => ("", prefix),
+    let parse_imag = |text: &str| match text.trim() {
+        "" | "+" => Some(FBig::ONE),
+        "-" => Some(FBig::NEG_ONE),
+        other => try_parse_coeff(other),
     };
-    let imag_str = imag_str.trim();
 
-    let im = match imag_str {
-        "" | "+" => FBig::ONE,
-        "-" => FBig::NEG_ONE,
-        other => parse_coeff(other),
-    };
-    let re = if real_str.is_empty() {
-        FBig::from_repr(Repr::zero(), im.context())
-    } else {
-        parse_coeff(real_str)
-    };
+    // Split the prefix into the real term and the imaginary coefficient at a '+' / '-' that is
+    // not at the leading position. A sign can also belong to an exponent (`1+2e-3i`, `1e-5i`,
+    // `0x1p-2i`), so take the rightmost split at which both sides are well-formed numbers; an
+    // exponent's sign is never such a split, as the text before it ends in the scale marker.
+    for (pos, _) in prefix.rmatch_indices(['+', '-']) {
+        if pos == 0 {
+            continue;
+        }
+        if let (Some(re), Some(im)) = (try_parse_coeff(&prefix[..pos]), parse_imag(&prefix[pos..]))
+        {
+            return (re, im);
+        }
+    }
+
+    // No split: the whole prefix is the imaginary coefficient, and the implicit real zero
+    // carries the imaginary part's precision.
+    let im = parse_imag(prefix).unwrap_or_else(|| panic_cbig_syntax());
+    let re = FBig::from_repr(Repr::zero(), im.context());
     (re, im)
 }
 

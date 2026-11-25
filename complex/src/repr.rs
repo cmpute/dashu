@@ -17,8 +17,9 @@
 
 use dashu_base::Approximation;
 use dashu_base::Approximation::*;
+use dashu_base::Sign;
 use dashu_float::round::{Round, Rounding};
-use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
+use dashu_float::{ConstCache, Context as FloatCtxt, FBig, FpError, FpResult, Repr};
 use dashu_int::Word;
 
 use crate::cbig::CBig;
@@ -47,7 +48,9 @@ pub struct Context<R: Round>(pub(crate) FloatCtxt<R>);
 /// Correctly-rounded complex result with per-axis inexactness.
 ///
 /// `Exact(v)` ⟺ both parts are exact; `Inexact(v, (re, im))` carries each part's rounding
-/// direction. This is the complex twin of [`dashu_float::round::Rounded`] (`Approximation<T, Rounding>`),
+/// direction (a part that happens to be exact while the other is not carries
+/// [`Rounding::NoOp`], as does a rounded part whose significand was truncated). This is the
+/// complex twin of [`dashu_float::round::Rounded`] (`Approximation<T, Rounding>`),
 /// reusing the same [`Rounding`] flag type for each axis.
 pub type CRounded<R, const B: Word> = Approximation<CBig<R, B>, (Rounding, Rounding)>;
 
@@ -62,7 +65,9 @@ impl<R: Round> Context<R> {
         Self(FloatCtxt::new(precision))
     }
 
-    /// Create a context with the higher precision from the two inputs (unlimited `0` dominates).
+    /// Create a context with the higher precision from the two inputs. An unlimited precision
+    /// (`0`) is treated as the *lowest* one, so a limited precision wins over an unlimited one
+    /// (the result is unlimited only when both inputs are), matching [`dashu_float::Context::max`].
     #[inline]
     pub const fn max(lhs: Self, rhs: Self) -> Self {
         Self(FloatCtxt::max(lhs.0, rhs.0))
@@ -90,19 +95,6 @@ impl<R: Round> Context<R> {
     #[inline]
     pub(crate) const fn float(&self) -> FloatCtxt<R> {
         self.0
-    }
-
-    /// The work context for an arithmetic op: a finite `p + g` guard-digit context at limited
-    /// precision, or the exact `self.float()` (precision 0) when the context is unlimited. So
-    /// `mul`/`sqr`/`norm` are exact at unlimited; `div`/`inv` still panic there via the float
-    /// layer's own check (a quotient isn't exactly representable in general).
-    #[inline]
-    pub(crate) fn work_context(&self, g: usize) -> FloatCtxt<R> {
-        if self.precision() != 0 {
-            FloatCtxt::new(self.precision() + g)
-        } else {
-            self.float()
-        }
     }
 
     /// Unwrap a [`CfpResult`], returning the [`CBig`] value directly.
@@ -144,6 +136,9 @@ pub(crate) fn combine_parts<R: Round, const B: Word>(
     re: Approximation<FBig<R, B>, Rounding>,
     im: Approximation<FBig<R, B>, Rounding>,
 ) -> CRounded<R, B> {
+    // `Inexact(_, NoOp)` is a truncated — not an exact — part (`Rounding` is the adjustment
+    // applied to the truncated significand), so exactness is decided by the variants.
+    let is_exact = matches!((&re, &im), (Exact(_), Exact(_)));
     let (re_val, re_rnd) = match re {
         Approximation::Exact(v) => (v, Rounding::NoOp),
         Approximation::Inexact(v, r) => (v, r),
@@ -153,10 +148,46 @@ pub(crate) fn combine_parts<R: Round, const B: Word>(
         Approximation::Inexact(v, r) => (v, r),
     };
     let value = CBig::from_parts(re_val, im_val);
-    if re_rnd == Rounding::NoOp && im_rnd == Rounding::NoOp {
+    if is_exact {
         Exact(value)
     } else {
         Inexact(value, (re_rnd, im_rnd))
+    }
+}
+
+/// Combine the two per-part float results of a componentwise operation into a [`CfpResult`].
+///
+/// The parts are independent, so a part that leaves the exponent range does not discard the
+/// other one: when exactly one part overflows or underflows it saturates on its own (to a signed
+/// infinity / signed zero, flagged inexact) and the other part is kept. When both parts fail —
+/// or one fails for another reason — the (first) error is returned for the caller's policy.
+pub(crate) fn combine_results<R: Round, const B: Word>(
+    re: FpResult<FBig<R, B>>,
+    im: FpResult<FBig<R, B>>,
+) -> CfpResult<R, B> {
+    fn saturate<R: Round, const B: Word>(
+        error: FpError,
+        context: FloatCtxt<R>,
+    ) -> FpResult<FBig<R, B>> {
+        let repr = match error {
+            FpError::Overflow(Sign::Positive) => Repr::infinity(),
+            FpError::Overflow(Sign::Negative) => Repr::neg_infinity(),
+            FpError::Underflow(sign) => Repr::zero_with_sign(sign),
+            other => return Err(other),
+        };
+        Ok(Inexact(FBig::from_repr(repr, context), Rounding::NoOp))
+    }
+    match (re, im) {
+        (Ok(re), Ok(im)) => Ok(combine_parts(re, im)),
+        (Err(e), Err(_)) => Err(e),
+        (Err(e), Ok(im)) => {
+            let re = saturate(e, im.value_ref().context())?;
+            Ok(combine_parts(re, im))
+        }
+        (Ok(re), Err(e)) => {
+            let im = saturate(e, re.value_ref().context())?;
+            Ok(combine_parts(re, im))
+        }
     }
 }
 

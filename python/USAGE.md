@@ -41,10 +41,29 @@ so mixed operands just work:
 UBig(2) + 3 == 5
 FBig(1.5) * 2 == FBig(3.0)
 UBig(17) // 5 == 3
+UBig(7) / 2 == RBig.from_parts(7, 2)   # `/` between integers is exact (a rational)
 divmod(UBig(17), 5) == (UBig(3), UBig(2))
+7 % UBig(3) == 1          # a Python number can be on either side
+UBig(3) - 5 == IBig(-2)   # a negative difference of UBig is an IBig
 ```
 
-- **Integers**: `+ - * / // % **`, comparisons, in-place ops, bit operations
+Equal numbers also **hash** equally, across the dashu types and with Python's `int`, `float`,
+`Fraction`, `Decimal` and `complex`, so they can be mixed as `dict` keys and `set` members
+(`{1.5: "x"}[FBig(1.5)]`, `5 in {UBig(5)}`).
+
+Division and modulo by zero follow Python: an integer or rational zero divisor raises
+`ZeroDivisionError` (as does `%` by a float zero), while `/` by a float zero gives an infinity
+(and `0 / 0` raises `ZeroDivisionError`). An infinity can be compared, negated and printed, but
+there is no NaN: arithmetic and rounding with an infinite operand raise `ValueError`.
+`pow(x, e, 0)` raises `ValueError`. `int(x)` truncates toward zero for every type, and
+`math.floor` / `math.ceil` / `math.trunc` / `round()` are exact for `FBig`, `DBig` and `RBig`
+(`round()` rounds ties away from zero).
+
+The integers are values, like Python's `int`: an augmented assignment (`n += 1`, `n <<= 3`,
+`n &= m`, ...) is `n = n + 1` and binds the name to a new object, so other references to the
+old object (an alias, a `set` member, a `dict` key) keep their value.
+
+- **Integers**: `+ - * / // % **`, comparisons, augmented assignments, bit operations
   (`& | ^ << >>`), roots (`sqrt`/`cbrt`/`nth_root`), `gcd`/`gcd_ext`, `ilog`, bit
   predicates, and `to_words`/`to_sign_words`/`to_chunks`/`to_bytes`.
 - **Floats / Decimal**: arithmetic, comparisons, rounding (`trunc`/`floor`/`ceil`/
@@ -56,11 +75,16 @@ divmod(UBig(17), 5) == (UBig(3), UBig(2))
 
 Transcendentals are **panic-free**: domain errors raise `ValueError`, indeterminate forms
 like `0/0` raise `ZeroDivisionError`, and overflow/underflow yield signed infinities or
-zeros. They share a module-wide constant cache (`dashu.Cache`) so repeated calls at
+zeros. A value of unlimited precision (`x.with_precision(0)`) raises `ValueError` where the
+result would have to be rounded. They share a module-wide constant cache (`dashu.Cache`) so repeated calls at
 increasing precision reuse the precomputed constants.
 
 A module-level `math` API mirrors the common functions — `dashu.sin`, `dashu.sqrt`,
-`dashu.exp`, `dashu.gcd`, `dashu.lcm`, … — and likewise accepts plain Python numbers.
+`dashu.exp`, `dashu.gcd`, `dashu.lcm`, … — and likewise accepts plain Python numbers. An exact
+argument (an `int`, `UBig`/`IBig`, `RBig` or `Fraction`) is taken at the module default
+precision, so `dashu.sqrt(2) == dashu.sqrt(2.0)`. The functions of two arguments (`hypot`,
+`atan2`, `powf`, also as the `atan2`/`powf` methods) work at the larger precision of the two,
+like the arithmetic operators.
 
 ## Precision
 
@@ -116,13 +140,25 @@ format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
 
 - **Integers** delegate to Python `int`, so every presentation type works (`b`/`o`/`d`/
   `x`/`X`/`c`/`n`) with sign, width, fill, zero-pad, and grouping — with no loss.
-- **Floats** (`FBig`/`DBig`) support `e`/`E`/`f`/`g` with precision, sign, width, align,
-  fill, zero-pad, and grouping. With no explicit precision, all significant digits are
-  shown (use `.6e` for the fixed 6-digit default).
+- **Floats** (`FBig`/`DBig`) support `e`/`E`/`f`/`g`/`G`/`%` with precision, sign, width,
+  align, fill, zero-pad, and grouping, laid out as for Python's `float`. With no explicit
+  precision, all significant digits are shown (use `.6e` for the fixed 6-digit default).
+  `g` switches to the scientific notation as in Python (exponent below -4 or not below the
+  precision): `format(DBig("123456"), ".2g") == '1.2e+05'`. Digits are rounded half away
+  from zero (the rounding of `DBig`), where `float` rounds half to even.
 - **`FBig` is base 2**, so its default `str`/`format` and the `'a'`/`'A'` types print in
   **hexadecimal** — lossless, with no base conversion, e.g. `str(FBig(1.5)) == '0x3p-1'`.
-  Decimal presentations (`'e'`/`'f'`/`'g'`) convert to base 10. `DBig` prints in decimal.
-- **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`.
+  The sign option and zero-padding apply there too: `format(FBig(-1.5), "012a") ==
+  '-0x000003p-1'`. Decimal presentations (`'e'`/`'f'`/`'g'`) convert to base 10; with an
+  explicit precision (and for `'f'`) the digits are those of the exact binary value, e.g.
+  `format(FBig(0.1), ".20f") == '0.10000000000000000555'`. `DBig` prints in decimal.
+- **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`; with a float
+  presentation type the digits are those of the exact value, rounded once at the requested
+  precision.
+- **`CBig`** prints as `(re+imj)`: the precision, type and grouping apply to each part, the
+  sign option to the real part, and the width, fill and alignment once to the whole text, as
+  for Python's `complex` (`format(CBig(3.0, -4.0), "*>16.2f") == '****(3.00-4.00j)'`).
+  Zero-padding and the `=` alignment are rejected, as `complex` does.
 
 ## Cross-type comparison
 
@@ -205,7 +241,7 @@ on the same type:
 ### zeroize (feature `zeroize`)
 
 Every type gains a `.zeroize()` method that overwrites the backing memory (buffers become
-zero) before the value is dropped:
+zero) before the value is dropped. The value becomes zero; a float keeps its precision:
 
 ```python
 >>> v = UBig(12345)

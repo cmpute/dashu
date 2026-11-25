@@ -3,7 +3,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode, Round, Rounded},
-    utils::{shr_digits, split_digits, split_digits_ref},
+    utils::{digit_len, shr_digits, split_digits_ref},
 };
 use dashu_base::{Approximation::*, Sign};
 use dashu_int::{IBig, Word};
@@ -46,14 +46,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
     pub fn trunc(&self) -> Self {
         assert_finite(&self.repr);
 
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.clone();
         } else if self.repr.smaller_than_one() {
             return self.sign_kept_int(IBig::ZERO, Context::new(0));
         }
 
-        let shift = (-self.repr.exponent) as usize;
+        let shift = self.repr.exponent.unsigned_abs();
         let signif = shr_digits::<B>(&self.repr.significand, shift);
+        if signif.is_zero() {
+            // |self| < 1 after all (`smaller_than_one` is only an estimate): same result as
+            // the shortcut above
+            return self.sign_kept_int(IBig::ZERO, Context::new(0));
+        }
         let context = Context::new(self.context.precision.saturating_sub(shift));
         self.sign_kept_int(signif, context)
     }
@@ -65,7 +70,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     // this number.
     pub(crate) fn split_at_point_internal(&self) -> (IBig, IBig, usize) {
         debug_assert!(self.repr.exponent < 0);
-        let shift = (-self.repr.exponent) as usize;
+        let shift = self.repr.exponent.unsigned_abs();
         if self.repr.smaller_than_one() {
             // For numbers smaller than 1, the integral part is zero and the stored
             // significand is the whole fractional payload.
@@ -86,7 +91,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
     /// Split the rational number into integral and fractional parts (split at the radix point)
     ///
-    /// It's equivalent to `(self.trunc(), self.fract())`
+    /// It's equivalent to `(self.trunc(), self.fract())`, including the precisions and the
+    /// signs of zero parts (both parts carry the sign of `self`).
     ///
     /// # Examples
     ///
@@ -103,27 +109,45 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// assert_eq!(fract.precision(), 3);
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number is infinte
     pub fn split_at_point(self) -> (Self, Self) {
-        // trivial case when the exponent is positive
-        if self.repr.exponent >= 0 {
-            return (self, Self::ZERO);
+        assert_finite(&self.repr);
+
+        // trivial cases: an integer (including ±0) has a zero fractional part, and a number
+        // below one in magnitude a zero integral part; the zeros keep the sign of `self`
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
+            let fract = self.sign_kept_int(IBig::ZERO, Context::new(0));
+            return (self, fract);
         } else if self.repr.smaller_than_one() {
-            return (Self::ZERO, self);
+            let trunc = self.sign_kept_int(IBig::ZERO, Context::new(0));
+            return (trunc, self);
         }
 
-        let shift = (-self.repr.exponent) as usize;
-        let (hi, lo) = split_digits::<B>(self.repr.significand, shift);
+        let shift = self.repr.exponent.unsigned_abs();
+        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
+        if hi.is_zero() {
+            // |self| < 1 after all (`smaller_than_one` is only an estimate)
+            let trunc = self.sign_kept_int(IBig::ZERO, Context::new(0));
+            return (trunc, self);
+        }
         let hi_ctxt = Context::new(self.context.precision.saturating_sub(shift));
         let lo_ctxt = Context::new(shift);
         (
-            FBig::new(Repr::new(hi, 0), hi_ctxt),
+            self.sign_kept_int(hi, hi_ctxt),
             FBig::new(Repr::new(lo, self.repr.exponent), lo_ctxt),
         )
     }
 
     /// Get the fractional part of the float
     ///
-    /// **Note**: this function will adjust the precision accordingly!
+    /// **Note**: this function will adjust the precision accordingly! The fractional part
+    /// of a number with a nonzero integral part gets the number of its fractional digits as
+    /// precision; a number below one in magnitude is its own fractional part and is returned
+    /// unchanged (precision included); the (zero) fractional part of an integer has unlimited
+    /// precision and the sign of the number.
     ///
     /// # Examples
     ///
@@ -144,13 +168,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
     #[inline]
     pub fn fract(&self) -> Self {
         assert_finite(&self.repr);
-        if self.repr.exponent >= 0 {
+        if self.repr.significand.is_zero() || self.repr.exponent >= 0 {
             return self.sign_kept_int(IBig::ZERO, Context::new(0));
         } else if self.repr.smaller_than_one() {
             return self.clone();
         }
 
-        let (_, lo, precision) = self.split_at_point_internal();
+        let (hi, lo, precision) = self.split_at_point_internal();
+        if hi.is_zero() {
+            // |self| < 1 after all (`smaller_than_one` is only an estimate): the number is
+            // its own fractional part, with its own precision
+            return self.clone();
+        }
         let context = Context::new(precision);
         FBig::new(Repr::new(lo, self.repr.exponent), context)
     }
@@ -185,14 +214,16 @@ impl<R: Round, const B: Word> FBig<R, B> {
         } else if self.repr.smaller_than_one() {
             return match self.repr.sign() {
                 Sign::Positive => Self::ONE,
-                Sign::Negative => Self::ZERO,
+                // a negative number above -1 rounds up to -0: rounding to an integer keeps
+                // the sign of the operand (IEEE 754 roundToIntegralTowardPositive)
+                Sign::Negative => self.sign_kept_int(IBig::ZERO, Context::new(0)),
             };
         }
 
         let (hi, lo, precision) = self.split_at_point_internal();
         let rounding = mode::Up::round_fract::<B>(&hi, lo, precision);
         let context = Context::new(self.context.precision.saturating_sub(precision));
-        FBig::new(Repr::new(hi + rounding, 0), context)
+        self.sign_kept_int(hi + rounding, context)
     }
 
     /// Returns the largest integer less than or equal to self.
@@ -334,6 +365,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
+    /// A result too large for the exponent range (the rounding carries it to or beyond
+    /// `BASE^isize::MAX`) saturates like an overflowing multiplication does, see
+    /// [`Context::unwrap_fp`].
+    ///
     /// # Panics
     ///
     /// Panics if the number is infinte
@@ -345,29 +380,48 @@ impl<R: Round, const B: Word> FBig<R, B> {
             return Exact(self.clone());
         }
 
+        // The exponent differences below are taken as unsigned distances: `exp` and the
+        // stored exponent can sit at opposite ends of the `isize` range.
         let self_exp = self.repr.exponent;
         if exp <= self_exp {
             // finer-or-equal quantum: self is already an exact multiple of BASE^exp,
             // so only the precision changes (set so that ulp == BASE^exp).
-            let precision = (self_exp + self.repr.digits() as isize - exp) as usize;
+            let precision = self_exp.abs_diff(exp).saturating_add(self.repr.digits());
             return Exact(FBig::new(self.repr.clone(), Context::new(precision)));
         }
 
         // coarser quantum: round off (exp - self_exp) low-order digits.
         // Because a normalized significand is never divisible by BASE, this branch
         // is always inexact (its low part is never all-zero).
-        let shift = (exp - self_exp) as usize;
-        let (hi, lo) = split_digits_ref::<B>(&self.repr.significand, shift);
-        let adjust = R::round_fract::<B>(&hi, lo, shift);
-        let repr = Repr::new(hi + adjust, exp);
-        // precision is set so that ulp == BASE^exp; a result that rounds to zero
-        // has no meaningful ulp, so it gets unlimited precision (like `round()`).
-        let precision = if repr.is_pos_zero() {
-            0
+        let shift = exp.abs_diff(self_exp);
+        let (hi, lo) = if shift > self.repr.digits() {
+            // the whole significand lies below the quantum (and `shift` may be far too
+            // large to build BASE^shift for an actual split)
+            (IBig::ZERO, self.repr.significand.clone())
         } else {
-            (repr.exponent + repr.digits() as isize - exp) as usize
+            split_digits_ref::<B>(&self.repr.significand, shift)
         };
-        Inexact(FBig::new(repr, Context::new(precision)), adjust)
+        let adjust = R::round_fract::<B>(&hi, lo, shift);
+        let signif = hi + adjust;
+        if signif.is_zero() {
+            // A result that rounds to zero keeps the sign of `self` (IEEE 754 `quantize`
+            // is sign-preserving, like `round()`); it has no meaningful ulp, so it gets
+            // unlimited precision (again like `round()`).
+            let repr = Repr::zero_with_sign(self.repr.sign());
+            return Inexact(FBig::new(repr, Context::new(0)), adjust);
+        }
+        // precision is set so that ulp == BASE^exp: the digits of the multiple of the quantum
+        let context = Context::new(digit_len::<B>(&signif));
+        match Repr::new_wide(signif, exp as i128) {
+            Ok(repr) => Inexact(FBig::new(repr, context), adjust),
+            // The multiple does not fit the exponent range: a carry out of the top digit (or
+            // the multiple's own trailing zeros) moved it onto or past the `isize::MAX`
+            // sentinel exponent. Like every other operation it saturates to the overflow
+            // endpoint of the rounding mode, instead of leaving a nonzero significand at the
+            // sentinel exponent (which normalization would have capped a factor `BASE` too
+            // low). `exp` lies above the stored exponent, so there is no underflow here.
+            Err(_) => context.overflow_repr_endpoint(self.repr.sign()),
+        }
     }
 }
 

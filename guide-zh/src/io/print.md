@@ -28,7 +28,7 @@ assert_eq!(format!("{}", DBig::from_str("12.34")?), "12.34");
 assert_eq!(format!("{:.1}", DBig::from_str("12.34")?), "12.3");
 ```
 
-要使用科学记数法，请使用 `LowerExp`/`UpperExp`：在十进制下指数标记为 `e`/`E`，在其他基数下为 `@`。无穷值在 `Display` 和 `Debug` 下均渲染为 `inf` / `-inf`。
+要使用科学记数法，请使用 `LowerExp`/`UpperExp`：在十进制下指数标记为 `e`/`E`，在其他基数下为 `@`。无穷值在 `Display` 和 `Debug` 下均渲染为 `inf` / `-inf`；在 `Display` 和科学记数法格式下，它们与有限数一样遵循宽度、填充、对齐、`+` 和 `0` 标志（`{:+8}` 输出 `    +inf`），而精度对它们不起作用。
 
 ```rust
 use core::str::FromStr;
@@ -50,7 +50,7 @@ assert_eq!(format!("{}", RBig::from_str("22/7")?), "22/7");
 assert_eq!(format!("{}", RBig::from_str("5/1")?), "5");
 ```
 
-对于位置（十进制）展开，请使用 `in_expanded(10)`。`{:.N}` 打印恰好 `N` 位小数；`#` 标志会检测循环节并用括号括起：
+对于位置（十进制）展开，请使用 `in_expanded(10)`。`{:.N}` 打印恰好 `N` 位小数（舍入到最接近的值）；`#` 标志则打印精确值——有限展开会完整打印，循环展开会检测循环节并用括号括起：
 
 ```rust
 use dashu::rational::RBig;
@@ -62,7 +62,7 @@ assert_eq!(format!("{:#}", x.in_expanded(10)), "0.(3)");
 
 ## 复数格式化
 
-`CBig` 的 `Display` 使用代数 $a+bi$ 记法：虚部项始终带有显式符号，系数为 1 时省略（`i` 而非 `1i`），虚部为零时省略。
+`CBig` 的 `Display` 使用代数 $a+bi$ 记法：虚部项始终带有显式符号，系数为 1 时省略（`i` 而非 `1i`），虚部为零时省略。在大于 18 的进制中，字母 `i` 本身是一个数字，因此虚部项以显式的 `*i` 后缀书写，且系数不省略（`1+2i*i`、`1*i`）。
 
 ```rust
 use dashu::complex::CBig;

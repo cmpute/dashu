@@ -16,7 +16,7 @@ use crate::{
     helper_macros::debug_assert_zero,
     math::{shl_dword, FastDivideNormalized2},
     memory::MemoryAllocation,
-    primitive::{double_word, extend_word, shrink_dword},
+    primitive::{double_word, extend_word, shrink_dword, split_dword},
     repr::Repr,
     repr::TypedRepr,
     shift,
@@ -77,7 +77,12 @@ impl ConstSingleDivisor {
     #[inline]
     pub const fn rem_dword(&self, dword: DoubleWord) -> Word {
         if self.0.shift() == 0 {
-            self.0.divider().div_rem_2by1(dword).1
+            // The 2-by-1 division requires the high word to be less than the divisor. The
+            // divisor has its top bit set, so one conditional subtraction reduces it.
+            let (lo, hi) = split_dword(dword);
+            let divisor = self.0.divisor();
+            let hi = if hi >= divisor { hi - divisor } else { hi };
+            self.0.divider().div_rem_2by1(double_word(lo, hi)).1
         } else {
             let (n0, n1, n2) = shl_dword(dword, self.0.shift());
             let (_, r1) = self.0.divider().div_rem_2by1(double_word(n1, n2));

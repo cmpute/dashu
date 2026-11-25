@@ -54,14 +54,27 @@ pub fn parse_binary_float(static_: bool, embedded: bool, input: TokenStream) -> 
 
     if mag.bit_len() <= 32 {
         // if the significand fits in a u32, generates const expression
+        let neg_zero = mag.is_zero() && sign == Sign::Negative;
         let sign = quote_sign(embedded, sign);
         let u: u32 = mag.try_into().unwrap();
 
-        let value_tt = quote!( #type_tt::from_parts_const(#sign, #u as _, #exp, Some(#prec)) );
-        return if static_ {
-            quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }}
+        return if neg_zero {
+            // the sign of a zero is not carried by the significand
+            let value_tt = quote!( #type_tt::from_repr_const(#repr_tt::neg_zero()) );
+            if static_ {
+                quote! {{ static VALUE: #type_tt = #value_tt; &VALUE }}
+            } else {
+                value_tt
+            }
+        } else if static_ {
+            // static floats have unlimited precision, whatever the size of the significand
+            quote! {{
+                static VALUE: #type_tt =
+                    #type_tt::from_repr_const(#repr_tt::new_const(#sign, #u as _, #exp));
+                &VALUE
+            }}
         } else {
-            value_tt
+            quote!( #type_tt::from_parts_const(#sign, #u as _, #exp, Some(#prec)) )
         };
     }
 
@@ -92,6 +105,7 @@ pub fn parse_decimal_float(static_: bool, embedded: bool, input: TokenStream) ->
         .for_each(|tt| value_str.push_str(&tt.to_string()));
 
     let f = DBig::from_str(&value_str).unwrap_or_else(|_| panic_fbig_syntax());
+    let neg_zero = f.repr().is_neg_zero();
     let prec = f.precision();
     let (signif, exp) = f.into_repr().into_parts();
     let (sign, mag) = signif.into_parts();
@@ -107,11 +121,23 @@ pub fn parse_decimal_float(static_: bool, embedded: bool, input: TokenStream) ->
         let u: u32 = mag.try_into().unwrap();
         let sign = quote_sign(embedded, sign);
 
-        let value_tt = quote!( #ns::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) );
-        return if static_ {
-            quote! {{ static VALUE: #ns::DBig = #value_tt; &VALUE }}
+        return if neg_zero {
+            // the sign of a zero is not carried by the significand
+            let value_tt = quote!( #ns::DBig::from_repr_const(#ns::Repr::<10>::neg_zero()) );
+            if static_ {
+                quote! {{ static VALUE: #ns::DBig = #value_tt; &VALUE }}
+            } else {
+                value_tt
+            }
+        } else if static_ {
+            // static floats have unlimited precision, whatever the size of the significand
+            quote! {{
+                static VALUE: #ns::DBig =
+                    #ns::DBig::from_repr_const(#ns::Repr::<10>::new_const(#sign, #u as _, #exp));
+                &VALUE
+            }}
         } else {
-            value_tt
+            quote!( #ns::DBig::from_parts_const(#sign, #u as _, #exp, Some(#prec)) )
         };
     }
 
@@ -173,6 +199,7 @@ pub fn gen_binary_repr_const(embedded: bool, f: &FBig) -> (TokenStream, usize) {
 /// parts — shared by `fbig!` (via `parse_binary_float`) and `cbig!` (for each coefficient).
 pub fn gen_binary_fbig_value(embedded: bool, f: &FBig) -> TokenStream {
     let prec = f.precision();
+    let neg_zero = f.repr().is_neg_zero();
     let (signif, exp) = f.clone().into_repr().into_parts();
     let (sign, mag) = signif.into_parts();
 
@@ -184,7 +211,13 @@ pub fn gen_binary_fbig_value(embedded: bool, f: &FBig) -> TokenStream {
     let repr_tt = quote!( #ns::Repr::<2> );
     let type_tt = quote!( #ns::FBig::<#ns::round::mode::Zero, 2> );
 
-    if mag.bit_len() <= 32 {
+    if neg_zero {
+        // the sign of a zero is not carried by the significand
+        quote! {{
+            let context = #ns::Context::<#ns::round::mode::Zero>::new(#prec);
+            #type_tt::from_repr(#repr_tt::neg_zero(), context)
+        }}
+    } else if mag.bit_len() <= 32 {
         let sign = quote_sign(embedded, sign);
         let u: u32 = mag.try_into().unwrap();
         quote!( #type_tt::from_parts_const(#sign, #u as _, #exp, Some(#prec)) )

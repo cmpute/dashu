@@ -1,15 +1,13 @@
 use dashu_base::{
-    ring::DivRem, Approximation, CubicRoot, EstimatedLog2, Sign, SquareRoot, SquareRootRem,
-    UnsignedAbs,
+    ring::DivRem, Approximation, CubicRoot, Sign, SquareRoot, SquareRootRem, UnsignedAbs,
 };
 use dashu_int::{IBig, UBig};
 
 use crate::{
-    ball::Ball,
     error::{assert_limited_precision, panic_root_zeroth, FpError, FpResult},
     fbig::FBig,
     repr::{Context, Repr, Word},
-    round::{mode, ErrorBounds, Round, Rounding},
+    round::{ErrorBounds, Round},
     utils::{digit_len, shl_digits, split_digits_ref},
 };
 use core::cmp::Ordering;
@@ -80,7 +78,7 @@ impl<R: Round> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless `x` is zero).
     #[inline]
     pub fn cbrt<const B: Word>(&self, x: &Repr<B>) -> FpResult<FBig<R, B>> {
         self.nth_root(3, x)
@@ -105,16 +103,26 @@ impl<R: Round> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if `n` is zero, if the precision is unlimited, or if `n` is even and `x` is negative.
+    /// Panics if `n` is zero, or if the precision is unlimited (unless the root is trivially
+    /// exact: `x` is zero, or `n` is one).
     pub fn nth_root<const B: Word>(&self, n: usize, x: &Repr<B>) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if n == 0 {
             panic_root_zeroth()
         }
         debug_assert!(n < isize::MAX as usize);
+        if x.significand.is_zero() {
+            // The root of a zero is an exact zero for every `n`, resolved before the domain
+            // check below (`-0` is a zero, not a negative number). An odd root keeps the sign
+            // of the zero; an even root is `+0`, as IEEE 754 defines rootn(±0, n) for even
+            // `n > 0`. (`sqrt(-0)` is `-0`, also as IEEE 754 defines it, so `nth_root(2, -0)`
+            // and `sqrt(-0)` differ in the sign of the zero.) The zero also must not reach the
+            // integer root: UBig::ZERO.nth_root(n) erroneously returns ONE.
+            let zero = if n % 2 == 0 { Repr::zero() } else { x.clone() };
+            return Ok(Approximation::Exact(FBig::new(zero, *self)));
+        }
         let sign = x.sign();
         if sign == Sign::Negative && n % 2 == 0 {
             return Err(FpError::OutOfDomain);
@@ -122,12 +130,9 @@ impl<R: Round> Context<R> {
         if n == 1 {
             return self.finish_rounded(self.repr_round_ref(x));
         }
-        if x.significand.is_zero() {
-            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here.
-            // An even root of -0 already errored above, so reaching here the sign is
-            // preserved: odd root of ±0 is ±0.
-            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
-        }
+        // (after the exact shortcuts: a precision-0 zero such as `FBig::try_from(0.0)` or
+        // `DBig::ZERO` has an exact root, as it does for `sqrt`)
+        assert_limited_precision(self.precision);
 
         // operate on the magnitude so that shifting/splitting keep a clean sign;
         // the original sign is re-applied to the result at the end.
@@ -142,10 +147,14 @@ impl<R: Round> Context<R> {
         // second step — and the two roundings disagree exactly at midpoints of the coarse
         // grid (round-to-integer-then-re-round is a double rounding). The truncating choice
         // keeps the root at exactly `precision` digits, so a single rounding decides.
-        let digits = x.digits() as isize;
-        let r = (x.exponent + digits).rem_euclid(n as isize);
-        let shift =
-            n as isize * self.precision as isize - digits + r - n as isize * (r > 0) as isize;
+        //
+        // The exponent arithmetic is done in `i128`: the exponent can sit anywhere in the `isize`
+        // range, and neither `exponent + digits` nor `exponent − shift` need fit it (the result
+        // exponent, about `exponent / n`, always does).
+        let wide_n = n as i128;
+        let digits = x.digits() as i128;
+        let r = (x.exponent as i128 + digits).rem_euclid(wide_n);
+        let shift = wide_n * self.precision as i128 - digits + r - wide_n * (r > 0) as i128;
         let (signif, low, low_digits) = if shift > 0 {
             (shl_digits::<B>(&xmag, shift as usize), IBig::ZERO, 0)
         } else {
@@ -157,7 +166,7 @@ impl<R: Round> Context<R> {
         let mag: UBig = signif.unsigned_abs();
         let root: UBig = mag.nth_root(n);
         let rem: UBig = &mag - root.clone().pow(n);
-        let exp = (x.exponent - shift) / n as isize;
+        let exp = ((x.exponent as i128 - shift) / wide_n) as isize;
 
         let signed_root: IBig = sign * root.clone();
         debug_assert!(digit_len::<B>(root.as_ibig()) <= self.precision);
@@ -191,12 +200,10 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// The integer square root of the exponent-aligned significand (which carries ~2·p digits) is
     /// computed exactly, and its rounding to `p` digits is decided in a single step from the round
-    /// digit and the `sqrtrem` remainder (the sticky bit) — the same principle as MPFR. When the
+    /// digit and the `sqrtrem` remainder (the sticky part) — the same principle as MPFR. When the
     /// root has `p + 1` digits it is rounded directly to `p` digits, avoiding the double rounding
-    /// that a rem-vs-root + re-round path incurs. For a power-of-two base this fast path is already
-    /// correctly rounded; for other bases the result is additionally certified by a Ziv loop (the
-    /// base-`B` digit alignment of an integer square root is only clean when the base is a power of
-    /// two).
+    /// that a rem-vs-root + re-round path incurs. The decision is exact in every base, so the
+    /// result (and its `Exact`/`Inexact` flag) needs no further certification.
     ///
     /// # Panics
     ///
@@ -215,128 +222,109 @@ impl<R: ErrorBounds> Context<R> {
         if x.sign() == Sign::Negative {
             return Err(FpError::OutOfDomain);
         }
+        let p = self.precision;
 
-        // One-step correctly-rounded sqrt of the (finite, positive, limited) input at a working
-        // precision, used directly by the power-of-two fast path and by the Ziv loop otherwise.
-        let sqrt_rounded = |guard: usize| -> FpResult<FBig<R, B>> {
-            let gctx = Context::<R>::new(self.precision + guard);
-            let p = gctx.precision;
-
-            // Adjust the significand so the exponent is even, with ~2p significant digits.
-            let digits = x.digits() as isize;
-            let shift = p as isize * 2 - (digits & 1) + (x.exponent & 1) - digits;
-            let (signif, low, low_digits) = if shift > 0 {
-                (shl_digits::<B>(&x.significand, shift as usize), IBig::ZERO, 0)
-            } else {
-                let shift = (-shift) as usize;
-                let (hi, lo) = split_digits_ref::<B>(&x.significand, shift);
-                (hi, lo, shift)
-            };
-
-            let (root, rem) = signif.unsigned_abs().sqrt_rem();
-            let exp = (x.exponent - shift) / 2;
-            let exact = rem.is_zero() && low.is_zero();
-            // The root has `p` or `p+1` base-B digits, decided exactly in O(1) from the shifted
-            // significand's digit count: `signif` carries `2p − (digits&1) + (exp&1)` digits, so it
-            // has 2p+1 digits (root has p+1) exactly when the significand's digit count is even and
-            // the input exponent is odd.
-            let root_is_p1 = (digits & 1) == 0 && (x.exponent & 1) == 1;
-
-            // The result's exponent. A p+1-digit root is rounded to p digits by dropping the lowest
-            // base-B digit (`r = root / B`), which shifts the value by one base-B digit: `exp + 1`.
-            // The arithmetic works on the unsigned `root`; it is converted to `IBig` only where
-            // `round_low_part` (signed) and the result's `+ Rounding` need it.
-            let (sig, adjust, result_exp) = if !root_is_p1 {
-                // p-digit root: the remainder (and any truncated input) decide the rounding. An
-                // integer sqrt has no exact half-tie (`sqrt(n) = root + 1/2` would require
-                // `4·rem = 2·root + 1`, impossible), so the rem-vs-root comparison is the exact
-                // single rounding.
-                let adjust = if exact {
-                    Rounding::NoOp
-                } else {
-                    R::round_low_part(root.as_ibig(), Sign::Positive, || {
-                        rem.cmp(&root)
-                            .then_with(|| (low << 2).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
-                    })
-                };
-                (IBig::from(root), adjust, exp)
-            } else {
-                // p+1-digit root: round to p digits in one step. `r` = top p digits, `d` = round
-                // digit (a Word, from the single `div_rem`).
-                let (r, d) = root.div_rem(B);
-                let adjust = if exact {
-                    // The exact p+1-digit root: a clean rounding of `2·d` vs `B`, ties per the mode
-                    // (`2·d = B` is the real half-tie; `d vs ⌊B/2⌋` would mis-round odd bases).
-                    R::round_low_part(r.as_ibig(), Sign::Positive, || (d * 2).cmp(&B))
-                } else {
-                    // The true value is strictly above `root` (sticky remainder / truncated input),
-                    // so a round digit at the real half (2·d = B) is strictly past the half — report
-                    // Greater so every mode (including the directed ones) rounds from the correct
-                    // side. Delegating to `round_low_part` is what makes directed modes work: they
-                    // ignore the comparison and truncate/extend per their own direction.
-                    R::round_low_part(r.as_ibig(), Sign::Positive, || match (d * 2).cmp(&B) {
-                        Ordering::Equal => Ordering::Greater,
-                        other => other,
-                    })
-                };
-                (IBig::from(r), adjust, exp + 1)
-            };
-
-            let res = if exact && !root_is_p1 {
-                Approximation::Exact(sig)
-            } else {
-                Approximation::Inexact(sig + adjust, adjust)
-            };
-            Ok(res
-                .map(|signif| Repr::new(signif, result_exp))
-                .and_then(|v| gctx.repr_round(v))
-                .map(|v| FBig::new(v, gctx)))
+        // Adjust the significand so the exponent is even, with ~2p significant digits.
+        let digits = x.digits() as isize;
+        let shift = p as isize * 2 - (digits & 1) + (x.exponent & 1) - digits;
+        let (signif, low, low_digits) = if shift > 0 {
+            (shl_digits::<B>(&x.significand, shift as usize), IBig::ZERO, 0)
+        } else {
+            let shift = (-shift) as usize;
+            let (hi, lo) = split_digits_ref::<B>(&x.significand, shift);
+            (hi, lo, shift)
         };
 
-        if B.is_power_of_two() {
-            sqrt_rounded(0)
+        let (root, rem) = signif.unsigned_abs().sqrt_rem();
+        // `exponent − shift` is even by construction, but can leave the `isize` range for an
+        // exponent next to its limits (the halved value always fits).
+        let exp = ((x.exponent as i128 - shift as i128) / 2) as isize;
+        let exact = rem.is_zero() && low.is_zero();
+        // The root has `p` or `p+1` base-B digits, decided exactly in O(1) from the shifted
+        // significand's digit count: `signif` carries `2p − (digits&1) + (exp&1)` digits, so it
+        // has 2p+1 digits (root has p+1) exactly when the significand's digit count is even and
+        // the input exponent is odd.
+        let root_is_p1 = (digits & 1) == 0 && (x.exponent & 1) == 1;
+
+        // For an inexact root the true value is `root + frac` with `frac ∈ (0, 1)`. Comparing
+        // `frac` against 1/2: `(root + 1/2)² = root² + root + 1/4`, so it is `rem` against `root`,
+        // then the truncated input fraction `low / B^low_digits` against 1/4.
+        let frac_half_test = || {
+            rem.cmp(&root)
+                .then_with(|| (&low << 2).cmp(&Repr::<B>::BASE.pow(low_digits).into()))
+        };
+
+        // The result's exponent. A p+1-digit root is rounded to p digits by dropping the lowest
+        // base-B digit (`r = root / B`), which shifts the value by one base-B digit: `exp + 1`.
+        // The arithmetic works on the unsigned `root`; it is converted to `IBig` only where
+        // `round_low_part` (signed) and the result's `+ Rounding` need it.
+        let (res, result_exp) = if !root_is_p1 {
+            // p-digit root: the remainder (and any truncated input) decide the rounding.
+            let res = if exact {
+                Approximation::Exact(IBig::from(root))
+            } else {
+                let adjust = R::round_low_part(root.as_ibig(), Sign::Positive, frac_half_test);
+                Approximation::Inexact(IBig::from(root.clone()) + adjust, adjust)
+            };
+            (res, exp)
         } else {
-            // Near-correct kernel, mechanical radius: the base-`B` digit alignment of the integer
-            // square root is only clean when the base is a power of two, so for other bases the
-            // single rounding step is bounded by one ulp at the working precision — the same
-            // assumption every other [`Ball`] operator makes of its kernel.
-            //
-            // Routing it through `Ball::from_rounded` also gives an *exact* root `rad == 0`, and
-            // that is load-bearing: a zero radius is the only one Ziv can certify against a
-            // one-sided directed preimage (`Down`'s `[y, y+ulp)` cannot contain `[y−r, y+r]` for
-            // any `r > 0`). With a blanket `value.ulp()` the loop never converged on a perfect
-            // square — `sqrt(4)` in base 10 under `Down`/`Up`/`Zero` doubled its working precision
-            // to ~10^8 digits instead of returning `2`.
-            let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
-            self.ziv(initial_guard, |guard| {
-                let wp = self.precision + guard;
-                let rounded = sqrt_rounded(guard)?;
-                Ok(Ball::from_rounded(rounded.map(FBig::into_repr), wp)
-                    .to_value_radius::<R>(&Context::<R>::new(wp)))
-            })
-        }
+            // p+1-digit root: round to p digits in one step. `r` = top p digits, `d` = round
+            // digit (a Word, from the single `div_rem`).
+            let (r, d) = root.clone().div_rem(B);
+            let res = if exact && d == 0 {
+                // the dropped digit is zero: the root fits the precision as it is
+                Approximation::Exact(IBig::from(r))
+            } else {
+                // The dropped part is `d + frac` (in units of the round digit), compared against
+                // half the base. An exact root (`frac = 0`) is a clean `2·d` vs `B`, ties per the
+                // mode. Otherwise the value is strictly above `d`: `2·d ≥ B` is past the half,
+                // `2·d + 2 ≤ B` is below it, and the one remaining case (`2·d + 1 = B`, odd bases
+                // only) is decided by `frac` against 1/2.
+                let (d2, b) = (2 * d as u128, B as u128);
+                let adjust = R::round_low_part(r.as_ibig(), Sign::Positive, || {
+                    if exact {
+                        d2.cmp(&b)
+                    } else if d2 >= b {
+                        Ordering::Greater
+                    } else if d2 + 2 <= b {
+                        Ordering::Less
+                    } else {
+                        frac_half_test()
+                    }
+                });
+                Approximation::Inexact(IBig::from(r) + adjust, adjust)
+            };
+            (res, exp + 1)
+        };
+
+        Ok(res.map(|signif| FBig::new(Repr::new(signif, result_exp), *self)))
     }
 
     /// Compute `sqrt(a² + b²)` without spurious overflow/underflow.
     ///
-    /// This is the overflow-safe scaled sum-of-squares: the larger-magnitude operand is never
-    /// squared. Writing `m = max(|a|, |b|)` and `r = min(|a|,|b|) / m` (so `|r| ≤ 1`), the result is
-    /// `m · sqrt(1 + r²)`, where `1 + r² ∈ [1, 2]` cannot overflow. The result is correctly rounded
-    /// via a Ziv retry loop (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
+    /// Both operands are scaled by the same power of the base (an exact exponent shift) so that
+    /// the larger one is just below 1; the sum of the scaled squares is then computed exactly and
+    /// its correctly rounded square root is scaled back. The squares therefore cannot leave the
+    /// exponent range, wherever the operands sit in it, and a range error is reported only when
+    /// the result itself is out of range. An operand too small to affect the other beyond a
+    /// sticky part is not squared at all. The result is correctly rounded
+    /// (`hypot(±inf, ·) = +inf`, `hypot(0, 0) = +0`).
     ///
     /// This is a field-arithmetic-class op (no constant cache), like `sqrt`/`atan2`.
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless both operands are zero).
     pub fn hypot<const B: Word>(&self, a: &Repr<B>, b: &Repr<B>) -> FpResult<FBig<R, B>> {
         if a.is_infinite() || b.is_infinite() {
             return Ok(Approximation::Exact(FBig::new(Repr::infinity(), *self)));
         }
-        assert_limited_precision(self.precision);
         if a.significand.is_zero() && b.significand.is_zero() {
+            // exact, so resolved before the limited-precision assertion (like `sqrt(0)`): a
+            // precision-0 zero such as `FBig::try_from(0.0)` or `DBig::ZERO` is a valid operand
             return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // magnitudes, ordered large >= small (both finite, not both zero here)
         let a_mag = if a.sign() == Sign::Negative {
@@ -360,49 +348,51 @@ impl<R: ErrorBounds> Context<R> {
             return self.finish_rounded(self.repr_round_ref(&large));
         }
 
-        // The result is `sqrt(large² + small²)`, i.e. ∈ [large, large·√2]. It overflows only when
-        // `large` is so large that the result reaches the infinity sentinel exponent — unreachable
-        // for real inputs, but pre-checked here so the Ziv closure can use infallible `FBig`
-        // arithmetic.
-        if large.exponent >= isize::MAX - 1 {
-            return Err(FpError::Overflow(Sign::Positive));
+        // Exponent arithmetic below is done in `i128`: the operands can sit anywhere in the
+        // `isize` exponent range, and the result must not depend on where.
+        let p = self.precision as i128;
+        let (large_exp, small_exp) = (large.exponent as i128, small.exponent as i128);
+
+        // A negligible smaller operand: `hypot = large + δ` with `0 < δ < small²/(2·large)`.
+        // Once `δ` is below the last digit that can influence the rounding of `large`, the result
+        // is `large` rounded with a positive sticky part — no need for the `2·gap` digits the
+        // exact sum of squares would take (`hypot(1, 10^10000000)` is a single rounding).
+        // With `small < B^hi_s` and `large ≥ B^lo_l`, `δ < B^(2·hi_s − lo_l)`.
+        let hi_s = small_exp + small.digits_ub() as i128;
+        let digits_lb_l = large.digits_lb() as i128;
+        let lo_l = large_exp + digits_lb_l - 1;
+        let pad = (p + 1 - digits_lb_l).max(0);
+        if 2 * hi_s - lo_l <= large_exp - pad - 2 {
+            return self.round_sticky(&large, Sign::Positive);
         }
 
-        let initial_guard = crate::utils::ceil_usize(self.precision.log2_est()) + 10;
-        self.ziv(initial_guard, |guard| {
-            let gctx = Context::<mode::HalfEven>::new(self.precision + guard);
-            // result = sqrt(large² + small²), with both operands scaled down by `k` base-B digits
-            // before squaring (so `large²` can't overflow the exponent) and the root scaled back:
-            // sqrt(L² + S²) · B^k = sqrt(large² + small²) for L = large·B⁻ᵏ, S = small·B⁻ᵏ. No
-            // division — so for integer inputs every step is exact (MPFR's `exact` flag), and an
-            // all-exact chain yields the exact true value. The tracking variants report radius 0
-            // then, which `ziv` accepts without the containment test (it can't certify an
-            // exactly-representable result under directed rounding — e.g. hypot(3,4)=5,
-            // hypot(5,12)=13 — which sits on a one-sided preimage boundary).
-            // Scale down by the largest raw exponent of the *two* operands: base-B
-            // normalization can leave the smaller value with the larger raw exponent
-            // (e.g. `4·2^e` normalizes to `1·2^(e+2)`), and it is small's square that
-            // would then collide with the infinity sentinel.
-            let k = (large.exponent.max(small.exponent) as i128 - (isize::MAX as i128 - 2) / 2)
-                .max(0) as isize;
-            let wp = gctx.precision;
-            // The input roundings' exactness folds through `from_rounded`: an exact input keeps
-            // `rad = 0`, so an all-exact chain (integer inputs, no rounding anywhere) carries a
-            // zero radius — the exactly-representable directed-rounding case that no nonzero
-            // radius could certify (e.g. hypot(3,4)=5, hypot(5,12)=13).
-            let large_ball = Ball::from_rounded(gctx.repr_round_ref(&large), wp);
-            let small_ball = Ball::from_rounded(gctx.repr_round_ref(&small), wp);
-            // The shifted balls are used twice (the square), so bind them once — a shift is a full
-            // O(p) clone otherwise.
-            let l = large_ball.shift(-k);
-            let s = small_ball.shift(-k);
-            let l_sq = l.mul(&l, wp)?;
-            let s_sq = s.mul(&s, wp)?;
-            let sum = l_sq.add(&s_sq, wp)?;
-            let root = sum.sqrt(wp)?;
-            let result = root.shift(k); // exact exponent shift — scales back, radius unchanged
-            Ok(result.to_value_radius::<R>(&Context::<R>::new(wp)))
-        })
+        // Otherwise the exponent gap is bounded by the operands' sizes and the precision, so the
+        // sum of squares is computed *exactly* and handed to the (single-step, correctly rounded)
+        // square root: the result and its `Exact`/`Inexact` flag need no certification. Both
+        // operands are first scaled by `B⁻ᵏ` — an exact exponent shift that puts the larger one
+        // just below 1 — so that the squares cannot leave the exponent range, wherever the
+        // operands sit in it; the root is scaled back at the end.
+        let k = large_exp + large.digits_ub() as i128;
+        let scaled = |v: &Repr<B>| Repr::<B> {
+            significand: v.significand.clone(),
+            exponent: (v.exponent as i128 - k) as isize,
+        };
+        let (l, s) = (scaled(&large), scaled(&small));
+        let sum = &(&l * &l) + &(&s * &s);
+        let root = self.sqrt(&sum)?;
+        let exponent = root.value_ref().repr.exponent as i128 + k;
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(Sign::Positive));
+        }
+        if exponent <= isize::MIN as i128 {
+            // (the *value* is at least `large`, but its normalized significand has too many
+            // digits to keep the exponent above the sentinel)
+            return Err(FpError::Underflow(Sign::Positive));
+        }
+        Ok(root.map(|mut v| {
+            v.repr.exponent = exponent as isize;
+            v
+        }))
     }
 }
 

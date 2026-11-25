@@ -1,51 +1,187 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 
-use dashu::base::Abs;
-use dashu::float::{DBig, FBig};
-use num_order::{NumHash, NumOrd};
+use dashu::base::{Abs, Sign};
+use dashu::float::{Context, DBig, FBig, Word, round::Round};
+use dashu::integer::IBig;
+use num_order::NumOrd;
 use pyo3::{
-    Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, intern, prelude::*,
+    Bound, IntoPyObjectExt, Py, PyAny, PyResult,
+    basic::CompareOp,
+    exceptions::{PyOverflowError, PyValueError, PyZeroDivisionError},
+    intern,
+    prelude::*,
     types::PyFloat,
 };
 
 use crate::{
-    cache::{unwrap_float, with_cache},
+    cache::{limited, unwrap_float, with_cache},
     convert::{conversion_error_to_py, parse_error_to_py, parse_to_dbig},
     types::{DPy, FPy, IPy, PySign, RPy, UniInput},
 };
 
+const ERRMSG_INFINITY: &str = "arithmetic with infinity";
+
+/// Arithmetic with an infinite operand raises `ValueError`, as the transcendentals and `%` do
+/// (the Rust operators panic on it). An infinity is a terminal value here, the result of an
+/// overflow or of a division by zero: it can be compared, negated and printed, but there is no
+/// NaN to stand for `inf - inf` or `inf * 0`, so no arithmetic is defined on it.
+fn check_finite<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyResult<()> {
+    if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
+        Err(PyValueError::new_err(ERRMSG_INFINITY))
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn float_add<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.add(rhs))
+}
+pub(crate) fn float_sub<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.sub(rhs))
+}
+pub(crate) fn float_mul<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.mul(rhs))
+}
+/// The quotient of two floats. A non-zero number divided by zero is an infinity, `0 / 0`
+/// raises `ZeroDivisionError` (it is indeterminate), and two operands of unlimited precision
+/// raise `ValueError` (the quotient has to be rounded to some precision).
+pub(crate) fn float_div<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    let is_zero = |f: &FBig<R, B>| f.repr().significand().is_zero();
+    if is_zero(rhs) && is_zero(lhs) {
+        return Err(PyZeroDivisionError::new_err("indeterminate form (0/0)"));
+    }
+    if !is_zero(rhs) {
+        limited(Context::max(lhs.context(), rhs.context()))?;
+    }
+    Ok(lhs.div(rhs))
+}
+
 /// Generate forward (and optional reverse) arithmetic dispatchers that first coerce the
-/// operand to the wrapper's own type via the `into_*` helper, then apply the Rust operator.
+/// operand to the wrapper's own type via the `into_*` helper, then apply the operator
+/// (one of the `float_*` functions above).
 macro_rules! impl_float_binops {
-    ($ty:ident, $into:ident, $method:ident, $rs_method:ident) => {
-        fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    ($ty:ident, $into:ident, $method:ident, $op:ident) => {
+        pub(crate) fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
             let rhs = rhs.$into()?;
-            $ty((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
+            $ty($op(&lhs.0, &rhs.0)?).into_py_any(py)
         }
     };
-    ($ty:ident, $into:ident, $method:ident, $rev_method:ident, $rs_method:ident) => {
-        impl_float_binops!($ty, $into, $method, $rs_method);
-        fn $rev_method(lhs: UniInput<'_>, rhs: &$ty, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    ($ty:ident, $into:ident, $method:ident, $rev_method:ident, $op:ident) => {
+        impl_float_binops!($ty, $into, $method, $op);
+        pub(crate) fn $rev_method(
+            lhs: UniInput<'_>,
+            rhs: &$ty,
+            py: Python<'_>,
+        ) -> PyResult<Py<PyAny>> {
             let lhs = lhs.$into()?;
-            $ty((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
+            $ty($op(&lhs.0, &rhs.0)?).into_py_any(py)
         }
     };
 }
 
-impl_float_binops!(FPy, into_fpy, fpy_add, add);
-impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, sub);
-impl_float_binops!(FPy, into_fpy, fpy_mul, mul);
-impl_float_binops!(FPy, into_fpy, fpy_div, fpy_rdiv, div);
-impl_float_binops!(FPy, into_fpy, fpy_mod, fpy_rmod, rem);
+/// The floored modulo of Python (`a - b * floor(a / b)`, which has the sign of `b`), with
+/// Python exceptions for the operands that the `%` operator of the float panics on: a zero
+/// divisor raises `ZeroDivisionError` (as `float` does), and an infinite operand raises
+/// `ValueError`.
+///
+/// The `%` operator of the float gives a remainder whose sign depends on the rounding mode of
+/// the type (the sign of the dividend for `FBig`, the remainder of the least magnitude for
+/// `DBig`); it is exact and smaller than the divisor in magnitude, so adding the divisor to a
+/// remainder of the other sign gives the floored one (rounded to the precision of the operands
+/// if it has more digits, as for `float`).
+fn float_rem<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyResult<FBig<R, B>> {
+    if rhs.repr().significand().is_zero() && rhs.repr().is_finite() {
+        return Err(PyZeroDivisionError::new_err("float modulo by zero"));
+    }
+    if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
+        return Err(PyValueError::new_err(ERRMSG_INFINITY));
+    }
+    let rem = lhs.rem(rhs);
+    if !rem.repr().significand().is_zero() && rem.repr().sign() != rhs.repr().sign() {
+        Ok(rem + rhs)
+    } else {
+        Ok(rem)
+    }
+}
 
-impl_float_binops!(DPy, into_dpy, dpy_add, add);
-impl_float_binops!(DPy, into_dpy, dpy_sub, dpy_rsub, sub);
-impl_float_binops!(DPy, into_dpy, dpy_mul, mul);
-impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, div);
-impl_float_binops!(DPy, into_dpy, dpy_mod, dpy_rmod, rem);
+/// Generate the forward and reverse modulo dispatchers (see [`float_rem`]).
+macro_rules! impl_float_mod {
+    ($ty:ident, $into:ident, $method:ident, $rev_method:ident) => {
+        pub(crate) fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            let rhs = rhs.$into()?;
+            $ty(float_rem(&lhs.0, &rhs.0)?).into_py_any(py)
+        }
+        fn $rev_method(lhs: UniInput<'_>, rhs: &$ty, py: Python<'_>) -> PyResult<Py<PyAny>> {
+            let lhs = lhs.$into()?;
+            $ty(float_rem(&lhs.0, &rhs.0)?).into_py_any(py)
+        }
+    };
+}
+
+/// Round a float to an integral value (with `trunc`, `floor`, `ceil` or `round`) and convert
+/// it to an integer. An infinity raises `OverflowError`, as for Python's `float`.
+fn integral_to_ibig<R: Round, const B: Word>(
+    f: &FBig<R, B>,
+    round: impl FnOnce(&FBig<R, B>) -> FBig<R, B>,
+) -> PyResult<IBig> {
+    if f.repr().is_infinite() {
+        return Err(PyOverflowError::new_err("cannot convert infinity to integer"));
+    }
+    Ok(round(f).to_int().value())
+}
+
+/// The operand of a method that has no value for an infinity (the Rust method panics on
+/// it): a `ValueError`, as for arithmetic with an infinity.
+fn finite<R: Round, const B: Word>(f: &FBig<R, B>) -> PyResult<&FBig<R, B>> {
+    if f.repr().is_infinite() {
+        Err(PyValueError::new_err(ERRMSG_INFINITY))
+    } else {
+        Ok(f)
+    }
+}
+
+/// Give the result of a rounding method (`trunc`, `floor`, `ceil`, `round`, `fract`) the
+/// precision of the number it was computed from, where the Rust method returns it with an
+/// unlimited precision (which it does for a zero, and wherever no digit of the number is left).
+/// The result has at most as many digits as the source, so this is exact, and the result can be
+/// used like the source in the operations that need a limited precision
+/// (`FBig(0.5).floor().cos()`).
+fn keep_precision<R: Round, const B: Word>(result: FBig<R, B>, source: &FBig<R, B>) -> FBig<R, B> {
+    if result.precision() == 0 && source.precision() != 0 && result.repr().is_finite() {
+        result.with_precision(source.precision()).value()
+    } else {
+        result
+    }
+}
+
+impl_float_binops!(FPy, into_fpy, fpy_add, float_add);
+impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, float_sub);
+impl_float_binops!(FPy, into_fpy, fpy_mul, float_mul);
+impl_float_binops!(FPy, into_fpy, fpy_div, fpy_rdiv, float_div);
+impl_float_mod!(FPy, into_fpy, fpy_mod, fpy_rmod);
+
+impl_float_binops!(DPy, into_dpy, dpy_add, float_add);
+impl_float_binops!(DPy, into_dpy, dpy_sub, dpy_rsub, float_sub);
+impl_float_binops!(DPy, into_dpy, dpy_mul, float_mul);
+impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, float_div);
+impl_float_mod!(DPy, into_dpy, dpy_mod, dpy_rmod);
 
 /// Generate a `__richcmp__` dispatcher over every `UniInput` variant using `num_cmp`.
 /// `FPy` and `DPy` order against all numeric inputs identically, so the bodies match.
@@ -90,7 +226,7 @@ macro_rules! impl_float_math {
         impl $ty {
             $(
                 fn $name(&self) -> PyResult<Self> {
-                    let ctx = self.0.context();
+                    let ctx = limited(self.0.context())?;
                     let res = with_cache(|c| ctx.$name(self.0.repr(), Some(c)));
                     Ok(Self(unwrap_float(res, ctx)?))
                 }
@@ -136,13 +272,11 @@ impl FPy {
         // default / 'a' / 'A' -> hexadecimal (lossless); decimal presentations convert to base 10
         match crate::format::parse(format_spec)?.ty {
             '\0' | 'a' | 'A' => crate::format::format_fbig_hex(&self.0, format_spec),
-            _ => crate::format::format_dbig(&self.0.to_decimal().value(), format_spec),
+            _ => crate::format::format_fbig_decimal(&self.0, format_spec),
         }
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_fbig(&self.0)
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         fpy_richcmp(self, other, op)
@@ -153,8 +287,11 @@ impl FPy {
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
     }
+    /// `int(x)` truncates toward zero, as for Python's own numbers (whatever the rounding
+    /// mode of the type, which `to_int()` follows).
     fn __int__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        crate::convert::convert_from_ibig(&self.0.to_int().value(), py)?.into_py_any(py)
+        let int = integral_to_ibig(&self.0, FBig::trunc)?;
+        crate::convert::convert_from_ibig(&int, py)?.into_py_any(py)
     }
 
     /********** arithmetic **********/
@@ -226,41 +363,46 @@ impl FPy {
     }
 
     /********** rounding (algebraic, no cache) **********/
-    fn trunc(&self) -> Self {
-        FPy(self.0.trunc())
+    fn trunc(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.trunc(), x)))
     }
-    fn floor(&self) -> Self {
-        FPy(self.0.floor())
+    fn floor(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.floor(), x)))
     }
-    fn ceil(&self) -> Self {
-        FPy(self.0.ceil())
+    fn ceil(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.ceil(), x)))
     }
-    fn round(&self) -> Self {
-        FPy(self.0.round())
+    fn round(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.round(), x)))
     }
-    fn fract(&self) -> Self {
-        FPy(self.0.fract())
+    fn fract(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.fract(), x)))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
-    fn __trunc__(&self) -> IPy {
-        IPy(self.0.trunc().to_int().value())
+    fn __trunc__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::trunc).map(IPy)
     }
-    fn __floor__(&self) -> IPy {
-        IPy(self.0.floor().to_int().value())
+    fn __floor__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::floor).map(IPy)
     }
-    fn __ceil__(&self) -> IPy {
-        IPy(self.0.ceil().to_int().value())
+    fn __ceil__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::ceil).map(IPy)
     }
     #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use pyo3::IntoPyObjectExt;
         match ndigits {
             // round(x) with no digits returns a Python int (CPython contract).
-            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n) rounds to n *decimal* places, which is ill-defined for a base-2 float;
             // direct the user to the decimal type instead.
-            Some(_) => Err(pyo3::exceptions::PyValueError::new_err(
+            Some(_) => Err(PyValueError::new_err(
                 "round(x, ndigits) rounds to decimal places, which is not supported for the \
                  base-2 FBig; convert to a decimal first (e.g. round(x.to_decimal(), ndigits))",
             )),
@@ -271,8 +413,8 @@ impl FPy {
     fn precision(&self) -> usize {
         self.0.precision()
     }
-    fn digits(&self) -> usize {
-        self.0.digits()
+    fn digits(&self) -> PyResult<usize> {
+        Ok(finite(&self.0)?.digits())
     }
     fn with_precision(&self, precision: usize) -> Self {
         FPy(self.0.clone().with_precision(precision).value())
@@ -283,8 +425,10 @@ impl FPy {
     }
 
     /********** conversions **********/
-    fn to_int(&self) -> IPy {
-        IPy(self.0.to_int().value())
+    /// The float rounded to an integer (with the rounding mode of the type). An infinity
+    /// raises `OverflowError`, as for `int(x)`.
+    fn to_int(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::clone).map(IPy)
     }
     fn to_decimal(&self) -> DPy {
         DPy(self.0.to_decimal().value())
@@ -300,41 +444,47 @@ impl FPy {
 
     /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
     }
     fn cbrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.cbrt(self.0.repr()), ctx)?))
     }
     fn nth_root(&self, n: usize) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
     fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
         let n = n.into_ibig()?;
-        let ctx = self.0.context();
+        // (a non-negative power is exact with an unlimited precision)
+        let ctx = if n.sign() == Sign::Negative {
+            limited(self.0.context())?
+        } else {
+            self.0.context()
+        };
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_fpy()?;
-        let ctx = self.0.context();
+        // at the larger precision of the two operands, as for the arithmetic operators
+        let ctx = limited(Context::max(self.0.context(), w.0.context()))?;
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_fpy()?;
-        let ctx = self.0.context();
+        let ctx = limited(Context::max(self.0.context(), x.0.context()))?;
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn sin_cos(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
     fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
@@ -383,10 +533,8 @@ impl DPy {
     fn __format__(&self, format_spec: &str) -> PyResult<String> {
         crate::format::format_dbig(&self.0, format_spec)
     }
-    fn __hash__(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.0.num_hash(&mut hasher);
-        hasher.finish()
+    fn __hash__(&self) -> isize {
+        crate::hash::hash_fbig(&self.0)
     }
     fn __richcmp__(&self, other: UniInput<'_>, op: CompareOp) -> bool {
         dpy_richcmp(self, other, op)
@@ -397,8 +545,11 @@ impl DPy {
     fn __float__(&self) -> f64 {
         self.0.to_f64().value()
     }
+    /// `int(x)` truncates toward zero, as for Python's own numbers (whatever the rounding
+    /// mode of the type, which `to_int()` follows).
     fn __int__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        crate::convert::convert_from_ibig(&self.0.to_int().value(), py)?.into_py_any(py)
+        let int = integral_to_ibig(&self.0, FBig::trunc)?;
+        crate::convert::convert_from_ibig(&int, py)?.into_py_any(py)
     }
 
     /********** arithmetic **********/
@@ -470,40 +621,49 @@ impl DPy {
     }
 
     /********** rounding (algebraic, no cache) **********/
-    fn trunc(&self) -> Self {
-        DPy(self.0.trunc())
+    fn trunc(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.trunc(), x)))
     }
-    fn floor(&self) -> Self {
-        DPy(self.0.floor())
+    fn floor(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.floor(), x)))
     }
-    fn ceil(&self) -> Self {
-        DPy(self.0.ceil())
+    fn ceil(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.ceil(), x)))
     }
-    fn round(&self) -> Self {
-        DPy(self.0.round())
+    fn round(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.round(), x)))
     }
-    fn fract(&self) -> Self {
-        DPy(self.0.fract())
+    fn fract(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.fract(), x)))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
-    fn __trunc__(&self) -> IPy {
-        IPy(self.0.trunc().to_int().value())
+    fn __trunc__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::trunc).map(IPy)
     }
-    fn __floor__(&self) -> IPy {
-        IPy(self.0.floor().to_int().value())
+    fn __floor__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::floor).map(IPy)
     }
-    fn __ceil__(&self) -> IPy {
-        IPy(self.0.ceil().to_int().value())
+    fn __ceil__(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::ceil).map(IPy)
     }
     #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<i32>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use pyo3::IntoPyObjectExt;
         match ndigits {
             // round(x) with no digits returns a Python int (CPython contract).
-            None => IPy(self.0.round().to_int().value()).into_py_any(py),
+            None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n): quantize to the 10^(-n) digit place (Python's Decimal.quantize).
-            Some(n) => DPy(self.0.quantize(-(n as isize)).value()).into_py_any(py),
+            Some(n) => {
+                let x = finite(&self.0)?;
+                let rounded = x.quantize(-(n as isize)).value();
+                DPy(keep_precision(rounded, x)).into_py_any(py)
+            }
         }
     }
 
@@ -511,8 +671,8 @@ impl DPy {
     fn precision(&self) -> usize {
         self.0.precision()
     }
-    fn digits(&self) -> usize {
-        self.0.digits()
+    fn digits(&self) -> PyResult<usize> {
+        Ok(finite(&self.0)?.digits())
     }
     fn with_precision(&self, precision: usize) -> Self {
         DPy(self.0.clone().with_precision(precision).value())
@@ -523,8 +683,10 @@ impl DPy {
     }
 
     /********** conversions **********/
-    fn to_int(&self) -> IPy {
-        IPy(self.0.to_int().value())
+    /// The float rounded to an integer (with the rounding mode of the type). An infinity
+    /// raises `OverflowError`, as for `int(x)`.
+    fn to_int(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::clone).map(IPy)
     }
     fn to_decimal(&self) -> Self {
         DPy(self.0.to_decimal().value())
@@ -540,41 +702,47 @@ impl DPy {
 
     /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
     }
     fn cbrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.cbrt(self.0.repr()), ctx)?))
     }
     fn nth_root(&self, n: usize) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
     fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
         let n = n.into_ibig()?;
-        let ctx = self.0.context();
+        // (a non-negative power is exact with an unlimited precision)
+        let ctx = if n.sign() == Sign::Negative {
+            limited(self.0.context())?
+        } else {
+            self.0.context()
+        };
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_dpy()?;
-        let ctx = self.0.context();
+        // at the larger precision of the two operands, as for the arithmetic operators
+        let ctx = limited(Context::max(self.0.context(), w.0.context()))?;
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_dpy()?;
-        let ctx = self.0.context();
+        let ctx = limited(Context::max(self.0.context(), x.0.context()))?;
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn sin_cos(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
     fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
@@ -589,10 +757,14 @@ impl_float_math!(
 #[pymethods]
 impl FPy {
     /// Zeroize the internal buffers, clearing the memory used by this float. The value
-    /// becomes zero.
+    /// becomes zero, and keeps its precision.
     fn zeroize(&mut self) {
         use zeroize::Zeroize;
+        // (the precision is zeroized with the buffers, which would leave a zero of unlimited
+        // precision behind)
+        let context = self.0.context();
         self.0.zeroize();
+        self.0 = FBig::from_repr(dashu::float::Repr::zero(), context);
     }
 }
 
@@ -600,9 +772,13 @@ impl FPy {
 #[pymethods]
 impl DPy {
     /// Zeroize the internal buffers, clearing the memory used by this float. The value
-    /// becomes zero.
+    /// becomes zero, and keeps its precision.
     fn zeroize(&mut self) {
         use zeroize::Zeroize;
+        // (the precision is zeroized with the buffers, which would leave a zero of unlimited
+        // precision behind)
+        let context = self.0.context();
         self.0.zeroize();
+        self.0 = FBig::from_repr(dashu::float::Repr::zero(), context);
     }
 }

@@ -283,3 +283,96 @@ fn test_reducer_pow() {
         assert_eq!(reducer.pow(reducer.transform(a), &b), reducer.transform(c));
     }
 }
+
+#[test]
+fn test_reducer_sum_equal_to_modulus() {
+    use dashu_int::UBig;
+
+    // moduli of one, two and more words (also with 16-bit and 32-bit words)
+    let moduli = [
+        ubig!(1234),
+        ubig!(1) << 16,
+        (ubig!(1) << 32) + ubig!(6),
+        ubig!(1) << 64,
+        (ubig!(1) << 64) + ubig!(4),
+        ubig!(1) << 128,
+        (ubig!(1) << 128) + ubig!(3),
+        (ubig!(1) << 200) - ubig!(1),
+        ubig!(3).pow(200),
+        ubig!(0x1234567890123456789012345678901234567890),
+    ];
+    for m in moduli {
+        let reducer = ConstDivisor::new(m.clone());
+        let zero = reducer.transform(UBig::ZERO);
+        assert!(reducer.check(&zero));
+        // the modulus itself is not a reduced value
+        assert_eq!(reducer.transform(m.clone()), zero);
+
+        let half = &m >> 1;
+        let splits = [
+            (ubig!(1), &m - ubig!(1)),
+            (half.clone(), &m - &half),
+            (&m - ubig!(1), ubig!(1)),
+        ];
+        for (a, b) in splits {
+            let (ta, tb) = (reducer.transform(a.clone()), reducer.transform(b.clone()));
+            // a + b == m
+            let sum = reducer.add(&ta, &tb);
+            assert!(reducer.check(&sum), "m = {m}, a = {a}");
+            assert!(reducer.is_zero(&sum), "m = {m}, a = {a}");
+            assert_eq!(sum, zero, "m = {m}, a = {a}");
+            assert_eq!(reducer.residue(sum), UBig::ZERO, "m = {m}, a = {a}");
+            // a + (b - 1) == m - 1
+            let sum = reducer.add(&ta, &reducer.transform(&b - ubig!(1)));
+            assert_eq!(reducer.residue(sum), &m - ubig!(1), "m = {m}, a = {a}");
+            // -a == b and a - (m - b) == 0
+            assert_eq!(reducer.neg(ta.clone()), tb, "m = {m}, a = {a}");
+            assert_eq!(reducer.sub(&ta, &reducer.neg(tb)), zero, "m = {m}, a = {a}");
+        }
+
+        if &half << 1 == m {
+            // 2 * (m / 2) == m
+            let doubled = reducer.dbl(reducer.transform(half.clone()));
+            assert!(reducer.is_zero(&doubled), "m = {m}");
+            assert_eq!(reducer.residue(doubled), UBig::ZERO, "m = {m}");
+        }
+        let doubled = reducer.dbl(reducer.transform(&m - ubig!(1)));
+        assert_eq!(reducer.residue(doubled), (&m - ubig!(2)) % &m, "m = {m}");
+    }
+}
+
+#[test]
+fn test_reducer_check_rejects_unshifted_values() {
+    use dashu_int::{ops::PowerOfTwo, UBig};
+
+    // The reduced values are multiples of transform(1) (a power of two given by the
+    // normalization shift of the modulus), so other values are not valid, however small.
+    let moduli = [
+        (ubig!(1) << 100) + ubig!(1), // two 64-bit words
+        (ubig!(1) << 150) + ubig!(1), // three 64-bit words
+        (ubig!(1) << 200) + ubig!(1),
+        (ubig!(1) << 1000) + ubig!(1),
+        ubig!(0x1234567890123456789012345678901234567890),
+    ];
+    for m in moduli {
+        let reducer = ConstDivisor::new(m.clone());
+        let unit = reducer.transform(ubig!(1));
+        assert!(unit > ubig!(1) && unit.is_power_of_two(), "m = {m}");
+        assert!(reducer.check(&unit), "m = {m}");
+        assert!(reducer.check(&UBig::ZERO), "m = {m}");
+        for v in [
+            ubig!(1),
+            ubig!(3),
+            &unit - ubig!(1),
+            &unit + ubig!(1),
+            &unit >> 1,
+        ] {
+            assert!(!reducer.check(&v), "m = {m}, v = {v}");
+        }
+        for v in [ubig!(3), ubig!(12345), &m - ubig!(1), &m >> 1] {
+            let t = reducer.transform(v.clone());
+            assert!(reducer.check(&t), "m = {m}, v = {v}");
+            assert_eq!(reducer.residue(t), v, "m = {m}, v = {v}");
+        }
+    }
+}

@@ -23,6 +23,20 @@ let h = rbig!(~_100ef/_5ge base 32);
 let i = rbig!(_0b102/_0h2 base 32);
 let j = rbig!(b102/h2 base 32);
 assert_eq!(i, j);
+
+// the denominator can be omitted here as well
+let k = rbig!(a3 base 32);
+```
+
+The numerator and the denominator must be separated by a `/`, and each of them
+takes at most one sign. Anything else is rejected at compile time:
+```compile_fail
+# use dashu_macros::rbig;
+let _ = rbig!(1 - 2); // not an expression: this is neither -1 nor -1/2
+```
+```compile_fail
+# use dashu_macros::rbig;
+let _ = rbig!(1 2);
 ```
 
 For numbers whose the numerator and denominator are small enough (fit in [u32]),

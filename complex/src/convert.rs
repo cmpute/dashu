@@ -24,7 +24,9 @@ impl<R: Round, const B: Word> From<FBig<R, B>> for CBig<R, B> {
 }
 
 impl<R: Round, const B: Word> From<UBig> for CBig<R, B> {
-    /// Embed an unsigned integer as a complex number (exact, unlimited precision) with imaginary `+0`.
+    /// Embed an unsigned integer as a complex number with imaginary `+0`. The value is exact, and —
+    /// as for [`FBig`]'s `From` — the precision is the integer's digit count (in base `B`), *not*
+    /// unlimited: use [`FBig::with_precision`] on the part first for a different precision.
     #[inline]
     fn from(v: UBig) -> Self {
         FBig::from(v).into()
@@ -32,7 +34,9 @@ impl<R: Round, const B: Word> From<UBig> for CBig<R, B> {
 }
 
 impl<R: Round, const B: Word> From<IBig> for CBig<R, B> {
-    /// Embed a signed integer as a complex number (exact, unlimited precision) with imaginary `+0`.
+    /// Embed a signed integer as a complex number with imaginary `+0`. The value is exact, and —
+    /// as for [`FBig`]'s `From` — the precision is the integer's digit count (in base `B`), *not*
+    /// unlimited: use [`FBig::with_precision`] on the part first for a different precision.
     #[inline]
     fn from(v: IBig) -> Self {
         FBig::from(v).into()
@@ -81,7 +85,8 @@ impl<R: Round, const B: Word> TryFrom<CBig<R, B>> for UBig {
 }
 
 // Conversions between `CBig` and the integer primitives (both directions), composing through
-// `FBig`. Integers embed as purely-real complex numbers; extraction succeeds only when the value
+// `FBig`. Integers embed as purely-real complex numbers (exactly, at a precision equal to their
+// digit count, as `FBig::from` does); extraction succeeds only when the value
 // is purely real, finite, in range, and integer-valued.
 macro_rules! impl_cbig_int_conv {
     ($($t:ty)*) => {$(

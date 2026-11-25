@@ -191,28 +191,32 @@ macro_rules! impl_cached_binop_one_way_with_primitive {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: $target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op(rhs)
             }
         }
         impl<'l, R: Round, const B: Word> $Op<$target> for &'l CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: $target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op(rhs)
             }
         }
         impl<'r, R: Round, const B: Word> $Op<&'r $target> for CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &$target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op(rhs)
             }
         }
         impl<'l, 'r, R: Round, const B: Word> $Op<&'r $target> for &'l CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &$target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op(rhs)
             }
         }
     };
@@ -224,28 +228,32 @@ macro_rules! impl_cached_binop_reverse_with_primitive {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self));
+                lhs.$op(rhs)
             }
         }
         impl<'l, R: Round, const B: Word> $Op<CachedFBig<R, B>> for &'l $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$op(rhs)
             }
         }
         impl<'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self));
+                lhs.$op(rhs)
             }
         }
         impl<'l, 'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for &'l $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$op(rhs)
             }
         }
     };
@@ -256,13 +264,15 @@ macro_rules! impl_cached_binop_assign_with_primitive {
         impl<R: Round, const B: Word> $OpAssign<$target> for CachedFBig<R, B> {
             #[inline]
             fn $op_assign(&mut self, rhs: $target) {
-                self.$op_assign(FBig::<R, B>::from(rhs));
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op_assign(rhs);
             }
         }
         impl<R: Round, const B: Word> $OpAssign<&$target> for CachedFBig<R, B> {
             #[inline]
             fn $op_assign(&mut self, rhs: &$target) {
-                self.$op_assign(FBig::<R, B>::from(rhs.clone()));
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op_assign(rhs);
             }
         }
     };
@@ -544,7 +554,8 @@ impl<R: Round, const B: Word> Inverse for CachedFBig<R, B> {
 //
 // The value computation is delegated to FBig's impls — so `Sum` inherits the
 // correctly-rounded `precise_sum` (exact accumulate, round once). The result
-// keeps the first element's cache handle (empty iterator → `Default`).
+// keeps the first element's cache handle. An empty iterator has no handle to keep, so it gets
+// a fresh cache around the identity: `0` for `Sum`, `1` for `Product`.
 // ---------------------------------------------------------------------------
 
 impl<R: Round, const B: Word> Sum for CachedFBig<R, B> {
@@ -587,7 +598,7 @@ impl<R: Round, const B: Word> Product for CachedFBig<R, B> {
                     .product();
                 CachedFBig::from_fbig(fbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(FBig::ONE),
         }
     }
 }
@@ -602,7 +613,7 @@ impl<'a, R: Round, const B: Word> Product<&'a CachedFBig<R, B>> for CachedFBig<R
                     .product();
                 CachedFBig::from_fbig(fbig, &cache)
             }
-            None => Self::default(),
+            None => Self::from(FBig::ONE),
         }
     }
 }
@@ -804,27 +815,23 @@ impl<R: ErrorBounds, const B: Word> CachedFBig<R, B> {
 
     /// `atan2_unit(y, x, u)` (see [`FBig::atan2_unit`]).
     pub fn atan2_unit(&self, x: &Self, u: usize) -> Self {
+        let context = Context::max(self.fbig.context, x.fbig.context);
         let mut c = self.cache.borrow_mut();
-        let fbig = self
-            .fbig
-            .context
-            .unwrap_fp(self.fbig.context.atan2_unit::<B>(
-                &self.fbig.repr,
-                &x.fbig.repr,
-                u,
-                Some(&mut *c),
-            ));
+        let fbig = context.unwrap_fp(context.atan2_unit::<B>(
+            &self.fbig.repr,
+            &x.fbig.repr,
+            u,
+            Some(&mut *c),
+        ));
         Self::from_fbig(fbig, &self.cache)
     }
 
     /// `atan2(y, x)` (see [`FBig::atan2`]).
     pub fn atan2(&self, x: &Self) -> Self {
+        let context = Context::max(self.fbig.context, x.fbig.context);
         let mut c = self.cache.borrow_mut();
-        let fbig = self.fbig.context.unwrap_fp(self.fbig.context.atan2::<B>(
-            &self.fbig.repr,
-            &x.fbig.repr,
-            Some(&mut *c),
-        ));
+        let fbig =
+            context.unwrap_fp(context.atan2::<B>(&self.fbig.repr, &x.fbig.repr, Some(&mut *c)));
         Self::from_fbig(fbig, &self.cache)
     }
 

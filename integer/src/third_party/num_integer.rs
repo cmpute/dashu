@@ -1,7 +1,7 @@
 //! Implement num-integer traits.
 
 use crate::{ibig::IBig, ubig::UBig};
-use dashu_base::{BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
+use dashu_base::{Abs, BitTest, CubicRoot, DivRem, ExtendedGcd, Gcd, Sign, SquareRoot};
 use num_integer_v01 as num_integer;
 
 impl num_integer::Integer for UBig {
@@ -19,11 +19,17 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        Self::is_multiple_of(self, other)
+        num_integer::Integer::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        UBig::is_multiple_of(self, other)
+        // This trait defines zero as the only multiple of zero, whereas the
+        // inherent method panics for a zero divisor.
+        if other.is_zero() {
+            self.is_zero()
+        } else {
+            UBig::is_multiple_of(self, other)
+        }
     }
     #[inline]
     fn is_even(&self) -> bool {
@@ -35,7 +41,12 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        Gcd::gcd(self, other)
+        // gcd(0, 0) is defined as zero by this trait
+        if self.is_zero() && other.is_zero() {
+            UBig::ZERO
+        } else {
+            Gcd::gcd(self, other)
+        }
     }
     #[inline]
     fn lcm(&self, other: &Self) -> Self {
@@ -45,13 +56,31 @@ impl num_integer::Integer for UBig {
             self / Gcd::gcd(self, other) * other
         }
     }
+    /// Greatest common divisor and Bézout coefficients.
+    ///
+    /// # Panics
+    ///
+    /// The coefficients have the type [UBig] here, and `x * self + y * other == gcd`
+    /// has a solution without a negative coefficient only when the gcd is one of
+    /// the operands. This method panics for any other input (as the trait's
+    /// implementations for the primitive unsigned integers overflow); use
+    /// [ExtendedGcd::gcd_ext], which returns [IBig] coefficients, instead.
     #[inline]
     fn extended_gcd(&self, other: &Self) -> num_integer::ExtendedGcd<Self> {
+        if self.is_zero() && other.is_zero() {
+            return num_integer::ExtendedGcd {
+                gcd: UBig::ZERO,
+                x: UBig::ZERO,
+                y: UBig::ZERO,
+            };
+        }
         let (g, x, y) = ExtendedGcd::gcd_ext(self, other);
+        const NEGATIVE: &str = "the Bézout coefficients of these operands are not representable \
+            as UBig, use dashu_base::ExtendedGcd::gcd_ext instead";
         num_integer::ExtendedGcd {
             gcd: g,
-            x: x.try_into().unwrap(),
-            y: y.try_into().unwrap(),
+            x: x.try_into().expect(NEGATIVE),
+            y: y.try_into().expect(NEGATIVE),
         }
     }
 }
@@ -75,7 +104,9 @@ impl num_integer::Integer for IBig {
     #[inline]
     fn div_floor(&self, other: &Self) -> Self {
         let (q, r) = DivRem::div_rem(self, other);
-        if !r.is_zero() && q.sign() == Sign::Negative {
+        // The sign of the quotient can't be used here: the truncated
+        // quotient is zero (hence non-negative) when |self| < |other|.
+        if !r.is_zero() && self.sign() != other.sign() {
             q - IBig::ONE
         } else {
             q
@@ -96,11 +127,17 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        Self::is_multiple_of(self, other)
+        num_integer::Integer::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        IBig::is_multiple_of(self, other)
+        // This trait defines zero as the only multiple of zero, whereas the
+        // inherent method panics for a zero divisor.
+        if other.is_zero() {
+            self.is_zero()
+        } else {
+            IBig::is_multiple_of(self, other)
+        }
     }
     #[inline]
     fn is_even(&self) -> bool {
@@ -112,18 +149,31 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        Gcd::gcd(self, other).into()
+        // gcd(0, 0) is defined as zero by this trait
+        if self.is_zero() && other.is_zero() {
+            IBig::ZERO
+        } else {
+            Gcd::gcd(self, other).into()
+        }
     }
     #[inline]
     fn lcm(&self, other: &Self) -> Self {
         if self.is_zero() && other.is_zero() {
             IBig::ZERO
         } else {
-            self / Gcd::gcd(self, other) * other
+            // the least common multiple is non-negative
+            Abs::abs(self / Gcd::gcd(self, other) * other)
         }
     }
     #[inline]
     fn extended_gcd(&self, other: &Self) -> num_integer::ExtendedGcd<Self> {
+        if self.is_zero() && other.is_zero() {
+            return num_integer::ExtendedGcd {
+                gcd: IBig::ZERO,
+                x: IBig::ZERO,
+                y: IBig::ZERO,
+            };
+        }
         let (g, x, y) = ExtendedGcd::gcd_ext(self, other);
         num_integer::ExtendedGcd {
             gcd: g.into(),

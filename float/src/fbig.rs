@@ -226,9 +226,29 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.repr
     }
 
+    /// Prepare `integer` — an integer operand converted with [`From`], whose precision is its
+    /// number of digits — as the other operand of a binary operator on `self`.
+    ///
+    /// The result of a binary operator has the larger of the two precisions, and "unlimited"
+    /// (0) yields to any limited one, which is how exact constants adopt the precision of
+    /// the value they are combined with. An integer is exact as well: next to an
+    /// unlimited-precision float its digit count must not become the precision of the
+    /// result (`12.34 + 1` would be rounded to the single digit `10`), so it is made
+    /// unlimited too.
+    #[inline]
+    pub(crate) fn integer_operand(&self, mut integer: Self) -> Self {
+        if !self.context.is_limited() {
+            integer.context = self.context;
+        }
+        integer
+    }
+
     /// Convert raw parts (significand, exponent) into a float number.
     ///
     /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
+    ///
+    /// A zero significand gives `+0` (with precision 1) whatever the exponent is, see
+    /// [`Repr::new`].
     ///
     /// # Examples
     ///
@@ -239,6 +259,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// let a = DBig::from_parts((-1234).into(), -2);
     /// assert_eq!(a, DBig::from_str("-12.34")?);
     /// assert_eq!(a.precision(), 4); // 1234 has 4 (decimal) digits
+    /// assert!(DBig::from_parts(0.into(), -1).repr().is_pos_zero());
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]
@@ -255,7 +276,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`).
     /// If the `min_precision` is provided, then the higher one from the given and inferred precision
-    /// will be used as the final precision.
+    /// will be used as the final precision. A zero significand has no digits to infer a
+    /// precision from: the result is a zero with the precision `min_precision`, or with
+    /// unlimited precision if `min_precision` is `None`.
     ///
     /// # Examples
     ///
@@ -281,7 +304,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
         min_precision: Option<usize>,
     ) -> Self {
         if significand == 0 {
-            return Self::ZERO;
+            // a zero has no digits to infer a precision from, so the requested one is used
+            // as it is (and the precision is unlimited when none is requested)
+            return match min_precision {
+                Some(prec) => Self::new(Repr::zero(), Context::new(prec)),
+                None => Self::ZERO,
+            };
         }
 
         // The precision default is the significand's base-`B` digit count; the normalized `Repr`
@@ -295,8 +323,19 @@ impl<R: Round, const B: Word> FBig<R, B> {
         Self::new(repr, Context::new(precision))
     }
 
-    /// Return the value of the least significant digit of the float number x,
-    /// such that `x + ulp` is the first float number greater than x (given the precision from the context).
+    /// Return the unit in the last place of the float number x: the value of the least
+    /// significant digit of a significand of `precision` digits whose leading digit lines up
+    /// with the leading digit of x (given the precision from the context).
+    ///
+    /// For a positive x this is the distance to the first float number greater than x, so
+    /// `x + ulp` is that number, and symmetrically `x - ulp` is the first float number
+    /// smaller than a negative x. In the direction toward zero the neighbour is one `ulp`
+    /// away as well, except when `|x|` is a power of the base: the floats just below a power
+    /// of the base are spaced `ulp / BASE` apart (for `-0.1` at precision 2 the `ulp` is
+    /// `0.01` and `-0.09` is a float, but `-0.099` is the first float greater than `-0.1`).
+    ///
+    /// The ulp of a zero (of either sign) is `BASE^-precision`; the ulp of an infinity is
+    /// that infinity.
     ///
     /// # Examples
     ///
@@ -323,13 +362,34 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self
-                .repr
-                .exponent
-                .saturating_add(self.repr.digits() as isize)
-                .saturating_sub(self.context.precision as isize),
+            exponent: self.ulp_exponent(self.repr.digits(), 0),
         };
         Self::new(repr, self.context)
+    }
+
+    /// `magnitude_exponent + digits - precision - below`, the exponent of an ulp, saturated to
+    /// the `isize` range. The sum is formed in a wider type and saturated once at the end:
+    /// saturating the intermediate steps loses the part that the next step takes back (a
+    /// 20-digit significand at exponent `isize::MAX - 8` has its ulp at precision 25 well
+    /// inside the range, at `isize::MAX - 13`).
+    #[inline]
+    fn ulp_exponent(&self, digits: usize, below: usize) -> isize {
+        let exponent = self.magnitude_exponent() as i128 + digits as i128
+            - self.context.precision as i128
+            - below as i128;
+        exponent.clamp(isize::MIN as i128, isize::MAX as i128) as isize
+    }
+
+    /// The exponent to derive the ulp from: the stored exponent, except that a zero counts
+    /// as `0 · B^0` whatever its sign (the stored exponent of `-0` is the encoding of its
+    /// sign, not a magnitude).
+    #[inline]
+    fn magnitude_exponent(&self) -> isize {
+        if self.repr.significand.is_zero() {
+            0
+        } else {
+            self.repr.exponent
+        }
     }
 
     /// A cheap lower bound on [`ulp`](Self::ulp), guaranteed strictly smaller than it.
@@ -355,12 +415,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
 
         let repr = Repr {
             significand: IBig::ONE,
-            exponent: self
-                .repr
-                .exponent
-                .saturating_add(self.repr.digits_lb() as isize)
-                .saturating_sub(self.context.precision as isize)
-                .saturating_sub(1),
+            exponent: self.ulp_exponent(self.repr.digits_lb(), 1),
         };
         Self::new(repr, self.context)
     }

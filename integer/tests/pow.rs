@@ -55,6 +55,21 @@ fn test_pow_ubig() {
     }
 }
 
+// The bit count `exp * trailing_zeros(base)` of the power-of-two factor overflows for these
+// exponents. A wrapped product made `16^(2^62)` equal to 1 in release builds (on 64-bit).
+
+#[test]
+#[should_panic(expected = "try to allocate too much memory")]
+fn test_pow_ubig_shift_overflow() {
+    let _ = ubig!(16).pow(usize::MAX / 4 + 1);
+}
+
+#[test]
+#[should_panic(expected = "try to allocate too much memory")]
+fn test_pow_ibig_shift_overflow() {
+    let _ = ibig!(-16).pow(usize::MAX / 4 + 1);
+}
+
 #[test]
 fn test_pow_ibig() {
     let test_cases = [

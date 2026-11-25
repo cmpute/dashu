@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::{rbig::RBig, repr::Repr, Relaxed};
 use dashu_int::{IBig, UBig};
 use serde::{
-    de::{self, Deserialize, Deserializer, SeqAccess, Visitor},
+    de::{self, Deserialize, DeserializeSeed, Deserializer, SeqAccess, Visitor},
     ser::{Serialize, SerializeStruct, Serializer},
 };
 
@@ -39,6 +39,50 @@ impl Serialize for Relaxed {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_repr(&self.0, serializer, "Relaxed")
+    }
+}
+
+/// A field name of the struct form.
+enum Field {
+    Numerator,
+    Denominator,
+}
+
+/// Deserializes a field name. Formats differ in how they hand over map keys (borrowed from
+/// the input, as a transient string, as an owned string, or as bytes), so the name is matched
+/// in a visitor instead of being deserialized as a borrowed `&str`.
+struct FieldSeed;
+
+impl<'de> Visitor<'de> for FieldSeed {
+    type Value = Field;
+
+    #[inline]
+    fn expecting(&self, formatter: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        formatter.write_str("a field name")
+    }
+
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        match v {
+            KEY_NUMER => Ok(Field::Numerator),
+            KEY_DENOM => Ok(Field::Denominator),
+            _ => Err(de::Error::unknown_field(v, FIELDS)),
+        }
+    }
+
+    fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        match core::str::from_utf8(v) {
+            Ok(v) => self.visit_str(v),
+            Err(_) => Err(de::Error::invalid_value(de::Unexpected::Bytes(v), &self)),
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for FieldSeed {
+    type Value = Field;
+
+    #[inline]
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_identifier(self)
     }
 }
 
@@ -84,21 +128,20 @@ impl<'de> Visitor<'de> for ReprVisitor {
     fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut num: Option<IBig> = None;
         let mut den: Option<UBig> = None;
-        while let Some(key) = map.next_key()? {
+        while let Some(key) = map.next_key_seed(FieldSeed)? {
             match key {
-                KEY_NUMER => {
+                Field::Numerator => {
                     if num.is_some() {
                         return Err(de::Error::duplicate_field(KEY_NUMER));
                     }
                     num = Some(map.next_value()?);
                 }
-                KEY_DENOM => {
+                Field::Denominator => {
                     if den.is_some() {
-                        return Err(de::Error::duplicate_field(KEY_NUMER));
+                        return Err(de::Error::duplicate_field(KEY_DENOM));
                     }
                     den = Some(map.next_value()?);
                 }
-                _ => return Err(de::Error::unknown_field(key, FIELDS)),
             }
         }
 
@@ -120,6 +163,14 @@ fn deserialize_repr<'de, D: Deserializer<'de>>(
     } else {
         deserializer.deserialize_struct(name, FIELDS, ReprVisitor)?
     };
+    // The string form is checked by the parser; the struct form carries the two integers
+    // as they are, so a zero denominator has to be rejected here.
+    if repr.denominator.is_zero() {
+        return Err(de::Error::invalid_value(
+            de::Unexpected::Other("a zero denominator"),
+            &"a rational number with a nonzero denominator",
+        ));
+    }
     Ok(repr)
 }
 

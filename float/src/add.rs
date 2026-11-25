@@ -3,7 +3,7 @@ use crate::{
     fbig::FBig,
     helper_macros,
     repr::{rounded_to_repr, Context, Repr, Word},
-    round::{Round, Rounded},
+    round::{Round, Rounded, Rounding},
     utils::{digit_len, shl_digits, shl_digits_in_place, split_digits, split_digits_ref},
 };
 use core::{
@@ -17,9 +17,18 @@ use dashu_int::{IBig, UBig};
 
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
 /// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
+///
+/// The zero is built explicitly rather than through `Repr::new(sig, exp)`: the operands'
+/// shared exponent can coincide with a special-value sentinel (`-1` for `-0`, `isize::MAX` /
+/// `isize::MIN` for the infinities), and a zero significand at such an exponent would be read
+/// back as that special value (`0.5 - 0.5` came out as `-0`).
 pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
-    if sig.is_zero() && R::IS_ROUND_TOWARD_NEGATIVE {
-        Repr::neg_zero()
+    if sig.is_zero() {
+        if R::IS_ROUND_TOWARD_NEGATIVE {
+            Repr::neg_zero()
+        } else {
+            Repr::zero()
+        }
     } else {
         Repr::new(sig, exp)
     }
@@ -33,7 +42,7 @@ pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Rep
 /// operation's sign (`−(−0)` is `+0`). Cancellation of *nonzero* operands goes through
 /// [`cancel_zero`] instead, which needs neither sign — the operands being equal and opposite
 /// already decides it.
-fn zero_sum<R: Round, const B: Word>(lhs_neg: bool, rhs_eff_neg: bool) -> Repr<B> {
+pub(crate) fn zero_sum<R: Round, const B: Word>(lhs_neg: bool, rhs_eff_neg: bool) -> Repr<B> {
     let neg = match (lhs_neg, rhs_eff_neg) {
         (true, true) => true, // x + x retains x's sign
         (false, false) => false,
@@ -53,7 +62,7 @@ impl<R: Round, const B: Word> Add for FBig<R, B> {
     fn add(self, rhs: Self) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_vv(self.repr, rhs.repr, Positive);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -64,7 +73,7 @@ impl<R: Round, const B: Word> Add<&FBig<R, B>> for FBig<R, B> {
     fn add(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_vr(self.repr, &rhs.repr, Positive);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -75,7 +84,7 @@ impl<R: Round, const B: Word> Add<FBig<R, B>> for &FBig<R, B> {
     fn add(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_rv(&self.repr, rhs.repr, Positive);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -86,7 +95,7 @@ impl<R: Round, const B: Word> Add<&FBig<R, B>> for &FBig<R, B> {
     fn add(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_rr(&self.repr, &rhs.repr, Positive);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -97,7 +106,7 @@ impl<R: Round, const B: Word> Sub for FBig<R, B> {
     fn sub(self, rhs: Self) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_vv(self.repr, rhs.repr, Negative);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -108,7 +117,7 @@ impl<R: Round, const B: Word> Sub<&FBig<R, B>> for FBig<R, B> {
     fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_vr(self.repr, &rhs.repr, Negative);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -119,7 +128,7 @@ impl<R: Round, const B: Word> Sub<FBig<R, B>> for &FBig<R, B> {
     fn sub(self, rhs: FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_rv(&self.repr, rhs.repr, Negative);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -130,7 +139,7 @@ impl<R: Round, const B: Word> Sub<&FBig<R, B>> for &FBig<R, B> {
     fn sub(self, rhs: &FBig<R, B>) -> Self::Output {
         let context = Context::max(self.context, rhs.context);
         let sum = context.addsub_rr(&self.repr, &rhs.repr, Negative);
-        FBig::new(sum.value(), context)
+        context.unwrap_fp(context.finish_rounded(sum))
     }
 }
 
@@ -171,7 +180,7 @@ impl<R: Round> Context<R> {
         }
 
         // use one extra digit to prevent cancellation in rounding
-        let rnd_precision = self.precision + is_sub as usize;
+        let rnd_precision = self.precision.saturating_add(is_sub as usize);
 
         // An astronomically-low low part — one that sits entirely below the rounding window
         // (its value under-estimates B^(low.1 − window), so no digit of it reaches the window,
@@ -182,7 +191,7 @@ impl<R: Round> Context<R> {
         // is sound: both the original fraction and the unit replacement lie strictly between
         // 0 and ½ ulp (window ≥ rnd_precision + 2 ≥ 2), so every rounding mode decides
         // identically on either.
-        let window = rnd_precision + 2;
+        let window = rnd_precision.saturating_add(2);
         if !low.0.is_zero() && low.1 > window {
             // Sound side: proving `|low.0| < B^(low.1 − window)` from bounds needs the
             // *lower* bound of log₂B on the right — an upper bound would let a low part that
@@ -250,9 +259,92 @@ impl<R: Round> Context<R> {
         } else {
             // By now significand should have at least full precision. After adjustment, the digits length
             // could be one more than the precision. We don't shrink the extra digit.
+            //
+            // After an effective subtraction the low part can carry the sign opposite to the
+            // significand's: the exact value then lies between `significand ∓ 1` and
+            // `significand`, and `round_fract` returns its adjustment relative to
+            // `significand`. The reported `Rounding` is the adjustment to the *truncated*
+            // result — the convention of every other operation, and what the error table in
+            // `round::mode` describes — so it is shifted by the one unit that truncation
+            // toward zero removes.
+            let borrowed =
+                !significand.is_zero() && !low.0.is_zero() && significand.sign() != low.0.sign();
+            let towards = significand.sign();
             let adjust = R::round_fract::<B>(&significand, low.0, low.1);
-            Rounded::Inexact(make_repr(significand + adjust, exponent), adjust)
+            let reported = if borrowed {
+                match (towards, adjust) {
+                    // positive result: truncation is `significand − 1`
+                    (Positive, Rounding::SubOne) => Rounding::NoOp,
+                    (Positive, _) => Rounding::AddOne,
+                    // negative result: truncation is `significand + 1`
+                    (Negative, Rounding::AddOne) => Rounding::NoOp,
+                    (Negative, _) => Rounding::SubOne,
+                }
+            } else {
+                adjust
+            };
+            Rounded::Inexact(make_repr(significand + adjust, exponent), reported)
         }
+    }
+
+    /// The sticky threshold of `x` (finite, nonzero) under this context: an exponent `t` such
+    /// that every value `x + δ` with `0 < |δ| <= B^t` and a fixed sign of `δ` rounds to the
+    /// same result (with the same rounding flag) at this context's precision.
+    ///
+    /// With `e` the exponent of `x` and `top = e + digits(x)`, take `g = min(e, top − p − 2)`.
+    /// `x` is a multiple of `B^g`, and so is every `p`-digit float near `x` (the floats in
+    /// `[B^(k−1), B^k)` are the multiples of `B^(k−p)`, and `x ± B^g` stays within
+    /// `(B^(top−2), B^(top+1))`). The rounding boundaries are those floats and, for the
+    /// nearest modes, the midpoints between them: multiples of `B^g` again for an even base,
+    /// and half-way between two multiples of `B^g` for an odd one. Either way no boundary
+    /// lies within `B^(g−1)` of `x` on either side, hence `t = g − 1`.
+    ///
+    /// Returns `None` at unlimited precision (every digit of `δ` is significant) or when the
+    /// threshold falls out of the exponent range.
+    pub(crate) fn sticky_threshold<const B: Word>(&self, x: &Repr<B>) -> Option<isize> {
+        debug_assert!(x.is_finite() && !x.significand.is_zero());
+        if !self.is_limited() {
+            return None;
+        }
+        let top = x.exponent as i128 + x.digits() as i128;
+        let g = (x.exponent as i128).min(top - self.precision as i128 - 2);
+        isize::try_from(g - 1)
+            .ok()
+            .filter(|&t| t > isize::MIN && t < isize::MAX)
+    }
+
+    /// Round `x + δ` for an unknown nonzero `δ` of sign `sign` with `|δ| <= B^t`, where `t`
+    /// comes from [`Self::sticky_threshold`]: `δ` is replaced by `±B^t`, which rounds the
+    /// same way and keeps the significand within a few digits of the precision.
+    pub(crate) fn repr_round_sticky<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        t: isize,
+        sign: Sign,
+    ) -> Rounded<Repr<B>> {
+        let stand_in = Repr {
+            significand: IBig::from_parts(sign, UBig::ONE),
+            exponent: t,
+        };
+        self.repr_round(x + &stand_in)
+    }
+
+    /// Round the exact sum `big + small` once to this context's precision (no guard digit),
+    /// for nonzero operands with `|small| < |big|`. The sum is formed exactly, unless `small`
+    /// lies entirely below the sticky threshold of `big` — then only its sign matters and
+    /// the aligned sum (as wide as the exponent gap) is never materialized.
+    pub(crate) fn repr_round_sum_exact<const B: Word>(
+        &self,
+        big: Repr<B>,
+        small: Repr<B>,
+    ) -> Rounded<Repr<B>> {
+        if let Some(t) = self.sticky_threshold(&big) {
+            let small_top = small.exponent as i128 + small.digits() as i128;
+            if small_top <= t as i128 {
+                return self.repr_round_sticky(&big, t, small.sign());
+            }
+        }
+        self.repr_round(big + small)
     }
 
     // lhs + rhs_sign * rhs, assuming lhs.exponent >= rhs.exponent
@@ -266,16 +358,19 @@ impl<R: Round> Context<R> {
 
         // use one extra digit when subtracting to prevent cancellation in rounding
         let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
-        let rnd_precision = self.precision + is_sub as usize;
+        let rnd_precision = self.precision.saturating_add(is_sub as usize);
 
-        let ediff = (lhs.exponent - rhs.exponent) as usize;
+        // The exponent distance is unsigned (it can exceed `isize::MAX`), and the digit
+        // positions derived from it saturate: they are only compared against each other.
+        let ediff = lhs.exponent.abs_diff(rhs.exponent);
         let ldigits = lhs.digits();
         let rdigits_est = rhs.digits_ub(); // overestimate
+        let ltop = ldigits.saturating_add(ediff); // top digit of lhs above rhs's exponent
 
         // align the exponent
         let low: (IBig, usize); // (value of low part, precision of the low part)
         let (significand, exponent) =
-            if self.is_limited() && is_sub && rdigits_est + self.precision >= ldigits + ediff {
+            if self.is_limited() && is_sub && rdigits_est.saturating_add(self.precision) >= ltop {
                 // The smaller operand (`rhs`, lower exponent) reaches the larger
                 // operand's `precision`-digit window — its top digit is at or above the
                 // window edge (`rdigits + precision >= ldigits + ediff`, i.e. `rhs`'s top
@@ -297,7 +392,7 @@ impl<R: Round> Context<R> {
                 }
             } else if self.is_limited()
                 && rdigits_est + 1 < ediff
-                && rdigits_est + 1 + rnd_precision < ldigits + ediff
+                && (rdigits_est + 1).saturating_add(rnd_precision) < ltop
             {
                 // rhs is entirely below lhs's rounding window, so only its sign
                 // contributes to the rounding; replace it with a unit sticky tail
@@ -328,7 +423,7 @@ impl<R: Round> Context<R> {
                 let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
                 low = (rhs_sign * r, ediff);
                 (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
-            } else if self.is_limited() && ediff + ldigits > self.precision {
+            } else if self.is_limited() && ltop > self.precision {
                 // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
                 /* Before:
                  * lhs: |=========|
@@ -348,7 +443,10 @@ impl<R: Round> Context<R> {
                 shl_digits_in_place::<B>(&mut lhs.significand, lshift);
 
                 low = (rhs_sign * r, rshift);
-                (lhs.significand + rhs_sign * rhs_signif, lhs.exponent - lshift as isize)
+                (
+                    lhs.significand + rhs_sign * rhs_signif,
+                    lhs.exponent.saturating_sub(lshift as isize),
+                )
             } else {
                 // otherwise directly shift lhs to required position
                 /* Before:
@@ -384,16 +482,17 @@ impl<R: Round> Context<R> {
         // the following implementation should be exactly the same as `repr_add_large_small`
         // other than lhs and rhs are swapped. See `repr_add_large_small` for full documentation
         let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
-        let rnd_precision = self.precision + is_sub as usize;
+        let rnd_precision = self.precision.saturating_add(is_sub as usize);
 
-        let ediff = (rhs.exponent - lhs.exponent) as usize;
+        let ediff = rhs.exponent.abs_diff(lhs.exponent);
         let rdigits = rhs.digits();
         let ldigits_est = lhs.digits_ub();
+        let rtop = rdigits.saturating_add(ediff); // top digit of rhs above lhs's exponent
 
         // align the exponent
         let low: (IBig, usize);
         let (significand, exponent) =
-            if self.is_limited() && is_sub && ldigits_est + self.precision >= rdigits + ediff {
+            if self.is_limited() && is_sub && ldigits_est.saturating_add(self.precision) >= rtop {
                 // Symmetric counterpart of the guard in `repr_add_large_small` (see there
                 // for the rationale); here the lower-exponent operand is `lhs`. Form the
                 // exact difference at full operand width and let the shared
@@ -403,7 +502,7 @@ impl<R: Round> Context<R> {
                 (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
             } else if self.is_limited()
                 && ldigits_est + 1 < ediff
-                && ldigits_est + 1 + rnd_precision < rdigits + ediff
+                && (ldigits_est + 1).saturating_add(rnd_precision) < rtop
             {
                 // lhs is entirely below rhs's rounding window, so only its sign
                 // contributes; replace it with a unit sticky tail positioned at lhs's
@@ -420,7 +519,7 @@ impl<R: Round> Context<R> {
                     Positive => (lhs_signif + &rhs.significand, rhs.exponent),
                     Negative => (lhs_signif - &rhs.significand, rhs.exponent),
                 }
-            } else if self.is_limited() && ediff + rdigits > self.precision {
+            } else if self.is_limited() && rtop > self.precision {
                 // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
                 let lshift = self.precision - rdigits;
                 let rshift = ediff - lshift;
@@ -428,7 +527,7 @@ impl<R: Round> Context<R> {
                 let rhs_signif = shl_digits::<B>(&rhs.significand, lshift);
 
                 low = (r, rshift);
-                (rhs_sign * rhs_signif + lhs_signif, rhs.exponent - lshift as isize)
+                (rhs_sign * rhs_signif + lhs_signif, rhs.exponent.saturating_sub(lshift as isize))
             } else {
                 // otherwise directly shift rhs to required position
                 let rhs_signif = shl_digits::<B>(&rhs.significand, ediff);

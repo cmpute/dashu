@@ -18,6 +18,8 @@ use core::ops::{Add, Mul, Neg, Sub};
 use crate::error::FpError;
 use crate::repr::{Repr, Word};
 use crate::utils::shl_digits;
+use dashu_base::Sign;
+use dashu_int::IBig;
 
 impl<const B: Word> PartialEq for Repr<B> {
     /// Two representations are equal when they denote the same value. In particular `+0`
@@ -47,6 +49,19 @@ impl<const B: Word> Neg for Repr<B> {
     }
 }
 
+/// Build the result of an exact sum or difference of two nonzero operands. An exact
+/// cancellation is `+0` (IEEE 754 §6.3, round-to-nearest); it must not go through
+/// [`Repr::new`], which would read a zero significand at a special-value exponent (`-1`,
+/// `isize::MAX`, `isize::MIN`) back as `-0` or an infinity.
+#[inline]
+fn exact_sum_repr<const B: Word>(significand: IBig, exponent: isize) -> Repr<B> {
+    if significand.is_zero() {
+        Repr::zero()
+    } else {
+        Repr::new(significand, exponent)
+    }
+}
+
 impl<const B: Word> Add<&Repr<B>> for &Repr<B> {
     type Output = Repr<B>;
 
@@ -59,7 +74,13 @@ impl<const B: Word> Add<&Repr<B>> for &Repr<B> {
         // the result exponent — `precise_sum` (the `Sum` impl) relies on this. The aligned path
         // below would compute the same value but would rebuild via `Repr::new`, normalizing away
         // the operand's own representation.
+        //
+        // A sum of two zeros follows IEEE 754 §6.3 for a round-to-nearest context (a `Repr` has
+        // no rounding mode of its own): `(-0) + (-0)` is `-0`, any other combination is `+0`.
         if self.significand.is_zero() {
+            if rhs.significand.is_zero() {
+                return Repr::zero_with_sign(Sign::from(self.is_neg_zero() && rhs.is_neg_zero()));
+            }
             return rhs.clone();
         }
         if rhs.significand.is_zero() {
@@ -69,15 +90,15 @@ impl<const B: Word> Add<&Repr<B>> for &Repr<B> {
         // Result exponent is min(lhs, rhs); shift the larger-exponent significand up (appending
         // trailing base-`B` zero-digits is lossless) and add. `IBig` add handles opposite signs.
         match self.exponent.cmp(&rhs.exponent) {
-            Ordering::Equal => Repr::new(&self.significand + &rhs.significand, self.exponent),
-            Ordering::Greater => Repr::new(
-                shl_digits::<B>(&self.significand, (self.exponent - rhs.exponent) as usize)
+            Ordering::Equal => exact_sum_repr(&self.significand + &rhs.significand, self.exponent),
+            Ordering::Greater => exact_sum_repr(
+                shl_digits::<B>(&self.significand, self.exponent.abs_diff(rhs.exponent))
                     + &rhs.significand,
                 rhs.exponent,
             ),
-            Ordering::Less => Repr::new(
+            Ordering::Less => exact_sum_repr(
                 &self.significand
-                    + shl_digits::<B>(&rhs.significand, (rhs.exponent - self.exponent) as usize),
+                    + shl_digits::<B>(&rhs.significand, rhs.exponent.abs_diff(self.exponent)),
                 self.exponent,
             ),
         }
@@ -116,7 +137,12 @@ impl<const B: Word> Sub<&Repr<B>> for &Repr<B> {
 
         // Zero short-circuits: `x - 0 = x` (keep x), `0 - x = -x` (negate x). As with `Add`, this
         // keeps a zero operand's own representation rather than rebuilding via `Repr::new`.
+        // A difference of two zeros is the sum `self + (-rhs)` (see `Add`): only `(-0) - (+0)`
+        // is `-0`.
         if rhs.significand.is_zero() {
+            if self.significand.is_zero() {
+                return Repr::zero_with_sign(Sign::from(self.is_neg_zero() && rhs.is_pos_zero()));
+            }
             return self.clone();
         }
         if self.significand.is_zero() {
@@ -125,15 +151,15 @@ impl<const B: Word> Sub<&Repr<B>> for &Repr<B> {
 
         // Mirror `Add`: align to the smaller exponent, then subtract significands.
         match self.exponent.cmp(&rhs.exponent) {
-            Ordering::Equal => Repr::new(&self.significand - &rhs.significand, self.exponent),
-            Ordering::Greater => Repr::new(
-                shl_digits::<B>(&self.significand, (self.exponent - rhs.exponent) as usize)
+            Ordering::Equal => exact_sum_repr(&self.significand - &rhs.significand, self.exponent),
+            Ordering::Greater => exact_sum_repr(
+                shl_digits::<B>(&self.significand, self.exponent.abs_diff(rhs.exponent))
                     - &rhs.significand,
                 rhs.exponent,
             ),
-            Ordering::Less => Repr::new(
+            Ordering::Less => exact_sum_repr(
                 &self.significand
-                    - shl_digits::<B>(&rhs.significand, (rhs.exponent - self.exponent) as usize),
+                    - shl_digits::<B>(&rhs.significand, rhs.exponent.abs_diff(self.exponent)),
                 self.exponent,
             ),
         }

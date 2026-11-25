@@ -2,10 +2,17 @@
 //! routes through the global `ConstCache` + the panic-free `Context` layer (via
 //! [`crate::cache::unwrap_float`]), so domain errors raise Python exceptions instead of
 //! aborting the session.
+//!
+//! The result has the precision of the operand, where an exact operand (an integer or a
+//! rational) counts as having the module default precision (see
+//! [`UniInput::into_math_fpy`]). The functions of two operands work at the larger of the two
+//! precisions, as the arithmetic operators do.
 
-use crate::cache::{unwrap_float, with_cache};
+use crate::cache::{limited, unwrap_float, with_cache};
 use crate::types::{FPy, UPy, UniInput};
 use dashu::base::ring::{ExtendedGcd, Gcd};
+use dashu::float::Context;
+use dashu::integer::{IBig, UBig};
 use pyo3::prelude::*;
 
 /// Transcendental taking one float operand and a cache (`(repr, Option<&mut ConstCache>)`).
@@ -13,8 +20,8 @@ macro_rules! math_trans {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
-            let x = x.into_fpy()?;
-            let ctx = x.0.context();
+            let x = x.into_math_fpy()?;
+            let ctx = limited(x.0.context())?;
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             Ok(FPy(unwrap_float(res, ctx)?))
         }
@@ -26,8 +33,8 @@ macro_rules! math_trans_pair {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<(FPy, FPy)> {
-            let x = x.into_fpy()?;
-            let ctx = x.0.context();
+            let x = x.into_math_fpy()?;
+            let ctx = limited(x.0.context())?;
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             let (a, b) = res;
             Ok((FPy(unwrap_float(a, ctx)?), FPy(unwrap_float(b, ctx)?)))
@@ -43,8 +50,8 @@ macro_rules! math_root {
     ($name:ident, $ctx_method:ident) => {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
-            let x = x.into_fpy()?;
-            let ctx = x.0.context();
+            let x = x.into_math_fpy()?;
+            let ctx = limited(x.0.context())?;
             Ok(FPy(unwrap_float(ctx.$ctx_method(x.0.repr()), ctx)?))
         }
     };
@@ -83,51 +90,77 @@ math_root!(cbrt, cbrt);
 
 #[pyfunction]
 pub fn nth_root(x: UniInput<'_>, n: usize) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
-    let ctx = x.0.context();
+    let x = x.into_math_fpy()?;
+    let ctx = limited(x.0.context())?;
     Ok(FPy(unwrap_float(ctx.nth_root(n, x.0.repr()), ctx)?))
 }
 
 #[pyfunction]
 pub fn atan2(y: UniInput<'_>, x: UniInput<'_>) -> PyResult<FPy> {
-    let y = y.into_fpy()?;
-    let x = x.into_fpy()?;
-    let ctx = y.0.context();
+    let y = y.into_math_fpy()?;
+    let x = x.into_math_fpy()?;
+    let ctx = limited(Context::max(y.0.context(), x.0.context()))?;
     let res = with_cache(|c| ctx.atan2(y.0.repr(), x.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 
 #[pyfunction]
 pub fn powf(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
-    let y = y.into_fpy()?;
-    let ctx = x.0.context();
+    let x = x.into_math_fpy()?;
+    let y = y.into_math_fpy()?;
+    let ctx = limited(Context::max(x.0.context(), y.0.context()))?;
     let res = with_cache(|c| ctx.powf(x.0.repr(), y.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
 
 #[pyfunction]
 pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
+    let x = x.into_math_fpy()?;
     let n = n.into_ibig()?;
-    let ctx = x.0.context();
+    // (a non-negative power is exact with an unlimited precision)
+    let ctx = if n.sign() == dashu::base::Sign::Negative {
+        limited(x.0.context())?
+    } else {
+        x.0.context()
+    };
     Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n), ctx)?))
 }
 
 #[pyfunction]
 pub fn hypot(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
-    let x = x.into_fpy()?;
-    let y = y.into_fpy()?;
-    let ctx = x.0.context();
+    let x = x.into_math_fpy()?;
+    let y = y.into_math_fpy()?;
+    let ctx = limited(Context::max(x.0.context(), y.0.context()))?;
     Ok(FPy(unwrap_float(ctx.hypot(x.0.repr(), y.0.repr()), ctx)?))
 }
 
 // Integer number theory
+//
+// `gcd(0, 0)` is 0 here, as in Python's `math.gcd` (the generic `Gcd` trait panics on it).
 #[pyfunction]
 pub fn gcd(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
-    Ok(UPy(Gcd::gcd(&a, &b)))
+    Ok(UPy(ubig_gcd(&a, &b)))
+}
+
+/// The greatest common divisor, with `gcd(0, 0) = 0`.
+pub fn ubig_gcd(a: &UBig, b: &UBig) -> UBig {
+    if a.is_zero() && b.is_zero() {
+        UBig::ZERO
+    } else {
+        Gcd::gcd(a, b)
+    }
+}
+
+/// The extended greatest common divisor `(g, s, t)` with `a*s + b*t = g`, and `(0, 0, 0)`
+/// for two zeros.
+pub fn ubig_gcd_ext(a: &UBig, b: &UBig) -> (UBig, IBig, IBig) {
+    if a.is_zero() && b.is_zero() {
+        (UBig::ZERO, IBig::ZERO, IBig::ZERO)
+    } else {
+        ExtendedGcd::gcd_ext(a, b)
+    }
 }
 
 #[pyfunction]
@@ -137,14 +170,18 @@ pub fn gcd_ext(
 ) -> PyResult<(UPy, crate::types::IPy, crate::types::IPy)> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
-    let (g, s, t) = ExtendedGcd::gcd_ext(&a, &b);
+    let (g, s, t) = ubig_gcd_ext(&a, &b);
     Ok((UPy(g), crate::types::IPy(s), crate::types::IPy(t)))
 }
 
+/// The least common multiple, which is 0 if either argument is 0 (as in Python's `math.lcm`).
 #[pyfunction]
 pub fn lcm(a: UniInput<'_>, b: UniInput<'_>) -> PyResult<UPy> {
     let a = a.into_ubig()?;
     let b = b.into_ubig()?;
+    if a.is_zero() || b.is_zero() {
+        return Ok(UPy(UBig::ZERO));
+    }
     let g = Gcd::gcd(&a, &b);
     Ok(UPy((a / g) * b))
 }

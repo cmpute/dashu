@@ -10,7 +10,7 @@
 //! magnitude-dependent guard digits and resolve quarter-integer arguments exactly.
 
 use crate::{
-    ball::{ulps, Ball},
+    ball::{ulp_mag, ulps, Ball},
     cmp::repr_cmp_same_base,
     error::{assert_limited_precision, FpError},
     fbig::FBig,
@@ -25,7 +25,9 @@ use crate::{
 };
 use core::convert::TryFrom;
 use dashu_base::{
-    Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
+    Abs, AbsOrd,
+    Approximation::{Exact, Inexact},
+    DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, IBig, UBig};
 
@@ -154,6 +156,15 @@ enum UnitReduced<const B: Word> {
         num: IBig,
         den: IBig,
     },
+}
+
+impl<const B: Word> UnitReduced<B> {
+    fn quadrant(&self) -> Quadrant {
+        match self {
+            UnitReduced::Small(_) => Quadrant::First,
+            UnitReduced::Split { quadrant, .. } => *quadrant,
+        }
+    }
 }
 
 fn reduce_unit_argument<const B: Word>(x: &Repr<B>, u: usize) -> UnitReduced<B> {
@@ -287,14 +298,107 @@ fn scale_unit<const B: Word>(
     v.scale_int(&IBig::from(u), wp)?.div(&two_pi, wp)
 }
 
+/// An exponent `k` with `|x| < B^k` (one past the leading digit, from the digit-count upper
+/// bound). `x` is finite and nonzero.
+pub(crate) fn top_exp<const B: Word>(x: &Repr<B>) -> isize {
+    x.exponent.saturating_add(x.digits_ub() as isize)
+}
+
+/// An exponent `k` with `|x| ≥ B^k` (the leading digit, from the digit-count lower bound —
+/// `digits_lb` is a floor of the logarithm). `x` is finite and nonzero.
+pub(crate) fn bottom_exp<const B: Word>(x: &Repr<B>) -> isize {
+    x.exponent.saturating_add(x.digits_lb() as isize)
+}
+
+/// Is every point `t` of the ball so small that `t²` is below the last place of the working
+/// precision — `|t| < B^(−wp−2)`, with the radius no larger than the midpoint? The series
+/// kernels shortcut such an argument: forming `t²` gains nothing, and for an exponent in the
+/// lower half of the `isize` range it underflows.
+pub(crate) fn square_negligible<const B: Word>(x: &Ball<B>, wp: usize) -> bool {
+    !x.mid.significand.is_zero()
+        && top_exp(&x.mid) < (-(wp as isize)).saturating_sub(2)
+        && x.rad <= Mag::from_repr_lower(&x.mid)
+}
+
+/// `f(x)` for an odd `f` with `|f(t) − t| ≤ |t|³` (sin, tan, asin, atan and their hyperbolic
+/// kin, `|t| ≤ 1/2`) on a ball that is [`square_negligible`]: the ball itself, one ulp wider.
+/// Every `|t| ≤ 2·|mid| < 2·B^(−wp−2)`, so `|t|³ ≤ 8·|mid|·B^(−2wp−4)`, far inside one ulp of
+/// the midpoint.
+pub(crate) fn odd_negligible<const B: Word>(x: &Ball<B>, wp: usize) -> Ball<B> {
+    let mut ball = x.clone();
+    ball.add_error(ulp_mag::<B>(&x.mid, wp));
+    ball
+}
+
+/// `f(x)` for an even `f` with `|f(t) − 1| ≤ t²` (cos, cosh, `|t| ≤ 1`) on a ball that is
+/// [`square_negligible`]: `1`, within one ulp.
+pub(crate) fn even_negligible<const B: Word>(wp: usize) -> Ball<B> {
+    let mut one = Ball::exact_int(IBig::ONE, wp);
+    one.add_error(ulp_mag::<B>(&one.mid, wp));
+    one
+}
+
+/// `sin` of a ball centred on zero. Only a zero *radius* makes the argument exactly zero; a
+/// reduced argument that merely cancelled onto a zero midpoint (`x − k·π/2` for an `x` next to
+/// a multiple of π/2) still spans `[−rad, rad]`, and `|sin t| ≤ |t|` keeps that radius. Dropping
+/// it would certify an exact `0` for a nonzero sine.
+fn sin_zero_mid<const B: Word>(x: &Ball<B>) -> Ball<B> {
+    Ball::with_error(x.mid.clone(), x.rad)
+}
+
+/// `cos` of a ball centred on zero: `0 ≤ 1 − cos t ≤ t²/2 ≤ rad²` (see [`sin_zero_mid`]).
+fn cos_zero_mid<const B: Word>(x: &Ball<B>, wp: usize) -> Ball<B> {
+    let mut one = Ball::exact_int(IBig::ONE, wp);
+    one.add_error(x.rad.mul(&x.rad));
+    one
+}
+
+/// The constant `c` of an odd function that is `c·x·(1 + O(x²))` for a tiny `x` (see
+/// [`Context::tiny_scaled`]).
+#[derive(Clone, Copy)]
+pub(crate) enum TinyScale {
+    /// `π`: `sinh_pi`.
+    Pi,
+    /// `2π/u`: `sin_unit`, `tan_unit`.
+    TwoPiOver(usize),
+    /// `u/(2π)`: `asin_unit`, `atan_unit`.
+    Over2Pi(usize),
+}
+
+/// `|x| = 1/2`, decided exactly: `2|x| = 1`. (Never true in an odd base, where `1/2` is not
+/// representable; the doubling is on the significand, so no precision is involved.)
+fn is_abs_half<const B: Word>(x: &Repr<B>) -> bool {
+    if x.is_infinite() || x.significand.is_zero() {
+        return false;
+    }
+    let twice = Repr::<B>::new(IBig::from(2) * &x.significand, x.exponent);
+    repr_cmp_same_base::<B, true>(&twice, &Repr::<B>::one(), None).is_eq()
+}
+
 /// The exact rational `num/den` rounded under the caller's mode — the exact-value rows of the
 /// ×u tables (exact whenever den's prime factors divide the base, e.g. `u/4` in base 2 or 10;
 /// correctly rounded otherwise).
+///
+/// A context of unlimited precision gets the ratio when it has a finite expansion (it needs no
+/// precision to round to, like the `0` and `±1` rows) and the limited-precision panic otherwise.
 fn exact_ratio<R: Round, const B: Word>(
     ctx: &Context<R>,
     num: IBig,
     den: usize,
 ) -> FpResult<FBig<R, B>> {
+    if !ctx.is_limited() {
+        // The table denominators divide 24, so a finite expansion of `num/den` ends within
+        // three digits of the point in any base: a few digits past the numerator's own hold it.
+        debug_assert!(24 % den == 0);
+        let wide = Context::<R>::new(digit_len::<B>(&num) + 8);
+        return match wide.div(&Repr::new(num, 0), &Repr::from(den))? {
+            Exact(q) => Ok(Exact(FBig::new(q.into_repr(), *ctx))),
+            _ => {
+                assert_limited_precision(ctx.precision);
+                unreachable!()
+            }
+        };
+    }
     ctx.div(&Repr::new(num, 0), &Repr::from(den))
 }
 
@@ -356,6 +460,199 @@ impl<R: ErrorBounds> Context<R> {
         Ok((work_context, r_ball, quadrant_of(&k)))
     }
 
+    /// The correctly rounded value of an odd function at a tiny `x`, when the result is `x`
+    /// displaced by `0 < δ ≤ |x|³` — away from zero if `outward` (tan, asin, sinh, atanh),
+    /// towards zero otherwise (sin, atan, tanh, asinh). That bound holds for all eight on
+    /// `|x| ≤ 1/2`. `None` when `x` is not small enough for the displacement to stay clear of
+    /// every rounding boundary (see [`round_near`](Self::round_near)): the Ziv loop takes over.
+    ///
+    /// An argument whose exponent is within the precision of `isize::MIN` is an underflow: the
+    /// last place of its neighbours is below the exponent range, so the result cannot be
+    /// rounded there (and the loop could never certify it either).
+    pub(crate) fn tiny_odd<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        outward: bool,
+    ) -> Option<FpResult<FBig<R, B>>> {
+        let top = top_exp(x);
+        if top >= 0 {
+            return None; // not certainly below 1/B ≤ 1/2
+        }
+        let last_place = isize::try_from(self.precision)
+            .ok()
+            .and_then(|p| x.exponent.checked_sub(p)?.checked_sub(4));
+        if last_place.is_none() {
+            return Some(Err(FpError::Underflow(x.sign())));
+        }
+        let dir = if outward { x.sign() } else { -x.sign() };
+        self.round_near(x, dir, top.saturating_mul(3)).map(Ok)
+    }
+
+    /// The correctly rounded value of an even function at a tiny `x`, when the result is `1`
+    /// displaced to the side `dir` by `0 < δ < x²·B^slack` (cos and cosh need no slack; the ×u
+    /// and ×π variants pay for their argument scaling). `None` as for
+    /// [`tiny_odd`](Self::tiny_odd).
+    pub(crate) fn tiny_even<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        dir: Sign,
+        slack: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        let top = top_exp(x);
+        if top >= 0 {
+            return None;
+        }
+        self.round_near(&Repr::one(), dir, top.saturating_mul(2).saturating_add(slack))
+    }
+
+    /// The correctly rounded value of an odd function that is a constant multiple of its
+    /// argument up to a relative `O(x²)` — `sin`/`tan` of `2π·x/u`, `sinh(π·x)`, and
+    /// `asin`/`atan` scaled by `u/(2π)` — for an `x` in the bottom quarter of the exponent
+    /// range. `None` for any other `x`.
+    ///
+    /// There the relative correction is below `B^(isize::MIN/2 + 8)`, less than a last place
+    /// of any working precision, so the result is `c·m` (`m` the significand of `x`) widened by
+    /// an ulp and moved to the exponent of `x` — which is where the range is checked. Forming
+    /// `c·x` itself at the working precision would put the product's last place below the
+    /// exponent range for an `x` that is within that many digits of it, and report a
+    /// representable result as out of range (and with the sign of `|x|`).
+    pub(crate) fn tiny_scaled<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        scale: TinyScale,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Option<FpResult<FBig<R, B>>> {
+        if top_exp(x) >= isize::MIN / 4 {
+            return None;
+        }
+        let negative = x.sign() == Sign::Negative;
+        let abs = Repr::<B>::new(x.significand.clone().abs(), 0);
+        let rounded = self.ziv_irrational(10, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let mut v = match scale {
+                TinyScale::Pi => pi_scaled_ball(&work, &abs, reborrow_cache(&mut cache))?,
+                TinyScale::TwoPiOver(u) => {
+                    let small = UnitReduced::Small(abs.clone());
+                    unit_argument_ball(&work, &small, u, reborrow_cache(&mut cache))?.0
+                }
+                TinyScale::Over2Pi(u) => {
+                    let m = Ball::from_rounded(work.repr_round_ref(&abs), wp);
+                    scale_unit(&work, &m, u, reborrow_cache(&mut cache))?
+                }
+            };
+            v.add_error(ulp_mag::<B>(&v.mid, wp));
+            let v = if negative { -v } else { v };
+            Ok(v.to_value_radius::<R>(&Context::<R>::new(wp)))
+        });
+        // back at the exponent of `x`, with the range check on the rounded value
+        let place = |v: FBig<R, B>| -> Result<FBig<R, B>, FpError> {
+            let (significand, exponent) = v.into_repr().into_parts();
+            let repr = Repr::new_wide(significand, exponent as i128 + x.exponent as i128)?;
+            Ok(FBig::new(repr, *self))
+        };
+        Some(rounded.and_then(|r| {
+            Ok(match r {
+                Exact(v) => Exact(place(v)?),
+                Inexact(v, rounding) => Inexact(place(v)?, rounding),
+            })
+        }))
+    }
+
+    /// `sign·cos(2π·r/u)` for a reduced argument `r` next to zero — what `cos_unit` returns
+    /// next to a multiple of `u/2` and `sin_unit` next to an odd multiple of `u/4`:
+    /// `cos(2π·r/u) = 1 − δ` with `0 < δ ≤ (2π·r/u)²/2 < 32·r²` (`u ≥ 1`), i.e. below `r²·B^5`.
+    /// `None` when `r` is not small enough for that to stay clear of every rounding boundary.
+    fn tiny_cos_unit<const B: Word>(
+        &self,
+        reduced: &UnitReduced<B>,
+        sign: Sign,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        // |r| < B^top
+        let top = match reduced {
+            UnitReduced::Small(r) => top_exp(r),
+            UnitReduced::Split { num, den, .. } => {
+                if num.is_zero() {
+                    return None;
+                }
+                top_exp(&Repr::<B>::new(num.clone(), 0))
+                    .saturating_sub(bottom_exp(&Repr::<B>::new(den.clone(), 0)))
+            }
+        };
+        if top >= 0 {
+            return None;
+        }
+        let one = match sign {
+            Sign::Positive => Repr::<B>::one(),
+            Sign::Negative => Repr::<B>::neg_one(),
+        };
+        // the value lies just inside ±1
+        self.round_near(&one, -sign, top.saturating_mul(2).saturating_add(5))
+    }
+
+    /// The correctly rounded value of an angle that is `sign·k·u/4` displaced to the side `dir`
+    /// by `0 < δ < B^delta_exp` — the inverse ×u functions next to an axis. `None` when the
+    /// displacement is not small enough.
+    fn round_near_quarter<const B: Word>(
+        &self,
+        sign: Sign,
+        k: u8,
+        u: usize,
+        dir: Sign,
+        delta_exp: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        // k·u/4 = (k·u·B²/4)·B^-2 whenever 4 divides k·u·B² (always for an even base)
+        let ku = IBig::from(u) * IBig::from(k);
+        let scaled = &ku * IBig::from(B) * IBig::from(B);
+        let (quarter, rem) = scaled.div_rem(IBig::from(4));
+        if !rem.is_zero() {
+            return self.round_near_quarter_ratio(sign, ku, dir, delta_exp);
+        }
+        let v = Repr::<B>::new(quarter * sign, -2);
+        self.round_near(&v, dir, delta_exp)
+    }
+
+    /// [`round_near_quarter`](Self::round_near_quarter) for a `q = ku/4` without a finite
+    /// expansion (an odd base). Such a `q` is still not an ordinary point: a half-integer is
+    /// the midpoint of two neighbouring floats at every precision that resolves it (`1/2`
+    /// lies halfway between `0.11…1` and `0.11…2` in base 3), so a result next to it is
+    /// exactly the near-tie the Ziv loop can only decide at a working precision of
+    /// `log(1/δ)` digits.
+    ///
+    /// The rounding boundaries (floats and midpoints) are multiples of `B^g/2`, where `B^g`
+    /// is the spacing of the binade below the leading digit of `q`; `q` is a multiple of
+    /// `1/4`. Two distinct multiples of `B^g/2` and `1/4` differ by at least `min(1, B^g)/4`,
+    /// so with `g' = min(g, 0)` no boundary lies strictly between `q` and `q ± B^(g'−2)`
+    /// (`B² > 4`), and every such displacement rounds like the exact rational
+    /// `q ± B^(g'−2)/4`.
+    fn round_near_quarter_ratio<const B: Word>(
+        &self,
+        sign: Sign,
+        ku: IBig,
+        dir: Sign,
+        delta_exp: isize,
+    ) -> Option<Rounded<FBig<R, B>>> {
+        if !self.is_limited() {
+            return None;
+        }
+        let p = isize::try_from(self.precision).ok()?;
+        let whole = &ku / IBig::from(4);
+        // the exponent of the leading digit of q (a lower bound for a q below 1: q ≥ 1/4 ≥ B^-2)
+        let lead = if whole.is_zero() {
+            -2
+        } else {
+            digit_len::<B>(&whole) as isize - 1
+        };
+        let eps_exp = lead.checked_sub(p)?.min(0) - 2;
+        if delta_exp > eps_exp {
+            return None;
+        }
+        let unit = IBig::from_parts(dir, UBig::ONE);
+        let num = shl_digits::<B>(&(ku * sign), eps_exp.unsigned_abs()) + unit;
+        self.div(&Repr::new(num, eps_exp), &Repr::new(IBig::from(4), 0))
+            .ok()
+    }
+
     /// Calculate the sine of the floating point representation.
     pub fn sin<const B: Word>(
         &self,
@@ -365,16 +662,22 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
+        // Exact results first: a zero carrying unlimited precision (`FBig::ZERO`,
+        // `try_from(0.0)`) must not trip the limited-precision assertion.
         if x.significand.is_zero() {
             // sin(±0) = ±0
             return signed_zero_normal(self, x);
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return r;
         }
 
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series. The reduction error is
         // already inside the reduced argument's Ball radius.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -391,9 +694,12 @@ impl<R: ErrorBounds> Context<R> {
     /// [`Ball`] whose radius is tracked mechanically (each term's rounding plus the truncated tail).
     fn sin_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         if x.mid.significand.is_zero() {
-            return Ok(Ball::exact(x.mid.clone()));
+            return Ok(sin_zero_mid(x));
         }
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            return Ok(odd_negligible(x, wp));
+        }
         let x2 = x.mul(x, wp)?;
         let mut sum = x.clone();
         let mut term = x.clone();
@@ -427,14 +733,17 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // cos(±0) = 1
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `cos(x) = 1 − δ` with `0 < δ ≤ x²/2`.
+        if let Some(r) = self.tiny_even(x, Sign::Negative, 0) {
+            return Ok(r);
+        }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -452,7 +761,10 @@ impl<R: ErrorBounds> Context<R> {
     fn cos_compute<const B: Word>(self, x: &Ball<B>) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
-            return Ok(Ball::exact_int(IBig::ONE, wp));
+            return Ok(cos_zero_mid(x, wp));
+        }
+        if square_negligible(x, wp) {
+            return Ok(even_negligible(wp));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
@@ -486,16 +798,23 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return (Err(FpError::InfiniteInput), Err(FpError::InfiniteInput));
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // sin(±0) = ±0, cos(±0) = 1
             let s = signed_zero_normal(self, x);
             let c = Ok(FBig::<R, B>::ONE.with_precision(self.precision));
             return (s, c);
         }
+        assert_limited_precision(self.precision);
+        // A tiny argument: `sin(x) = x − δ` and `cos(x) = 1 − δ'` (see `sin` / `cos`). The two
+        // shortcuts engage at different magnitudes, so either may leave its half to the loop.
+        match (self.tiny_odd(x, false), self.tiny_even(x, Sign::Negative, 0)) {
+            (Some(s), Some(c)) => return (s, Ok(c)),
+            (Some(s), None) => return (s, self.cos(x, cache)),
+            (None, Some(c)) => return (self.sin(x, cache), Ok(c)),
+            (None, None) => {}
+        }
 
-        let (s, c) = self.ziv_pair(50, |guard| {
+        let (s, c) = self.ziv_pair_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
@@ -519,7 +838,10 @@ impl<R: ErrorBounds> Context<R> {
     ) -> Result<(Ball<B>, Ball<B>), FpError> {
         let wp = self.precision;
         if x.mid.significand.is_zero() {
-            return Ok((Ball::exact(x.mid.clone()), Ball::exact_int(IBig::ONE, wp)));
+            return Ok((sin_zero_mid(x), cos_zero_mid(x, wp)));
+        }
+        if square_negligible(x, wp) {
+            return Ok((odd_negligible(x, wp), even_negligible(wp)));
         }
         let x2 = x.mul(x, wp)?;
         let one = Ball::exact_int(IBig::ONE, wp);
@@ -565,18 +887,21 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
         if x.significand.is_zero() {
             // tan(±0) = ±0
             return signed_zero_normal(self, x);
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return r;
         }
 
         // tan = sin/cos, correctly rounded via the Ziv loop; the sin/cos error propagation into the
         // quotient is tracked by the Ball division. The closure's `significand.is_zero()` guard
         // below handles the unreachable exact-pole case (cos cancelling to a zero significand) by
         // forcing a retry.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
@@ -632,7 +957,10 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // sin(±0) = ±0 — ahead of the assertion, like the radian `sin`
+            return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
+        }
 
         // Exact cases (±0 lands in the quarter table's q = 0 row). Resolved outside the Ziv
         // loop: its containment test cannot certify an exact 0/±1/±1/2 under directed rounding.
@@ -656,10 +984,27 @@ impl<R: ErrorBounds> Context<R> {
             // j even with 3 ∤ j: the cosine sixths — sine is ±√3/2 there, not exact.
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `(2π/u)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::TwoPiOver(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
         // sin is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
-        self.ziv(50, |guard| {
+        // Next to an odd multiple of `u/4` the sine is `±(1 − δ)` with `δ` of the order of the
+        // squared distance: rounded directly (the loop would need twice the digits of that
+        // distance to see which side of `±1` the result is on).
+        let hugs = match reduced.quadrant() {
+            Quadrant::Second => Some(x.sign()),
+            Quadrant::Fourth => Some(-x.sign()),
+            _ => None,
+        };
+        if let Some(r) = hugs.and_then(|sign| self.tiny_cos_unit(&reduced, sign)) {
+            return Ok(r);
+        }
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -706,7 +1051,10 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // cos(±0) = 1 — ahead of the assertion, like the radian `cos`
+            return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
+        }
 
         // Exact cases — outside the Ziv loop, whose containment test cannot certify exact
         // values under directed rounding.
@@ -730,8 +1078,19 @@ impl<R: ErrorBounds> Context<R> {
             // j odd (the sine sixths): cosine is ±√3/2 there, not exact.
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         let reduced = reduce_unit_argument(x, u);
-        self.ziv(50, |guard| {
+        // next to a multiple of `u/2` the cosine is `±(1 − δ)` (see `sin_unit`)
+        let hugs = match reduced.quadrant() {
+            Quadrant::First => Some(Sign::Positive),
+            Quadrant::Third => Some(Sign::Negative),
+            _ => None,
+        };
+        if let Some(r) = hugs.and_then(|sign| self.tiny_cos_unit(&reduced, sign)) {
+            return Ok(r);
+        }
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -775,7 +1134,13 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return (Err(FpError::InfiniteInput), Err(FpError::InfiniteInput));
         }
-        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // sin(±0) = ±0, cos(±0) = 1 — ahead of the assertion, like the radian `sin_cos`
+            return (
+                Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self))),
+                Ok(FBig::<R, B>::ONE.with_precision(self.precision)),
+            );
+        }
 
         // Exact cases — outside the Ziv loop, whose containment test cannot certify exact
         // values under directed rounding.
@@ -816,10 +1181,36 @@ impl<R: ErrorBounds> Context<R> {
             }
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // sin is odd (cos even): reduce and evaluate on |x|, apply the sign to sin at the end.
         let reduced = reduce_unit_argument(x, u);
+        // Next to a multiple of `u/4` one of the two hugs `±1` (see `sin_unit`); the other
+        // (≈ ±2π·r/u) is an ordinary value with its own loop.
+        match reduced.quadrant() {
+            q @ (Quadrant::First | Quadrant::Third) => {
+                let sign = if q == Quadrant::First {
+                    Sign::Positive
+                } else {
+                    Sign::Negative
+                };
+                if let Some(c) = self.tiny_cos_unit(&reduced, sign) {
+                    return (self.sin_unit(x, u, cache), Ok(c));
+                }
+            }
+            q => {
+                let sign = if q == Quadrant::Second {
+                    x.sign()
+                } else {
+                    -x.sign()
+                };
+                if let Some(s) = self.tiny_cos_unit(&reduced, sign) {
+                    return (Ok(s), self.cos_unit(x, u, cache));
+                }
+            }
+        }
         let negative = x.sign() == Sign::Negative;
-        let (s, c) = self.ziv_pair(50, |guard| {
+        let (s, c) = self.ziv_pair_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
@@ -872,7 +1263,10 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
+        if x.significand.is_zero() {
+            // tan(±0) = ±0 — ahead of the assertion, like the radian `tan`
+            return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
+        }
 
         // tan hits an exact value at every eighth-of-turn argument (`8x/u` an integer) — the
         // whole table resolves before the Ziv loop (its containment test cannot certify exact
@@ -890,10 +1284,16 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `(2π/u)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::TwoPiOver(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
         // tan is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
@@ -936,7 +1336,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
@@ -961,11 +1360,9 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
-        // The `±1/2` row keeps the *rounded* comparison: the derivative is bounded there
-        // (`2/√3`), so an argument a sub-ulp below `1/2` moves the result by at most an ulp — and
-        // `1/2` is not exactly representable in an odd base, so there is no exact form to compare.
-        let x_orig = FBig::<R, B>::new(x.clone(), *self);
-        if x_orig.abs_cmp(&(FBig::<R, B>::ONE / 2u8)).is_eq() {
+        // The `±1/2` row, compared *exactly* like the `±1` rows (`2|x| = 1`). In an odd base
+        // `1/2` has no finite expansion, so no argument ever lands on this row there.
+        if is_abs_half(x) {
             let num = if x.sign() == Sign::Negative {
                 -(IBig::from(u))
             } else {
@@ -973,8 +1370,14 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 12);
         }
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `u/(2π)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Over2Pi(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1002,7 +1405,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
 
         // Domain |x| ≤ 1 and the `u/2` row, compared *exactly* (no precision argument) — see
         // `asin_unit` for why the exact form matters here.
@@ -1025,11 +1427,8 @@ impl<R: ErrorBounds> Context<R> {
         if x.significand.is_zero() {
             return exact_ratio(self, IBig::from(u), 4);
         }
-        // The `u/6` row keeps the rounded comparison, as in `asin_unit` (bounded derivative).
-        if FBig::<R, B>::new(x.clone(), *self)
-            .abs_cmp(&(FBig::<R, B>::ONE / 2u8))
-            .is_eq()
-        {
+        // The `u/6` / `u/3` row, compared exactly as in `asin_unit`.
+        if is_abs_half(x) {
             return exact_ratio(
                 self,
                 if x.sign() == Sign::Positive {
@@ -1041,9 +1440,20 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // A tiny argument: `acos_unit(x) = u/4 ∓ δ` with `0 < δ = |asin_unit(x)| < u·|x|` — next
+        // to the exactly representable `u/4` whenever that has a finite expansion.
+        if top_exp(x) < 0 {
+            let delta_exp = top_exp(&Repr::<B>::new(IBig::from(u), 0)).saturating_add(top_exp(x));
+            if let Some(r) = self.round_near_quarter(Sign::Positive, 1, u, -x.sign(), delta_exp) {
+                return Ok(r);
+            }
+        }
+
         // acos_unit(x) = u/4 − asin_unit(x): the composition avoids the catastrophic
         // cancellation `π/2 − asin(x)` would suffer near x = 1 once scaled.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1086,7 +1496,6 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 4);
         }
-        assert_limited_precision(self.precision);
         if u == 0 {
             return signed_zero_normal(self, x);
         }
@@ -1107,7 +1516,22 @@ impl<R: ErrorBounds> Context<R> {
             return exact_ratio(self, num, 8);
         }
 
-        self.ziv(50, |guard| {
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `u/(2π)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Over2Pi(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
+        // A huge argument: `atan_unit(x) = ±(u/4 − δ)` with `0 < δ = u·atan(1/|x|)/(2π) < u/|x|`.
+        if bottom_exp(x) > 0 {
+            let delta_exp =
+                top_exp(&Repr::<B>::new(IBig::from(u), 0)).saturating_sub(bottom_exp(x));
+            if let Some(r) = self.round_near_quarter(x.sign(), 1, u, -x.sign(), delta_exp) {
+                return Ok(r);
+            }
+        }
+
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.atan_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1142,8 +1566,6 @@ impl<R: ErrorBounds> Context<R> {
             // the u → 0 limit: the signed zero carrying the angle's sign (atan2's sign is y's)
             return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(y.sign()), *self)));
         }
-
-        assert_limited_precision(self.precision);
 
         // The `k·π/8` angles as exact `k·u/8` ratios (shared by the infinity table and the
         // finite axis/diagonal rows below).
@@ -1195,19 +1617,43 @@ impl<R: ErrorBounds> Context<R> {
         let x_abs =
             FBig::<R, B>::new(Repr::new(x.significand.clone().abs(), x.exponent), Context::new(0));
         if y_abs.abs_cmp(&x_abs).is_eq() {
-            let same_half = (y.sign() == Sign::Positive) == (x.sign() == Sign::Positive);
-            return u8th(match (y.sign() == Sign::Positive, same_half) {
-                (true, true) => 1,   // (+y, +x): π/4
-                (true, false) => 3,  // (+y, −x): 3π/4
-                (false, true) => -1, // (−y, +x): −π/4
-                (false, false) => -3,
+            return u8th(match (y.sign() == Sign::Positive, x.sign() == Sign::Positive) {
+                (true, true) => 1,    // (+y, +x): π/4
+                (true, false) => 3,   // (+y, −x): 3π/4
+                (false, true) => -1,  // (−y, +x): −π/4
+                (false, false) => -3, // (−y, −x): −3π/4
             });
+        }
+
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
+        // Next to an axis the angle is an exactly representable `k·u/4` displaced by less than
+        // `u·min(|y/x|, |x/y|)` (`atan t < t`), on a side fixed by the quadrant.
+        {
+            let u_top = top_exp(&Repr::<B>::new(IBig::from(u), 0));
+            let (sy, sx) = (y.sign(), x.sign());
+            // |x/y| < B^(top(x) − bottom(y)): next to the y axis, angle `sy·(u/4 ∓ δ)`
+            let steep = top_exp(x).saturating_sub(bottom_exp(y));
+            // |y/x| < B^(top(y) − bottom(x)): next to the negative x axis, angle `sy·(u/2 − δ)`
+            let flat = top_exp(y).saturating_sub(bottom_exp(x));
+            let near = if steep < 0 {
+                // x > 0 pulls the angle towards zero, x < 0 pushes it away
+                let dir = if sx == Sign::Positive { -sy } else { sy };
+                self.round_near_quarter(sy, 1, u, dir, u_top.saturating_add(steep))
+            } else if flat < 0 && sx == Sign::Negative {
+                self.round_near_quarter(sy, 2, u, -sy, u_top.saturating_add(flat))
+            } else {
+                None
+            };
+            if let Some(r) = near {
+                return Ok(r);
+            }
         }
 
         // x ≠ 0, finite: atan2(y/x) ± (quadrant π), scaled by u/(2π). The inner atan2 is
         // itself correctly rounded at the working precision; the scaling's rounding is
         // tracked by the Ball.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let a = work.atan2::<B>(y, x, reborrow_cache(&mut cache))?;
             let a_ball = Ball::from_rounded(a.map(FBig::into_repr), work.precision);
@@ -1229,10 +1675,14 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
         if x.significand.is_zero() {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
+        }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, true) {
+            return r;
         }
 
         // Domain check: |x| must be <= 1, compared *exactly* (no precision argument) — `±1` is
@@ -1242,7 +1692,7 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::OutOfDomain);
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
@@ -1259,6 +1709,10 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            // asin(t) = t·(1 + O(t²))
+            return Ok(odd_negligible(x, wp));
+        }
         let one = Ball::exact_int(IBig::ONE, wp);
         let d = one.sub(&x.mul(x, wp)?, wp)?.sqrt(wp)?;
         if d.mid.significand.is_zero() {
@@ -1304,7 +1758,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
 
         // Domain |x| ≤ 1 and the `±1` rows, compared *exactly* (no precision argument):
         // `acos(1 − δ)` is `√(2δ)`, which the endpoint's `0` misses entirely once `δ` is far
@@ -1312,6 +1765,10 @@ impl<R: ErrorBounds> Context<R> {
         let cmp_one = repr_cmp_same_base::<B, true>(x, &Repr::<B>::one(), None);
         if cmp_one.is_gt() {
             return Err(FpError::OutOfDomain);
+        }
+        if !(cmp_one.is_eq() && x.sign() == Sign::Positive) {
+            // every row but the exact `acos(1) = 0` needs a precision to round to
+            assert_limited_precision(self.precision);
         }
         if cmp_one.is_eq() {
             // |x| = 1: the composition π/2 − asin(±1) cancels onto an exact value. acos(1) = 0 is
@@ -1324,7 +1781,7 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let asin_ball = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1338,6 +1795,36 @@ impl<R: ErrorBounds> Context<R> {
         })
     }
 
+    /// `sign·(num/den)·π`, correctly rounded — the fixed π-multiples `atan` / `atan2` return at
+    /// infinite arguments and on the axes. π is irrational, so no such multiple is ever a
+    /// rounding boundary and the Ziv loop certifies it from a slightly wider π.
+    fn pi_fraction<const B: Word>(
+        &self,
+        sign: Sign,
+        num: u8,
+        den: u8,
+        mut cache: Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        assert_limited_precision(self.precision);
+        self.ziv_irrational(10, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+            // π as a ball: the cached constant is correctly rounded to the work precision; 8 is
+            // a conservative sound radius (as for the ln(2) constant).
+            let rad = ulps::<B>(&pi.repr, wp, 8);
+            let mut v = Ball::with_error(pi.into_repr(), rad);
+            if num != 1 {
+                v = v.scale_int(&IBig::from(num), wp)?;
+            }
+            if den != 1 {
+                v = v.div_int(den as usize, wp)?;
+            }
+            let v = if sign == Sign::Negative { -v } else { v };
+            Ok(v.to_value_radius::<R>(&Context::<R>::new(wp)))
+        })
+    }
+
     /// Calculate the arctangent of the floating point representation.
     pub fn atan<const B: Word>(
         &self,
@@ -1346,20 +1833,20 @@ impl<R: ErrorBounds> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         if x.is_infinite() {
             // atan(±inf) = ±π/2 — preserved (a well-defined finite result for an infinite input)
-            let pi = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let half_pi: FBig<R, B> = pi / 2;
-            let res: FBig<R, B> = half_pi * x.sign();
-            return Ok(res.with_precision(self.precision));
+            return self.pi_fraction(x.sign(), 1, 2, cache);
         }
-
-        assert_limited_precision(self.precision);
 
         if x.significand.is_zero() {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
+        assert_limited_precision(self.precision);
+        // A tiny argument: the result is `x` displaced by less than `|x|³`, on a known side.
+        if let Some(r) = self.tiny_odd(x, false) {
+            return r;
+        }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
@@ -1376,6 +1863,10 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> Result<Ball<B>, FpError> {
         let wp = self.precision;
+        if square_negligible(x, wp) {
+            // atan(t) = t·(1 − O(t²))
+            return Ok(odd_negligible(x, wp));
+        }
         let sign = x.mid.sign();
         let x_abs = if sign == Sign::Negative {
             -x.clone()
@@ -1390,9 +1881,20 @@ impl<R: ErrorBounds> Context<R> {
                 .value();
             let half_pi = &pi / 2u8;
             let rad = ulps::<B>(&half_pi.repr, wp, 8);
-            let half_pi = Ball::with_error(half_pi.into_repr(), rad);
-            let inv_x = one.div(&x_abs, wp)?;
-            half_pi.sub(&self.atan_compute(&inv_x)?, wp)
+            let mut half_pi = Ball::with_error(half_pi.into_repr(), rad);
+            if bottom_exp(&x_abs.mid) > (wp as isize).saturating_add(2)
+                && x_abs.rad.mul2() <= Mag::from_repr_lower(&x_abs.mid)
+            {
+                // Every `t` of the ball is at least `mid/2 ≥ B^(wp+2)`, so `atan(1/t) < 1/t` is
+                // below the last place of `π/2`: no reciprocal is formed (it underflows for an
+                // exponent near the top of the range, and so does its cube in the series for
+                // one beyond a third of it).
+                half_pi.add_error(ulp_mag::<B>(&half_pi.mid, wp));
+                Ok(half_pi)
+            } else {
+                let inv_x = one.div(&x_abs, wp)?;
+                half_pi.sub(&self.atan_compute(&inv_x)?, wp)
+            }
         } else {
             self.atan_compute(&x_abs)
         };
@@ -1445,46 +1947,69 @@ impl<R: ErrorBounds> Context<R> {
 
         assert_limited_precision(self.precision);
 
-        // Handle Infinities according to IEEE 754 (computed at the target precision).
+        // Handle Infinities according to IEEE 754. Each result is a fixed rational multiple of π,
+        // rounded once from a higher-precision π (see `pi_fraction`) — scaling an already
+        // rounded π would round twice.
         if y.is_infinite() || x.is_infinite() {
-            let (sy, sx) = (y.sign() == Sign::Positive, x.sign() == Sign::Positive);
-            let pi_val = self.pi::<B>(reborrow_cache(&mut cache)).value();
-            let res: FBig<R, B> = match (y.is_infinite(), x.is_infinite(), sy, sx) {
-                (true, true, true, true) => pi_val.clone() / 4u8,
-                (true, true, true, false) => pi_val.clone() * 3u8 / 4u8,
-                (true, true, false, true) => -(pi_val.clone() / 4u8),
-                (true, true, false, false) => -(pi_val.clone() * 3u8 / 4u8),
-                (true, false, true, _) => pi_val.clone() / 2u8,
-                (true, false, false, _) => -(pi_val.clone() / 2u8),
-                (false, true, _, true) => {
+            let sy = y.sign();
+            return match (y.is_infinite(), x.is_infinite(), x.sign() == Sign::Positive) {
+                (true, true, true) => self.pi_fraction(sy, 1, 4, cache), // ±π/4
+                (true, true, false) => self.pi_fraction(sy, 3, 4, cache), // ±3π/4
+                (true, false, _) => self.pi_fraction(sy, 1, 2, cache),   // ±π/2
+                (false, true, true) => {
                     // atan2(±finite, +inf) = ±0 (signed zero of y)
-                    if sy {
-                        FBig::<R, B>::ZERO
-                    } else {
-                        FBig::<R, B>::new(Repr::neg_zero(), *self)
-                    }
+                    Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(sy), *self)))
                 }
-                (false, true, true, false) => pi_val.clone(),
-                (false, true, false, false) => -pi_val,
-                _ => unreachable!(),
+                (false, true, false) => self.pi_fraction(sy, 1, 1, cache), // ±π
+                (false, false, _) => unreachable!(),
             };
-            return Ok(res.with_precision(self.precision));
         }
 
         // x == 0, y finite nonzero: atan2 = ±π/2.
         if x.significand.is_zero() {
-            let half_pi = self.pi::<B>(reborrow_cache(&mut cache)).value() / 2u8;
-            let res = half_pi * y.sign();
-            return Ok(res.with_precision(self.precision));
+            return self.pi_fraction(y.sign(), 1, 2, cache);
+        }
+
+        // x = B^k: `y/x` is `y` with its exponent moved, exactly — plain `atan`, which knows
+        // the tiny-argument case (`atan2(y, x) = y/x − δ` sits on a representable value there).
+        if x.significand.is_one() && !y.significand.is_zero() {
+            if let Some(e) = y.exponent.checked_sub(x.exponent) {
+                return self.atan(&Repr::new(y.significand.clone(), e), cache);
+            }
         }
 
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π), all as Ball composition.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let y_ball = Ball::from_rounded(work.repr_round_ref(y), work.precision);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
-            let ratio = y_ball.div(&x_ball, work.precision)?;
-            let atan_val = work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache))?;
+            let atan_val = match y_ball.div(&x_ball, work.precision) {
+                Ok(ratio) => work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache))?,
+                // `|y/x|` is beyond the exponent range: the angle is within `|x/y|` — far less
+                // than a last place — of the `±π/2` it has on the y axis.
+                Err(FpError::Overflow(_)) => {
+                    let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+                    let half_pi = &pi / 2u8;
+                    let rad = ulps::<B>(&half_pi.repr, work.precision, 9);
+                    let half_pi = Ball::with_error(half_pi.into_repr(), rad);
+                    if y.sign() == x.sign() {
+                        half_pi
+                    } else {
+                        -half_pi
+                    }
+                }
+                // `|y/x|` is below the exponent range. In the right half plane that ratio is
+                // the result (to a relative `(y/x)²`), an underflow with the sign of `y`; in
+                // the left one it is the invisible distance from `±π`.
+                Err(FpError::Underflow(_)) => {
+                    if x.sign() == Sign::Positive {
+                        return Err(FpError::Underflow(y.sign()));
+                    }
+                    let one = Repr::<B>::one();
+                    Ball::with_error(Repr::zero(), ulp_mag::<B>(&one, work.precision))
+                }
+                Err(other) => return Err(other),
+            };
             let res = if x.sign() == Sign::Positive {
                 atan_val
             } else {
@@ -1812,12 +2337,15 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
     /// # Ok::<(), dashu_base::ParseError>(())
     /// ```
     ///
+    /// The result carries the higher of the two operands' precisions, as for the binary
+    /// arithmetic operations.
+    ///
     /// # Panics
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2_unit(&self, x: &Self, u: usize) -> Self {
-        self.context
-            .unwrap_fp(self.context.atan2_unit(&self.repr, &x.repr, u, None))
+        let context = Context::max(self.context, x.context);
+        context.unwrap_fp(context.atan2_unit(&self.repr, &x.repr, u, None))
     }
 
     /// Calculate the arcsine of the floating point number.
@@ -1846,12 +2374,25 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 
     /// Calculate the arctangent of `self / x`.
     ///
+    /// The result carries the higher of the two operands' precisions, as for the binary
+    /// arithmetic operations.
+    ///
+    /// # Examples
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_float::DBig;
+    /// let y = DBig::from_str("1")?; // one digit
+    /// let x = DBig::from_str("1.000000000")?; // ten digits
+    /// assert_eq!(y.atan2(&x), DBig::from_str("0.7853981634")?);
+    /// # Ok::<(), dashu_base::ParseError>(())
+    /// ```
+    ///
     /// # Panics
     /// Panics if both arguments are zero.
     #[inline]
     pub fn atan2(&self, x: &Self) -> Self {
-        self.context
-            .unwrap_fp(self.context.atan2(&self.repr, &x.repr, None))
+        let context = Context::max(self.context, x.context);
+        context.unwrap_fp(context.atan2(&self.repr, &x.repr, None))
     }
 }
 

@@ -355,6 +355,27 @@ fn test_div_by_noninvertible() {
 
 #[test]
 fn test_pow() {
+    // in the ring of integers modulo 1 every power is zero (which is also the identity)
+    let ring = ConstDivisor::new(ubig!(1));
+    for exp in [
+        ubig!(0),
+        ubig!(1),
+        ubig!(2),
+        ubig!(5),
+        ubig!(1) << 70,
+        ubig!(1) << 200,
+    ] {
+        let p = ring.reduce(0).pow(&exp);
+        assert_eq!(p, ring.reduce(1));
+        assert_eq!(p, ring.reduce(0));
+        assert_eq!(p.residue(), ubig!(0));
+    }
+    for m in [ubig!(2), ubig!(3)] {
+        let ring = ConstDivisor::new(m);
+        assert_eq!(ring.reduce(0).pow(&ubig!(0)), ring.reduce(1));
+        assert_eq!(ring.reduce(0).pow(&ubig!(0)).residue(), ubig!(1));
+    }
+
     let ring = ConstDivisor::new(ubig!(100));
     assert_eq!(ring.reduce(0).pow(&ubig!(0)), ring.reduce(1));
     assert_eq!(ring.reduce(13).pow(&ubig!(0)), ring.reduce(1));
@@ -438,5 +459,38 @@ fn test_format() {
     modulus: 1000000000000000000..0000000000000000000 (digits: 40, bits: 130),
 }"#
         );
+    }
+}
+
+#[test]
+fn test_mul_equal_operands_large() {
+    // `&a * &a` and `a *= &a` switch to the squaring kernel, whose scratch requirement
+    // differs from the multiplication one (also for even moduli).
+    use dashu_int::UBig;
+    let mut cases = vec![
+        ((UBig::ONE << 3904) + UBig::ONE, UBig::ONE << 3777),
+        (UBig::ONE << 3840, UBig::ONE << 3776),
+        (UBig::ONE << 3840, UBig::ONE << 3777),
+        ((UBig::ONE << 3840) + UBig::ONE, UBig::ONE << 3840),
+        ((UBig::ONE << 4096) - ubig!(159), (UBig::ONE << 4095) + ubig!(12345)),
+    ];
+    for words in [29usize, 30, 31, 32, 33, 48, 62, 64, 80, 96, 97, 128, 200] {
+        let m = (UBig::ONE << (64 * words - 1)) + UBig::ONE;
+        let x = &m - ubig!(2);
+        cases.push((m, x));
+    }
+    for (m, x) in cases {
+        let ring = ConstDivisor::new(m.clone());
+        let a = ring.reduce(x.clone());
+        let expected = (&x * &x) % &m;
+        assert_eq!(a.sqr().residue(), expected);
+        assert_eq!((&a * &a).residue(), expected);
+        assert_eq!((a.clone() * a.clone()).residue(), expected);
+        let mut c = a.clone();
+        c *= &a;
+        assert_eq!(c.residue(), expected);
+        // an equal value that is a different object
+        let b = ring.reduce(x.clone());
+        assert_eq!((&a * &b).residue(), expected);
     }
 }

@@ -33,13 +33,17 @@ impl<R: Round, const B: Word> UniformCBig<R, B> {
     /// Create a sampler over the box `[low, high)` at `precision` (the two parts are sampled
     /// independently; each part's range is `[low.part, high.part)`).
     ///
+    /// A side of zero width (`low.part == high.part`) is allowed: that part of every sample is
+    /// the bound itself, so the box degenerates to a segment (for instance real-only samples
+    /// with `low.im == high.im`) or to a single point.
+    ///
     /// # Panics
     ///
-    /// Panics if `low.re > high.re` or `low.im > high.im`.
+    /// Panics if `low.re > high.re` or `low.im > high.im`, or if a bound is infinite.
     pub fn new(low: &CBig<R, B>, high: &CBig<R, B>, precision: usize) -> Self {
         Self {
-            re: UniformFBig::new(&part_view(low, true), &part_view(high, true), precision),
-            im: UniformFBig::new(&part_view(low, false), &part_view(high, false), precision),
+            re: part_sampler(&part_view(low, true), &part_view(high, true), precision),
+            im: part_sampler(&part_view(low, false), &part_view(high, false), precision),
         }
     }
 
@@ -48,6 +52,21 @@ impl<R: Round, const B: Word> UniformCBig<R, B> {
         let re = self.re.sample_fbig(rng);
         let im = self.im.sample_fbig(rng);
         CBig::from_parts(re, im)
+    }
+}
+
+/// The sampler of one side of the box: the half-open `[low, high)`, or the single value `low`
+/// when the side has zero width (which the half-open [`UniformFBig::new`] rejects as an empty
+/// interval).
+fn part_sampler<R: Round, const B: Word>(
+    low: &FBig<R, B>,
+    high: &FBig<R, B>,
+    precision: usize,
+) -> UniformFBig<R, B> {
+    if low == high {
+        UniformFBig::new_inclusive(low, high, precision)
+    } else {
+        UniformFBig::new(low, high, precision)
     }
 }
 

@@ -140,6 +140,7 @@
 | `log(0) = -∞` | ✅ | |
 | `log(+∞) = +∞`（C） | ❌ 偏离 | 以 `FpError::InfiniteInput` 拒绝（与同样拒绝的 `dashu-float` 的 `ln` 一致）。 |
 | $\arg(0 + i\cdot\infty) = +\pi/2$、$\arg(0 - i\cdot\infty) = -\pi/2$ | ✅ | `arg = atan2(im, re)`，复用 `dashu-float` 的 Annex G `atan2` 表。 |
+| $\arg(+0 \pm i0) = \pm 0$、$\arg(-0 \pm i0) = \pm\pi$ | ✅ | 由复数 `arg` 自行处理，与 `log` 一致（实数 `atan2` 拒绝两个参数同时为零）。 |
 | `abs`/`hypot` 上溢安全模运算 | ✅ | 在 `dashu-float` 的 `hypot` 上的薄组合层。 |
 
 ### 异常条件

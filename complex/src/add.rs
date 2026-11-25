@@ -4,7 +4,7 @@
 //! part, forwarded through the shared `impl_cbig_binop!` macro (same pattern as `Mul` / `Div`).
 
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, CfpResult, Context};
+use crate::repr::{combine_results, CfpResult, Context};
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 use dashu_float::round::Round;
 use dashu_int::Word;
@@ -13,21 +13,21 @@ impl<R: Round> Context<R> {
     /// Add two complex numbers under this context (context layer).
     ///
     /// Returns a [`CfpResult`] carrying each part's inexactness. Addition is componentwise, so each
-    /// part is a single correctly-rounded real addition.
+    /// part is a single correctly-rounded real addition. A part that leaves the exponent range
+    /// saturates on its own (to a signed infinity, flagged inexact) and the other part is kept;
+    /// `Err` is returned only when both parts do.
     pub fn add<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
-        let re = self.float().add(z.re(), w.re())?;
-        let im = self.float().add(z.im(), w.im())?;
-        Ok(combine_parts(re, im))
+        combine_results(self.float().add(z.re(), w.re()), self.float().add(z.im(), w.im()))
     }
 
     /// Subtract two complex numbers under this context (context layer).
     ///
     /// Returns a [`CfpResult`] carrying each part's inexactness. Subtraction is componentwise, so each
-    /// part is a single correctly-rounded real subtraction.
+    /// part is a single correctly-rounded real subtraction. A part that leaves the exponent range
+    /// saturates on its own (to a signed infinity, flagged inexact) and the other part is kept;
+    /// `Err` is returned only when both parts do.
     pub fn sub<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
-        let re = self.float().sub(z.re(), w.re())?;
-        let im = self.float().sub(z.im(), w.im())?;
-        Ok(combine_parts(re, im))
+        combine_results(self.float().sub(z.re(), w.re()), self.float().sub(z.im(), w.im()))
     }
 }
 

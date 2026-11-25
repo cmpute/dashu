@@ -1,5 +1,7 @@
 use crate::{
-    error::{assert_finite_operands, assert_limited_precision, FpError, FpResult},
+    error::{
+        assert_finite_operands, assert_limited_precision, panic_divide_by_0, FpError, FpResult,
+    },
     fbig::FBig,
     helper_macros::{self, impl_binop_assign_by_taking},
     repr::{rounded_to_repr, Context, Repr, Word},
@@ -16,25 +18,6 @@ use dashu_base::{
     RemEuclid, Sign, Signed, UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, high, modular::IntoRing, IBig, UBig};
-
-/// Attach the dividend/divisor XOR sign to a zero quotient: the raw quotient significand is
-/// `+0`, so the sign of a zero result (`0/finite`, or a finite/finite that rounds to zero) is
-/// `sign(lhs) XOR sign(rhs)`.
-fn make_div_repr<const B: Word>(
-    sign_negative: bool,
-    significand: IBig,
-    exponent: isize,
-) -> Repr<B> {
-    if significand.is_zero() {
-        if sign_negative {
-            Repr::neg_zero()
-        } else {
-            Repr::zero()
-        }
-    } else {
-        Repr::new(significand, exponent)
-    }
-}
 
 macro_rules! impl_div_for_fbig {
     (impl $op:ident, $method:ident, $repr_method:ident) => {
@@ -126,7 +109,7 @@ macro_rules! impl_rem_for_fbig {
             ///
             /// # Panics
             ///
-            /// Panics if either operand is infinite.
+            /// Panics if either operand is infinite, or if `rhs` is zero.
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
                 let context = Context::max(self.context, rhs.context);
                 FBig::new(context.$repr_method(self.repr, rhs.repr).value(), context)
@@ -172,7 +155,9 @@ macro_rules! impl_rem_for_fbig {
         }
     };
 }
-impl_div_for_fbig!(impl Div, div, repr_div);
+// The operators go through the any-width kernel: an operand with unlimited precision (or a
+// guard digit) can carry more digits than `repr_div`'s `divisor digits + precision` bound.
+impl_div_for_fbig!(impl Div, div, repr_div_any_width);
 impl_rem_for_fbig!(impl Rem, rem, repr_rem);
 impl_binop_assign_by_taking!(impl DivAssign<Self>, div_assign, div);
 impl_binop_assign_by_taking!(impl RemAssign<Self>, rem_assign, rem);
@@ -181,6 +166,24 @@ impl<R: Round, const B: Word> DivEuclid<FBig<R, B>> for FBig<R, B> {
     type Output = IBig;
     #[inline]
     fn div_euclid(self, rhs: FBig<R, B>) -> Self::Output {
+        assert_finite_operands(&self.repr, &rhs.repr);
+        if rhs.repr.significand.is_zero() {
+            panic_divide_by_0()
+        }
+        if self.repr.significand.is_zero() {
+            // nothing to align: the exponent of a zero is not a scale
+            return IBig::ZERO;
+        }
+        // |self| < |rhs| whenever the divisor's lowest digit sits above the dividend's
+        // highest one; the quotient is then 0 or -1 and the aligned divisor (as wide as
+        // the exponent gap) is never needed.
+        let top = self.repr.exponent as i128 + self.repr.digits() as i128;
+        if top <= rhs.repr.exponent as i128 {
+            return match self.repr.sign() {
+                Sign::Positive => IBig::ZERO,
+                Sign::Negative => IBig::from_parts(-rhs.repr.sign(), UBig::ONE),
+            };
+        }
         let (num, den) = align_as_int(self, rhs);
         num.div_euclid(den)
     }
@@ -212,18 +215,37 @@ impl<R: Round, const B: Word> DivEuclid<&FBig<R, B>> for &FBig<R, B> {
 
 impl<R: Round, const B: Word> RemEuclid<FBig<R, B>> for FBig<R, B> {
     type Output = FBig<R, B>;
+
+    /// Calculates the Euclidean remainder: the exact remainder `self - n * rhs` (with `n`
+    /// the integer returned by [`DivEuclid`]) lies in `[0, |rhs|)` whatever the rounding
+    /// mode attached to the type is.
+    ///
+    /// Like every other operation the result is then rounded to the precision of the
+    /// operands (the larger of the two). When the exact remainder needs more digits than
+    /// that — it can, when `rhs` has a higher exponent than `self` — the rounded value can
+    /// reach `|rhs|` itself, exactly as [`f64::rem_euclid`] can: `-1` modulo `1e2` at one
+    /// digit of precision is `99` rounded to one digit. Give the operands enough precision
+    /// (see [`FBig::with_precision`]) when the exact remainder is required.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::{ParseError, RemEuclid};
+    /// # use dashu_float::DBig;
+    /// let a = DBig::from_str("-7.5")?;
+    /// let b = DBig::from_str("2.0")?;
+    /// assert_eq!(a.rem_euclid(b), DBig::from_str("0.5")?);
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if either operand is infinite, or if `rhs` is zero.
     #[inline]
     fn rem_euclid(self, rhs: FBig<R, B>) -> Self::Output {
-        let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
         let context = Context::max(self.context, rhs.context);
-
-        let (num, den) = align_as_int(self, rhs);
-        let r = num.rem_euclid(den);
-        let mut r = context.convert_int(r.into()).value();
-        if !r.repr.significand.is_zero() {
-            r.repr.exponent += r_exponent;
-        }
-        r
+        FBig::new(context.repr_rem_euclid(self.repr, rhs.repr).value(), context)
     }
 }
 
@@ -256,15 +278,10 @@ impl<R: Round, const B: Word> DivRemEuclid<FBig<R, B>> for FBig<R, B> {
     type OutputRem = FBig<R, B>;
     #[inline]
     fn div_rem_euclid(self, rhs: FBig<R, B>) -> (IBig, FBig<R, B>) {
-        let r_exponent = self.repr.exponent.min(rhs.repr.exponent);
-        let context = Context::max(self.context, rhs.context);
-
-        let (num, den) = align_as_int(self, rhs);
-        let (q, r) = num.div_rem_euclid(den);
-        let mut r = context.convert_int(r.into()).value();
-        if !r.repr.significand.is_zero() {
-            r.repr.exponent += r_exponent;
-        }
+        // The remainder comes from the gap-independent kernel (and so always agrees with
+        // `rem_euclid`); the integer quotient is inherently as wide as the exponent gap.
+        let r = (&self).rem_euclid(&rhs);
+        let q = self.div_euclid(rhs);
         (q, r)
     }
 }
@@ -482,10 +499,10 @@ fn round_short_quotient<R: Round, const B: Word>(
 
 impl<R: Round> Context<R> {
     /// Division kernel for an already-bounded dividend: `lhs` must carry at most
-    /// `rhs.digits() + precision` digits (the `FBig` operators' operands always do — a
-    /// significand is at most `precision + 1` digits and the divisor at least one). For an
-    /// arbitrary [`Repr`] dividend use [`Context::div`], which bounds it exactly (see
-    /// [`Self::repr_div_split`]).
+    /// `rhs.digits() + precision` digits. For an arbitrary [`Repr`] dividend (the `FBig`
+    /// operators' included: an unlimited-precision operand mixed with a limited one is not
+    /// bounded by the result precision) use [`Self::repr_div_any_width`], which bounds it
+    /// exactly (see [`Self::repr_div_split`]).
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
         debug_assert!(
             digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
@@ -674,19 +691,19 @@ impl<R: Round> Context<R> {
         };
 
         let (mut q, mut r) = num.div_rem(&den);
-        let mut e = lhs
-            .exponent
-            .checked_add(k as isize)
-            .and_then(|e| e.checked_sub(rhs.exponent))
-            .ok_or({
-                // lhs.exponent >= 0 whenever the addition overflows, and < 0 whenever the
-                // subtraction underflows (see the digit bound on `k` above)
-                if lhs.exponent >= 0 {
-                    FpError::Overflow(sign)
-                } else {
-                    FpError::Underflow(sign)
-                }
-            })?;
+        // The quotient's exponent is tracked in a wider type and confined to the `isize`
+        // range only once the quotient is scaled and rounded (`make`, below): the unscaled
+        // `lhs.exponent − rhs.exponent` can leave the range while the result does not
+        // (`2 / (3·2^(isize::MIN+1))` is `1·2^(isize::MAX−1)` at one digit).
+        let mut e = lhs.exponent as i128 + k as i128 - rhs.exponent as i128;
+        let make = |significand: IBig, exponent: i128| -> Result<Repr<B>, FpError> {
+            if significand.is_zero() {
+                // a zero quotient carries the XOR sign of the operands
+                Ok(Repr::zero_with_sign(sign))
+            } else {
+                Repr::new_wide(significand, exponent)
+            }
+        };
 
         // From here on the digit counts must be EXACT (the `digits_ub`/`digits_lb` estimates
         // only bound a value): each padding shift below has to land the scaled operand on an
@@ -698,9 +715,7 @@ impl<R: Round> Context<R> {
         // Exact division with the quotient already within the precision: nothing to scale and
         // nothing to round (the `lo` sticky part is empty exactly when k == 0).
         if r.is_zero() && k == 0 && qdigits <= self.precision {
-            let repr = make_div_repr(sign_negative, q, e);
-            repr.check_finite_exponent()?;
-            return Ok(Approximation::Exact(repr));
+            return Ok(Approximation::Exact(make(q, e)?));
         }
 
         if q.is_zero() {
@@ -709,9 +724,7 @@ impl<R: Round> Context<R> {
             let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
             let shift = ddigits + self.precision - rdigits;
             shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
+            e -= shift as i128;
             let (q0, r0) = r.div_rem(&den);
             q = q0;
             r = r0;
@@ -728,9 +741,7 @@ impl<R: Round> Context<R> {
             let shift = self.precision - qdigits;
             shl_digits_in_place::<B>(&mut q, shift);
             shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
+            e -= shift as i128;
 
             let (q0, r0) = r.div_rem(&den);
             q += q0;
@@ -758,7 +769,7 @@ impl<R: Round> Context<R> {
         let repr = if qdigits > self.precision {
             debug_assert_eq!(qdigits, self.precision + 1);
             let (qh, ql) = split_digits::<B>(q, 1);
-            let e2 = e.saturating_add(1);
+            let e2 = e + 1;
 
             // The fraction is (ql + num_f/den_f)/B; ql (when nonzero) and num_f both carry
             // the dividend's sign, and |num_f| < den_f, so the fraction's sign is ql's, or
@@ -774,7 +785,7 @@ impl<R: Round> Context<R> {
             let low_sign = if ql_is_zero { num_f.sign() } else { ql.sign() };
 
             if ql_is_zero && num_f.is_zero() {
-                Approximation::Exact(make_div_repr(sign_negative, qh, e2))
+                Approximation::Exact(make(qh, e2)?)
             } else {
                 let adjust = R::round_low_part(&qh, low_sign, || {
                     // ql is a single base-B digit (|ql| < B), so its arithmetic runs in Word;
@@ -801,34 +812,84 @@ impl<R: Round> Context<R> {
                         }
                     }
                 });
-                Approximation::Inexact(make_div_repr(sign_negative, qh + adjust, e2), adjust)
+                Approximation::Inexact(make(qh + adjust, e2)?, adjust)
             }
         } else if num_f.is_zero() {
-            Approximation::Exact(make_div_repr(sign_negative, q, e))
+            Approximation::Exact(make(q, e)?)
         } else {
             let adjust = R::round_ratio(&q, num_f, &den_f);
-            Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
+            Approximation::Inexact(make(q + adjust, e)?, adjust)
         };
-        repr.value_ref().check_finite_exponent()?;
         Ok(repr)
     }
 
+    /// The remainder of `lhs / rhs` with the quotient rounded to an integer under this
+    /// context's rounding mode (the kernel of `%` and [`Context::rem`]).
     pub(crate) fn repr_rem<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
-        assert_finite_operands(&lhs, &rhs);
+        self.repr_rem_with(lhs, rhs, false)
+    }
 
-        let lhs_is_neg_zero = lhs.is_neg_zero();
+    /// The Euclidean remainder of `lhs / rhs`: the quotient is chosen so that the exact
+    /// remainder lies in `[0, |rhs|)`, independently of the rounding mode (the kernel of
+    /// [`RemEuclid`]). The remainder is then rounded to the context precision.
+    pub(crate) fn repr_rem_euclid<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+    ) -> Rounded<Repr<B>> {
+        self.repr_rem_with(lhs, rhs, true)
+    }
+
+    /// Shared remainder kernel. The exact remainder is one of two candidates: `r1` — the
+    /// magnitude of `lhs mod rhs`, carrying the dividend's sign (the truncated quotient is
+    /// kept) — or its complement `r2 = |rhs| − r1` with the opposite sign (the quotient is
+    /// stepped away from zero). `euclid` selects the candidate that is non-negative; otherwise
+    /// the rounding mode decides (see [`rem_rounds_away`]).
+    ///
+    /// No branch materializes the aligned operands when the exponent gap is large: neither
+    /// the time nor the memory depends on the gap.
+    fn repr_rem_with<const B: Word>(
+        &self,
+        lhs: Repr<B>,
+        rhs: Repr<B>,
+        euclid: bool,
+    ) -> Rounded<Repr<B>> {
+        assert_finite_operands(&lhs, &rhs);
+        if rhs.significand.is_zero() {
+            panic_divide_by_0()
+        }
+
+        // The sign of a zero remainder follows the dividend (IEEE 754 §5.3.1: "if the
+        // remainder is zero, its sign shall be that of x"); a Euclidean remainder is
+        // non-negative, so its zero is `+0`.
+        let zero_sign = if euclid { Sign::Positive } else { lhs.sign() };
+        if lhs.significand.is_zero() {
+            // A zero dividend is its own remainder. Its exponent only encodes the sign of
+            // the zero: it must not be aligned with the divisor's (the gap would be as
+            // wide as the divisor's exponent).
+            return Approximation::Exact(Repr::zero_with_sign(zero_sign));
+        }
+        let (lhs_exponent, rhs_exponent) = (lhs.exponent, rhs.exponent);
         let (lhs_sign, lhs_signif) = lhs.significand.into_parts();
         let (rhs_sign, rhs_signif) = rhs.significand.into_parts();
         let quotient_sign = lhs_sign * rhs_sign;
 
-        use core::cmp::Ordering;
-        let significand = match lhs.exponent.cmp(&rhs.exponent) {
+        // true when the quotient is stepped away from zero (the remainder is `∓r2`)
+        let rounds_away = |r1_zero: bool, r1_vs_r2: Ordering, quotient_odd: bool| {
+            if euclid {
+                !r1_zero && lhs_sign == Sign::Negative
+            } else {
+                rem_rounds_away::<R>(quotient_sign, r1_zero, r1_vs_r2, quotient_odd)
+            }
+        };
+
+        let significand = match lhs_exponent.cmp(&rhs_exponent) {
             Ordering::Equal => {
                 // one division yields both the truncated quotient and remainder;
                 // the quotient's parity breaks exact ties under HalfEven
                 let (quotient, r1) = lhs_signif.div_rem(&rhs_signif);
                 let r2 = rhs_signif - &r1;
-                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
+                if rounds_away(r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
                     IBig::from_parts(-lhs_sign, r2)
                 } else {
                     IBig::from_parts(lhs_sign, r1)
@@ -842,8 +903,11 @@ impl<R: Round> Context<R> {
                 // materializing the B^shift-aligned dividend (the exponent gap can be
                 // too large for that).
                 let modulo = ConstDivisor::new(&rhs_signif << 1);
-                let shift = (lhs.exponent - rhs.exponent) as usize;
-                let scaling = if B == 2 {
+                let shift = lhs_exponent.abs_diff(rhs_exponent);
+                // B^shift is a modular power in every base: a plain `1 << shift` for base 2
+                // would materialize the aligned dividend after all (only a gap within a few
+                // words is cheaper as a shift).
+                let scaling = if B == 2 && shift <= 4 * Word::BITS as usize {
                     (UBig::ONE << shift).into_ring(&modulo)
                 } else {
                     UBig::from_word(B).into_ring(&modulo).pow(&shift.into())
@@ -856,16 +920,46 @@ impl<R: Round> Context<R> {
                     r_full
                 };
                 let r2 = rhs_signif - &r1;
-                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient_odd) {
+                if rounds_away(r1.is_zero(), r1.cmp(&r2), quotient_odd) {
                     IBig::from_parts(-lhs_sign, r2)
                 } else {
                     IBig::from_parts(lhs_sign, r1)
                 }
             }
             Ordering::Less => {
+                let shift = rhs_exponent.abs_diff(lhs_exponent);
+                let lhs_signif = IBig::from(lhs_signif);
+                let ldigits = digit_len::<B>(&lhs_signif);
+
+                if shift >= ldigits {
+                    // |lhs| < B^shift <= |rhs| (in units of B^lhs.exponent): the truncated
+                    // quotient is zero and `r1` is the dividend itself. `r2 = |rhs|·B^shift
+                    // − |lhs|` spans the whole exponent gap, so it is only formed on demand —
+                    // and through the sticky rounding below when the gap is too wide for that.
+                    let r1_vs_r2 = if shift > ldigits + 1 {
+                        // 2·|lhs| < B^(ldigits + 1) < B^shift <= |rhs|·B^shift
+                        Ordering::Less
+                    } else {
+                        (&lhs_signif << 1)
+                            .cmp(&shl_digits::<B>(&IBig::from(rhs_signif.clone()), shift))
+                    };
+                    let lhs = Repr {
+                        significand: lhs_sign * lhs_signif,
+                        exponent: lhs_exponent,
+                    };
+                    if !rounds_away(false, r1_vs_r2, false) {
+                        return self.repr_round(lhs);
+                    }
+                    // the quotient is ±1 (with the quotient's sign): r = lhs − (±1)·rhs
+                    let stepped = Repr {
+                        significand: IBig::from_parts(-quotient_sign * rhs_sign, rhs_signif),
+                        exponent: rhs_exponent,
+                    };
+                    return self.repr_round_sum_exact(stepped, lhs);
+                }
+
                 // otherwise we have to split lhs into two parts
-                let shift = (rhs.exponent - lhs.exponent) as usize;
-                let (hi, lo) = split_digits::<B>(lhs_signif.into(), shift);
+                let (hi, lo) = split_digits::<B>(lhs_signif, shift);
 
                 // the truncated quotient is hi div |rhs| and the high part of the
                 // truncated remainder is hi mod |rhs| — both from one division
@@ -878,7 +972,7 @@ impl<R: Round> Context<R> {
                 shl_digits_in_place::<B>(&mut r2, shift);
                 r2 -= lo;
 
-                if rem_rounds_away::<R>(quotient_sign, r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
+                if rounds_away(r1.is_zero(), r1.cmp(&r2), quotient.bit(0)) {
                     (-lhs_sign) * r2
                 } else {
                     lhs_sign * r1
@@ -886,14 +980,9 @@ impl<R: Round> Context<R> {
             }
         };
 
-        let exponent = lhs.exponent.min(rhs.exponent);
+        let exponent = lhs_exponent.min(rhs_exponent);
         if significand.is_zero() {
-            // the sign of a zero remainder follows the dividend (±0)
-            Approximation::Exact(if lhs_is_neg_zero {
-                Repr::neg_zero()
-            } else {
-                Repr::zero()
-            })
+            Approximation::Exact(Repr::zero_with_sign(zero_sign))
         } else {
             let repr = Repr::new(significand, exponent);
             match repr.check_finite_exponent() {
@@ -985,9 +1074,18 @@ impl<R: Round> Context<R> {
     /// );
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FpError::InfiniteInput`] if either operand is infinite, and
+    /// [`FpError::Indeterminate`] if `rhs` is zero (the remainder of a division by zero is
+    /// not a number, whatever the dividend is).
     pub fn rem<const B: Word>(&self, lhs: &Repr<B>, rhs: &Repr<B>) -> FpResult<FBig<R, B>> {
         if lhs.is_infinite() || rhs.is_infinite() {
             return Err(FpError::InfiniteInput);
+        }
+        if rhs.significand.is_zero() {
+            return Err(FpError::Indeterminate);
         }
         Ok(self
             .repr_rem(lhs.clone(), rhs.clone())

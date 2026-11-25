@@ -193,6 +193,14 @@ fn sum_product_parity() {
 
     // Empty iterator → additive/multiplicative identity (Default = zero / one with a fresh cache).
     eq(core::iter::empty::<C>().sum::<C>(), &F::ZERO);
+    eq(core::iter::empty::<&C>().sum::<C>(), &F::ZERO);
+    // The empty product is 1, as for FBig (it used to be `Default`, i.e. 0).
+    let empty: Vec<C> = Vec::new();
+    assert_eq!(Vec::<F>::new().iter().product::<F>(), F::ONE);
+    eq(empty.iter().product::<C>(), &F::ONE);
+    eq(empty.into_iter().product::<C>(), &F::ONE);
+    let one: Vec<C> = vec![C::from(1)];
+    eq(one.iter().product::<C>(), &F::ONE);
 
     // Headline: 11 × 0.9 at precision 1, Zero mode — the exact sum 9.9 truncates to 9, and the
     // CachedFBig sum (delegating to FBig's correctly-rounded Sum) must match the FBig sum.

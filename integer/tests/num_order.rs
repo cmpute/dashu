@@ -84,3 +84,101 @@ fn test_hash() {
         }
     }
 }
+
+#[test]
+fn test_ord_with_small_float() {
+    use core::cmp::Ordering::*;
+
+    // floats in the range (0, 1)
+    for f in [
+        0.75f64,
+        0.5,
+        0.25,
+        0.1,
+        1e-300,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+    ] {
+        assert_eq!(ubig!(0).num_partial_cmp(&f), Some(Less), "0 vs {}", f);
+        assert_eq!(ibig!(0).num_partial_cmp(&f), Some(Less), "0 vs {}", f);
+        assert_eq!(f.num_partial_cmp(&ubig!(0)), Some(Greater), "{} vs 0", f);
+        assert_eq!(f.num_partial_cmp(&ibig!(0)), Some(Greater), "{} vs 0", f);
+        assert_eq!(ubig!(1).num_partial_cmp(&f), Some(Greater), "1 vs {}", f);
+        assert_eq!(ibig!(1).num_partial_cmp(&f), Some(Greater), "1 vs {}", f);
+        assert_eq!(ibig!(-1).num_partial_cmp(&f), Some(Less), "-1 vs {}", f);
+
+        // and in the range (-1, 0)
+        assert_eq!(ubig!(0).num_partial_cmp(&-f), Some(Greater), "0 vs {}", -f);
+        assert_eq!(ibig!(0).num_partial_cmp(&-f), Some(Greater), "0 vs {}", -f);
+        assert_eq!(ibig!(-1).num_partial_cmp(&-f), Some(Less), "-1 vs {}", -f);
+        assert_eq!((-f).num_partial_cmp(&ibig!(-1)), Some(Greater), "{} vs -1", -f);
+        assert_eq!(ibig!(1).num_partial_cmp(&-f), Some(Greater), "1 vs {}", -f);
+    }
+    for f in [
+        0.75f32,
+        0.5,
+        0.25,
+        0.1,
+        1e-30,
+        f32::MIN_POSITIVE,
+        f32::from_bits(1),
+    ] {
+        assert_eq!(ubig!(0).num_partial_cmp(&f), Some(Less), "0 vs {}", f);
+        assert_eq!(ibig!(0).num_partial_cmp(&f), Some(Less), "0 vs {}", f);
+        assert_eq!(ubig!(1).num_partial_cmp(&f), Some(Greater), "1 vs {}", f);
+        assert_eq!(ibig!(-1).num_partial_cmp(&-f), Some(Less), "-1 vs {}", -f);
+        assert_eq!(ibig!(0).num_partial_cmp(&-f), Some(Greater), "0 vs {}", -f);
+    }
+    assert!(ibig!(0).num_lt(&f64::MIN_POSITIVE));
+}
+
+#[test]
+fn test_ord_with_infinite_float() {
+    use core::cmp::Ordering::*;
+
+    let big = IBig::ONE << 2000;
+    for x in [
+        ibig!(0),
+        ibig!(1),
+        ibig!(5),
+        ibig!(-1),
+        ibig!(-5),
+        big.clone(),
+        -big,
+    ] {
+        assert_eq!(x.num_partial_cmp(&f64::INFINITY), Some(Less), "{:?} vs +inf", x);
+        assert_eq!(x.num_partial_cmp(&f64::NEG_INFINITY), Some(Greater), "{:?} vs -inf", x);
+        assert_eq!(x.num_partial_cmp(&f32::INFINITY), Some(Less), "{:?} vs +inf", x);
+        assert_eq!(x.num_partial_cmp(&f32::NEG_INFINITY), Some(Greater), "{:?} vs -inf", x);
+        assert_eq!(f64::INFINITY.num_partial_cmp(&x), Some(Greater), "+inf vs {:?}", x);
+        assert_eq!(f64::NEG_INFINITY.num_partial_cmp(&x), Some(Less), "-inf vs {:?}", x);
+        assert_eq!(x.num_partial_cmp(&f64::NAN), None);
+    }
+    for x in [ubig!(0), ubig!(5), UBig::ONE << 2000] {
+        assert_eq!(x.num_partial_cmp(&f64::INFINITY), Some(Less));
+        assert_eq!(x.num_partial_cmp(&f64::NEG_INFINITY), Some(Greater));
+        assert_eq!(f32::INFINITY.num_partial_cmp(&x), Some(Greater));
+        assert_eq!(f32::NEG_INFINITY.num_partial_cmp(&x), Some(Less));
+    }
+}
+
+#[test]
+fn test_ord_with_float_matches_exact_conversion() {
+    // every integer here is exactly representable by f64, so the
+    // comparison between floats is an exact reference
+    let ints = [-1025i64, -1024, -3, -2, -1, 0, 1, 2, 3, 1024, 1025, 1 << 40];
+    let floats = [
+        -1e300, -1025.5, -1024.0, -2.5, -1.0, -0.5, -1e-300, 1e-300, 0.5, 1.0, 2.5, 1024.0, 1024.5,
+        1e300,
+    ];
+    for i in ints {
+        for f in floats {
+            let expected = (i as f64).partial_cmp(&f);
+            assert_eq!(IBig::from(i).num_partial_cmp(&f), expected, "{} vs {}", i, f);
+            assert_eq!(f.num_partial_cmp(&IBig::from(i)), expected.map(|o| o.reverse()));
+            if i >= 0 {
+                assert_eq!(UBig::from(i as u64).num_partial_cmp(&f), expected, "{} vs {}", i, f);
+            }
+        }
+    }
+}

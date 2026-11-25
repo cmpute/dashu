@@ -60,7 +60,7 @@ assert_eq!(RBig::from_str_expanded(&format!("{:#}", x.in_expanded(10)), 10)?, x)
 
 ## Parsing Complex
 
-`CBig::FromStr` accepts the same algebraic $a+bi$ grammar that `Display` emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (`i`, `-i`). The MPC-style parenthesized form `(re im)` is **not** accepted.
+`CBig::FromStr` accepts the same algebraic $a+bi$ grammar that `Display` emits: an optional real term plus an optional signed imaginary term (at least one required); a unit coefficient may be omitted (`i`, `-i`). Each coefficient follows the `FBig` grammar (signed exponents included, e.g. `1+2e-3i`) and may also be `inf` / `-inf`. In bases above 18, where `i` is a digit, the imaginary term must end in `*i` instead. The MPC-style parenthesized form `(re im)` is **not** accepted.
 
 ```rust
 use dashu::complex::CBig;

@@ -28,7 +28,43 @@ use num_modular::Reducer;
 /// NTT is a clear 30%+ faster.
 pub const THRESHOLD_NTT: usize = 4_000;
 
+/// Largest operand length (in words) such that any two operands within it can be
+/// multiplied by a single convolution.
+///
+/// The transform length is a power of two bounded by the 2-adic order of the primes
+/// (`2^MAX_LOG_N` points). With one word per coefficient (the widest packing, which
+/// yields the fewest coefficients) the product of operands of `la` and `lb` words has
+/// `la + lb - 1` coefficients, so a convolution exists if and only if
+/// `la + lb - 1 <= 2^MAX_LOG_N` (see [`fits`]). Larger products are split into pieces
+/// of this length by the dispatcher.
+///
+/// With 64-bit words the bound is far beyond any addressable operand; with 32-bit words
+/// it is `2^25` words (1 Gibit) per operand.
+pub const MAX_OPERAND_LEN: usize = {
+    let len = 1u64 << (MAX_LOG_N - 1);
+    if len > (usize::MAX / 2) as u64 {
+        usize::MAX / 2
+    } else {
+        len as usize
+    }
+};
+
+/// Whether [`add_signed_mul`] can multiply operands of `a_len >= b_len` words: the
+/// convolution it would run (of one chunk of the long operand when [`is_chunked`], of the
+/// whole operands otherwise) must fit the largest transform, see [`MAX_OPERAND_LEN`].
+#[inline]
+pub fn fits(a_len: usize, b_len: usize) -> bool {
+    let conv_a_len = if is_chunked(a_len, b_len) {
+        2 * b_len as u64
+    } else {
+        a_len as u64
+    };
+    (conv_a_len + b_len as u64).saturating_sub(1) <= 1u64 << MAX_LOG_N
+}
+
 /// Select NTT parameters for operands with the given word lengths.
+///
+/// The operands must satisfy [`fits`].
 ///
 /// Candidates are scored by estimated transform + pointwise + CRT work
 /// (`k·n·log n` plus `k²·coeffs`), and the cheapest wins — except that a
@@ -95,8 +131,9 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
 
     let (b_pack, n, k_eff, _) = best.unwrap_or_else(|| {
         unreachable!(
-            "b_pack = {} always passes the headroom check",
-            B_PACK_CANDIDATES.last().unwrap()
+            "operands of {} and {} words exceed the largest transform, \
+            the dispatcher splits them into pieces",
+            la_words, lb_words
         )
     });
     (b_pack, n, k_eff)
@@ -192,15 +229,25 @@ pub fn add_signed_mul(
     memory: &mut Memory,
 ) -> SignedWord {
     debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len());
-    // Chunk only from 3b: up to a ratio of ~3.1 a single full-length
-    // convolution measures faster (the chunked path would pay the b-hat and
-    // twiddle setup twice — once here, once in the tail's own convolution),
-    // while from ~3.1 upward reusing b-hat across chunks wins and the gap
-    // widens with the ratio.
-    if a.len() >= 3 * b.len() {
+    if is_chunked(a.len(), b.len()) {
         return add_signed_mul_chunked(c, sign, a, b, memory);
     }
     add_signed_mul_conv(c, sign, a, b, memory)
+}
+
+/// The long operand is processed in chunks from this ratio of the operand lengths.
+///
+/// Up to a ratio of ~3.1 a single full-length convolution measures faster (the chunked
+/// path would pay the b-hat and twiddle setup twice — once for the chunks, once in the
+/// tail's own convolution), while from ~3.1 upward reusing b-hat across chunks wins and
+/// the gap widens with the ratio.
+pub const CHUNKING_RATIO: usize = 3;
+
+/// Whether [`add_signed_mul`] processes the long operand (`a_len` words) in chunks,
+/// re-dispatching the tail, rather than in a single convolution.
+#[inline]
+pub fn is_chunked(a_len: usize, b_len: usize) -> bool {
+    a_len >= CHUNKING_RATIO * b_len
 }
 
 /// NTT multiplication with asymmetric chunking.
@@ -416,7 +463,7 @@ pub fn do_crt<A: CrtAccum>(
         let crt_val = garner_combine::<A>(&coeff_residues[..g.k_eff], crt_inv, primes);
         let mut crt_buf = [Word::default(); 6];
         let crt_n = crt_val.write_words(&mut crt_buf);
-        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], crt_n, k, g.b_pack);
+        add_shifted_to_prod(prod, &crt_buf[..crt_n as usize], k, g.b_pack);
     }
 }
 
@@ -545,48 +592,51 @@ fn process_prime<R: Reducer<crate::arch::ntt::Lane>>(
 
 /// Add a CRT value (as `Word`-sized limbs) to `prod`, shifted left by
 /// `k * b_pack` bits.
-pub fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], count: u32, k: usize, b_pack: u32) {
-    let shift_bits = (k as u32).wrapping_mul(b_pack);
-    let word_bits = Word::BITS;
-    let start_idx = (shift_bits / word_bits) as usize;
-    let bit_shift = shift_bits % word_bits;
-
-    let mut carry: Word = 0;
-
-    for (vi, &word) in words.iter().enumerate().take(count as usize) {
-        let limb = word.wrapping_add(carry);
-        let idx = start_idx + vi;
-        if idx >= prod.len() {
-            return;
-        }
-
-        if bit_shift == 0 {
-            let (r, c) = prod[idx].overflowing_add(limb);
-            prod[idx] = r;
-            carry = Word::from(c);
-        } else {
-            let val = (limb as u128) << bit_shift;
-            let lo = val as Word;
-            let hi = (val >> word_bits) as Word;
-
-            let (r, c1) = prod[idx].overflowing_add(lo);
-            prod[idx] = r;
-            carry = Word::from(c1).wrapping_add(hi);
-
-            if idx + 1 < prod.len() && carry != 0 {
-                let (r2, c2) = prod[idx + 1].overflowing_add(carry);
-                prod[idx + 1] = r2;
-                carry = Word::from(c2);
-            }
-        }
+///
+/// Words of the shifted value that lie beyond the end of `prod` are dropped (they are zero
+/// whenever the full product fits in `prod`).
+pub fn add_shifted_to_prod(prod: &mut [Word], words: &[Word], k: usize, b_pack: u32) {
+    let shift_bits = k as u64 * b_pack as u64;
+    let start_idx = (shift_bits / Word::BITS as u64) as usize;
+    let bit_shift = (shift_bits % Word::BITS as u64) as u32;
+    if start_idx >= prod.len() {
+        return;
     }
 
-    let mut idx = start_idx + count as usize;
-    while carry != 0 && idx < prod.len() {
-        let (r, c) = prod[idx].overflowing_add(carry);
-        prod[idx] = r;
-        carry = Word::from(c);
-        idx += 1;
+    // Add the shifted value limb by limb. `spill` holds the bits of the previous word that were
+    // shifted across the word boundary, and `carry` is the carry of the previous limb addition:
+    // both belong to the current position.
+    let mut spill: Word = 0;
+    let mut carry = false;
+    let mut dest = prod[start_idx..].iter_mut();
+    for &word in words {
+        let limb = (word << bit_shift) | spill;
+        spill = if bit_shift == 0 {
+            0
+        } else {
+            word >> (Word::BITS - bit_shift)
+        };
+        let slot = match dest.next() {
+            Some(slot) => slot,
+            None => return,
+        };
+        let (sum, c1) = slot.overflowing_add(limb);
+        let (sum, c2) = sum.overflowing_add(Word::from(carry));
+        *slot = sum;
+        carry = c1 | c2;
+    }
+
+    // The spilled top bits and the carry, then the carry alone, ripple through the higher words.
+    let mut pending = spill;
+    for slot in dest {
+        if pending == 0 && !carry {
+            break;
+        }
+        let (sum, c1) = slot.overflowing_add(pending);
+        let (sum, c2) = sum.overflowing_add(Word::from(carry));
+        *slot = sum;
+        carry = c1 | c2;
+        pending = 0;
     }
 }
 
@@ -688,6 +738,59 @@ mod tests {
             seen[pos] = true;
         }
         assert!(seen.iter().all(|&s| s), "some packing width is never selected");
+    }
+
+    #[test]
+    fn test_add_shifted_to_prod_carries() {
+        // Reference: add `value << shift` bit by bit.
+        fn reference(prod: &mut [Word], words: &[Word], shift: usize) {
+            for (i, &w) in words.iter().enumerate() {
+                for bit in 0..Word::BITS as usize {
+                    if w >> bit & 1 == 0 {
+                        continue;
+                    }
+                    let pos = shift + i * Word::BITS as usize + bit;
+                    let mut idx = pos / Word::BITS as usize;
+                    let mut add: Word = 1 << (pos % Word::BITS as usize);
+                    while add != 0 && idx < prod.len() {
+                        let (sum, c) = prod[idx].overflowing_add(add);
+                        prod[idx] = sum;
+                        add = Word::from(c);
+                        idx += 1;
+                    }
+                }
+            }
+        }
+
+        let values: [&[Word]; 6] = [
+            &[1],
+            &[Word::MAX],
+            &[Word::MAX, Word::MAX],
+            &[Word::MAX, Word::MAX, Word::MAX],
+            &[0, Word::MAX, 1],
+            &[1 << (Word::BITS - 1), 0, Word::MAX],
+        ];
+        let fills: [Word; 3] = [0, Word::MAX, Word::MAX - 1];
+        for b_pack in [Word::BITS, Word::BITS - 8, Word::BITS - 12, B_PACK_MIN] {
+            for k in 0..6 {
+                for words in values {
+                    for fill in fills {
+                        for low in [0, 1, Word::MAX] {
+                            let mut prod = [fill; 12];
+                            prod[0] = low;
+                            prod[11] = 0;
+                            let mut expected = prod;
+                            reference(&mut expected, words, k * b_pack as usize);
+                            add_shifted_to_prod(&mut prod, words, k, b_pack);
+                            assert_eq!(
+                                prod, expected,
+                                "b_pack = {b_pack}, k = {k}, words = {words:?}, fill = {fill}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

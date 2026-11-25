@@ -1,90 +1,175 @@
-//! Complex division and reciprocal (near-correctly rounded via Smith's method + guard re-round).
+//! Complex division and reciprocal.
+//!
+//! `(x+iy)/(u+iv) = ((xu+yv) + i(yu−xv)) / (u²+v²)`: each part is the quotient of two exact sums
+//! of products, rounded a single time — so the quotient is correctly rounded per component
+//! (`z / z` is exactly `1`), with the inexactness flags and directed-rounding directions of the
+//! exact value.
+//!
+//! The exact sums are as wide as the exponent spread between the operand parts. While that is
+//! moderate they are formed outright and each part is one correctly-rounded real division.
+//! When the spread is large (or `|w|²` leaves the exponent range) the same value is found
+//! without them, from an approximate quotient and exact sign tests (see
+//! [`ratio_of_sums`](crate::wide::ratio_of_sums)) — a part that is in range is returned
+//! whatever the size of the intermediates.
 
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, riemann, CfpResult, Context};
+use crate::mul::{sum_of_products, Term};
+use crate::repr::{combine_results, riemann, CfpResult, Context};
+use crate::wide::ratio_of_sums;
 use core::ops::{Div, DivAssign};
-use dashu_base::{AbsOrd, Inverse, Sign::*};
+use dashu_base::{Inverse, Sign::*};
 use dashu_float::round::Round;
-use dashu_float::{FBig, FpError};
+use dashu_float::{Context as FloatCtxt, FBig, FpError, FpResult, Repr};
 use dashu_int::Word;
 
-/// Guard digits (base-B) for `div`/`inv`. The naive complex-division error is `~(3+√5)·u`; a fixed
-/// guard comfortably absorbs it for well-conditioned denominators.
-const DIV_GUARD: usize = 14;
+/// Whether the exact sum of the given products is cheap to form: its width — the distance from
+/// the lowest digit position of any product to the highest — stays within a small multiple of
+/// the operand widths and the target precision (plus a fixed allowance that covers every
+/// practical exponent spread).
+fn exact_sum_is_cheap<const B: Word>(terms: &[Term<'_, B>], precision: usize) -> bool {
+    let mut digits = precision;
+    let mut range: Option<(isize, isize)> = None;
+    for (a, b, _) in terms {
+        if a.significand().is_zero() || b.significand().is_zero() {
+            continue;
+        }
+        let width = a.digits_ub() + b.digits_ub();
+        digits = digits.saturating_add(width);
+        let bounds = a.exponent().checked_add(b.exponent()).and_then(|lo| {
+            let hi = lo.checked_add(isize::try_from(width).ok()?)?;
+            Some((lo, hi))
+        });
+        let (lo, hi) = match bounds {
+            Some(bounds) => bounds,
+            None => return false,
+        };
+        range = Some(match range {
+            None => (lo, hi),
+            Some((l, h)) => (l.min(lo), h.max(hi)),
+        });
+    }
+    match range {
+        None => true,
+        Some((lo, hi)) => match hi.checked_sub(lo) {
+            Some(span) => span as usize <= digits.saturating_mul(8).saturating_add(4096),
+            None => false,
+        },
+    }
+}
 
 impl<R: Round> Context<R> {
     /// Reciprocal `1/z = conj(z)/|z|²` under this context (context layer).
+    ///
+    /// Each part is correctly rounded (see [`Context::div`]).
     pub fn inv<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
+        if z.is_infinite() {
+            // An infinite input is a terminal value and is not accepted.
+            return Err(FpError::InfiniteInput);
+        }
         if z.is_zero() {
             return Ok(riemann(*self)); // 1/0 = ∞
         }
-        // An infinite input is a terminal value: it falls through and the float layer rejects it.
-        let gctx = self.work_context(DIV_GUARD);
-        let p = self.precision();
-        let (x, y) = (z.re(), z.im());
-        // n = x² + y²
-        let x2 = gctx.sqr(x)?.value();
-        let y2 = gctx.sqr(y)?.value();
-        let n = gctx.add(x2.repr(), y2.repr())?.value();
-        // 1/z = (x/n) + i(-y/n)
-        let re = gctx.div(x, n.repr())?.value().with_precision(p);
-        let neg_y = -y.clone();
-        let im = gctx.div(&neg_y, n.repr())?.value().with_precision(p);
-        Ok(combine_parts(re, im))
+        let (u, v) = (z.re(), z.im());
+        let one = Repr::one();
+        // 1/z = (u − iv)/(u² + v²)
+        self.quotient(&[(&one, u, Positive)], &[(&one, v, Negative)], (u, v))
     }
 
-    /// Divide two complex numbers under this context (context layer), using Smith's overflow-safe
-    /// method: the branch `|u| >= |v|` avoids forming `|denominator|²`.
+    /// Divide two complex numbers under this context (context layer).
+    ///
+    /// Each part is correctly rounded: it is the exact quotient of the numerator `xu + yv` (or
+    /// `yu − xv`) by the denominator `u² + v²`, rounded once — also when the exponent spread
+    /// between the operand parts is large or `|w|²` lies outside the exponent range. A part of
+    /// the quotient that leaves the exponent range saturates on its own (to a signed infinity
+    /// or zero, flagged inexact) and the other part is kept; `Err` is returned when both do.
+    ///
+    /// `z / 0` is the complex infinity `+∞ + 0i` for a nonzero `z`, `0 / 0` is
+    /// [`FpError::Indeterminate`], and an infinite operand is rejected with
+    /// [`FpError::InfiniteInput`].
     pub fn div<const B: Word>(&self, z: &CBig<R, B>, w: &CBig<R, B>) -> CfpResult<R, B> {
-        if let Some(special) = div_special(z, w) {
-            return special;
+        if z.is_infinite() || w.is_infinite() {
+            // An infinite operand is a terminal value and is never accepted — also not over a
+            // zero divisor.
+            return Err(FpError::InfiniteInput);
         }
-        let gctx = self.work_context(DIV_GUARD);
-        let p = self.precision();
+        if w.is_zero() {
+            return if z.is_zero() {
+                Err(FpError::Indeterminate) // 0/0
+            } else {
+                Ok(riemann(*self)) // z/0 (z ≠ 0) = ∞
+            };
+        }
         let (x, y) = (z.re(), z.im());
         let (u, v) = (w.re(), w.im());
-        // Determine |u| >= |v| via abs_cmp on temporary FBig views (Smith's method).
-        let u_ge_v = {
-            let fu = FBig::from_repr(u.clone(), gctx);
-            let fv = FBig::from_repr(v.clone(), gctx);
-            fu.abs_cmp(&fv).is_ge()
-        };
+        let re_num = [(x, u, Positive), (y, v, Positive)];
+        let im_num = [(y, u, Positive), (x, v, Negative)];
+        if z.is_zero() {
+            // 0/w (w ≠ 0) = 0 at this context's precision; the zero numerators carry the signs
+            // (the denominator is positive).
+            let fctx = self.float();
+            return combine_results(
+                sum_of_products(&fctx, &re_num),
+                sum_of_products(&fctx, &im_num),
+            );
+        }
+        self.quotient(&re_num, &im_num, (u, v))
+    }
 
-        // r, d depend on which of |u|, |v| is larger
-        let (r, d) = if u_ge_v {
-            // r = v/u, d = u + r·v  (fuse r·v with the add via FMA)
-            let r = gctx.div(v, u)?.value();
-            let d = gctx.fma(r.repr(), v, u, Positive)?.value();
-            (r, d)
-        } else {
-            // r = u/v, d = v + r·u
-            let r = gctx.div(u, v)?.value();
-            let d = gctx.fma(r.repr(), u, v, Positive)?.value();
-            (r, d)
-        };
+    /// `(re_num + i·im_num) / (u² + v²)` for a finite nonzero divisor `w = u + iv`, where the
+    /// numerators are the sums of products of `z·conj(w)` for the finite numerator `z`.
+    fn quotient<const B: Word>(
+        &self,
+        re_num: &[Term<'_, B>],
+        im_num: &[Term<'_, B>],
+        (u, v): (&Repr<B>, &Repr<B>),
+    ) -> CfpResult<R, B> {
+        let den = [(u, u, Positive), (v, v, Positive)];
+        let fctx = self.float();
+        if let Some((re, im)) = self.exact_quotient(re_num, im_num, &den) {
+            return combine_results(re, im);
+        }
+        if self.precision() == 0 {
+            // nothing may be dropped at unlimited precision: the exact sums are needed whatever
+            // their width
+            let exact = FloatCtxt::<R>::new(0);
+            let den = sum_of_products(&exact, &den)?.value();
+            let part = |num| {
+                let num = sum_of_products(&exact, num)?.value();
+                fctx.div(num.repr(), den.repr())
+            };
+            return combine_results(part(re_num), part(im_num));
+        }
+        combine_results(ratio_of_sums(&fctx, re_num, &den), ratio_of_sums(&fctx, im_num, &den))
+    }
 
-        let (re, im) = if u_ge_v {
-            // re = (x + r·y)/d, im = (y − r·x)/d  (both fuse via FMA)
-            let num_re = gctx.fma(r.repr(), y, x, Positive)?.value();
-            let num_im = gctx.fma(r.repr(), x, y, Negative)?.value();
-            (
-                gctx.div(num_re.repr(), d.repr())?.value().with_precision(p),
-                gctx.div(num_im.repr(), d.repr())?.value().with_precision(p),
-            )
-        } else {
-            // re = (r·x + y)/d, im = (r·y − x)/d. The numerator products fuse via
-            // FMA; `r·y − x` is `−(x − r·y)`, so one FMA plus an exact negation.
-            let num_re = gctx.fma(r.repr(), x, y, Positive)?.value();
-            let num_im = -gctx.fma(r.repr(), y, x, Negative)?.value();
-            (
-                gctx.div(num_re.repr(), d.repr())?.value().with_precision(p),
-                gctx.div(num_im.repr(), d.repr())?.value().with_precision(p),
-            )
-        };
-        Ok(combine_parts(re, im))
+    /// The two parts of the quotient, each correctly rounded from the exact numerator and
+    /// denominator; `None` when those are not practical to form (see [`exact_sum_is_cheap`]) or
+    /// leave the exponent range.
+    #[allow(clippy::type_complexity)]
+    fn exact_quotient<const B: Word>(
+        &self,
+        re_num: &[Term<'_, B>],
+        im_num: &[Term<'_, B>],
+        den: &[Term<'_, B>],
+    ) -> Option<(FpResult<FBig<R, B>>, FpResult<FBig<R, B>>)> {
+        let p = self.precision();
+        if ![re_num, im_num, den]
+            .iter()
+            .all(|terms| exact_sum_is_cheap(terms, p))
+        {
+            return None;
+        }
+        let exact = FloatCtxt::<R>::new(0);
+        let den = sum_of_products(&exact, den).ok()?.value();
+        let re_num = sum_of_products(&exact, re_num).ok()?.value();
+        let im_num = sum_of_products(&exact, im_num).ok()?.value();
+        let fctx = self.float();
+        Some((fctx.div(re_num.repr(), den.repr()), fctx.div(im_num.repr(), den.repr())))
     }
 
     /// Divide a complex number by a real scalar (context layer): `(x+iy)/s = (x/s) + i(y/s)`.
+    ///
+    /// Each part is a single correctly-rounded real division.
     pub fn div_real<const B: Word>(&self, z: &CBig<R, B>, s: &FBig<R, B>) -> CfpResult<R, B> {
         if !z.is_infinite() && (s.repr().is_pos_zero() || s.repr().is_neg_zero()) {
             // Division by zero for a finite numerator produces ∞ as a terminal output.
@@ -95,34 +180,9 @@ impl<R: Round> Context<R> {
         }
         // An infinite operand (numerator or divisor) is a terminal value: it falls through and the
         // float layer rejects it (panicking at the convenience layer).
-        let gctx = self.work_context(DIV_GUARD);
-        let p = self.precision();
-        let re = gctx.div(z.re(), s.repr())?.value().with_precision(p);
-        let im = gctx.div(z.im(), s.repr())?.value().with_precision(p);
-        Ok(combine_parts(re, im))
-    }
-}
-
-/// Short-circuit for `z / w` with a zero operand (finite numerators only).
-///
-/// An infinite numerator or divisor is a terminal value and is **not** accepted here — it returns
-/// `None` so the normal path runs and the float layer rejects it (panicking at the convenience
-/// layer). Only the exact zero cases, whose results are fully determined by finite operands, are
-/// short-circuited: `0/0 → Indeterminate`, `finite/0 → ∞`, `0/finite → 0`.
-fn div_special<R: Round, const B: Word>(z: &CBig<R, B>, w: &CBig<R, B>) -> Option<CfpResult<R, B>> {
-    if z.is_infinite() || w.is_infinite() {
-        return None;
-    }
-    let (zz, wz) = (z.is_zero(), w.is_zero());
-    let ctx = Context::max(z.context(), w.context());
-    if zz && wz {
-        Some(Err(FpError::Indeterminate)) // 0/0
-    } else if wz {
-        Some(Ok(riemann(ctx))) // z/0 (z ≠ 0) = ∞
-    } else if zz {
-        Some(Ok(exact(FBig::ZERO, FBig::ZERO))) // 0/w (w ≠ 0) = 0
-    } else {
-        None
+        let re = self.float().div(z.re(), s.repr());
+        let im = self.float().div(z.im(), s.repr());
+        combine_results(re, im)
     }
 }
 
@@ -260,8 +320,8 @@ mod tests {
         assert!(q_neg == q_pos); // both are +∞ + i·0
     }
 
-    // `div` at unlimited precision panics via the float layer (`work_context` → `self.float()` →
-    // float `div`, which rejects unlimited: a quotient isn't exactly representable in general).
+    // `div` at unlimited precision panics via the float layer (the exact numerators are divided
+    // by float `div`, which rejects unlimited: a quotient isn't exactly representable in general).
     #[test]
     #[should_panic(expected = "precision cannot be 0")]
     fn complex_div_unlimited_panics() {

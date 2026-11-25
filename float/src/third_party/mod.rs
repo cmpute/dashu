@@ -33,5 +33,8 @@ mod zeroize;
 ))]
 mod postgres;
 
+#[cfg(feature = "rkyv_v07")]
+pub(crate) mod rkyv_v07;
+
 #[cfg(all(feature = "rkyv_v08", not(feature = "rkyv_v07")))]
-mod rkyv_v08;
+pub(crate) mod rkyv_v08;

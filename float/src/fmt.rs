@@ -4,10 +4,13 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode::Zero, Round},
-    utils::{digit_len, split_digits_ref},
+    utils::{digit_len, shr_digits, split_digits_ref},
 };
 use alloc::string::String;
-use core::fmt::{self, Alignment, Display, Formatter, Write};
+use core::{
+    cmp::Ordering,
+    fmt::{self, Alignment, Display, Formatter, Write},
+};
 use dashu_base::Sign;
 use dashu_int::{IBig, Word};
 
@@ -76,23 +79,91 @@ impl<const B: Word> Repr<B> {
         }
     }
 
+    /// If this value is infinite, write it as `inf` / `-inf` (`+inf` under the `+` flag)
+    /// honoring the width, fill, alignment and `0` flags of the formatter like a finite number
+    /// does, and return `Some`. The precision does not apply to an infinity.
+    fn fmt_if_infinite(&self, f: &mut Formatter<'_>) -> Option<fmt::Result> {
+        if !self.is_infinite() {
+            return None;
+        }
+        const BODY: &str = "inf";
+        let sign = match self.sign() {
+            Sign::Negative => Some('-'),
+            Sign::Positive if f.sign_plus() => Some('+'),
+            Sign::Positive => None,
+        };
+        let width = BODY.len() + sign.is_some() as usize;
+        let padding = f.width().unwrap_or(0).saturating_sub(width);
+        // numbers are right-aligned by default, and the `0` flag pads after the sign
+        let zero_pad = f.sign_aware_zero_pad();
+        let (left_pad, right_pad) = if zero_pad {
+            (padding, 0)
+        } else {
+            match f.align() {
+                Some(Alignment::Left) => (0, padding),
+                Some(Alignment::Right) | None => (padding, 0),
+                Some(Alignment::Center) => (padding / 2, padding - padding / 2),
+            }
+        };
+
+        let fill = f.fill();
+        let mut write = || {
+            if !zero_pad {
+                for _ in 0..left_pad {
+                    f.write_char(fill)?;
+                }
+            }
+            if let Some(sign) = sign {
+                f.write_char(sign)?;
+            }
+            if zero_pad {
+                for _ in 0..left_pad {
+                    f.write_char('0')?;
+                }
+            }
+            f.write_str(BODY)?;
+            for _ in 0..right_pad {
+                f.write_char(fill)?;
+            }
+            Ok(())
+        };
+        Some(write())
+    }
+
     /// Print the float number with given rounding mode.
     /// The rounding may happen if the precision option of the formatter is set.
     fn fmt_round<R: Round>(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Some(result) = self.write_if_infinite(f) {
+        if let Some(result) = self.fmt_if_infinite(f) {
             return result;
         }
 
         // first perform rounding before actual printing if necessary
         let negative = self.sign() == Sign::Negative;
         let rounded_signif;
-        let (signif, exp) = if let Some(prec) = f.precision() {
-            let diff = prec as isize + self.exponent;
+        // (A zero has nothing to round, and its stored exponent is the encoding of its sign
+        // rather than a position: `-0` must not be mistaken for a tiny negative fraction.)
+        let precision = if self.significand.is_zero() {
+            None
+        } else {
+            f.precision()
+        };
+        let (signif, exp) = if let Some(prec) = precision {
+            let diff = (prec as isize).saturating_add(self.exponent);
             if diff < 0 {
-                let shift = -diff as usize;
-                let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
-                let adjust = R::round_fract::<B>(&signif, rem, shift);
-                rounded_signif = signif + adjust;
+                let shift = diff.unsigned_abs();
+                if shift > self.digits_ub() {
+                    // Every digit lies at least one place below the last printed one, so the
+                    // value is a nonzero fraction of magnitude below 1/B <= 1/2 of the unit in
+                    // that place. Round it from its sign alone: splitting at `shift` would
+                    // need B^shift, which is unbounded for a tiny value.
+                    let adjust =
+                        R::round_low_part(&IBig::ZERO, self.significand.sign(), || Ordering::Less);
+                    rounded_signif = IBig::ZERO + adjust;
+                } else {
+                    let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
+                    let adjust = R::round_fract::<B>(&signif, rem, shift);
+                    rounded_signif = signif + adjust;
+                }
                 (&rounded_signif, self.exponent - diff)
             } else {
                 (&self.significand, self.exponent)
@@ -134,7 +205,7 @@ impl<const B: Word> Repr<B> {
             }
 
             let has_sign = (negative || f.sign_plus()) as usize;
-            let has_radix_point = if exp > 0 {
+            let has_radix_point = if exp >= 0 {
                 // if there's no fractional part, the result has the floating point
                 // only if the precision is set to be non-zero
                 f.precision().unwrap_or(0) > 0
@@ -285,13 +356,17 @@ impl<const B: Word> Repr<B> {
     ) -> fmt::Result {
         assert!(!(B != 2 && use_hexadecimal), "hexadecimal is only relevant for base 2");
 
-        if let Some(result) = self.write_if_infinite(f) {
+        if let Some(result) = self.fmt_if_infinite(f) {
             return result;
         }
 
         // first perform rounding before actual printing if necessary
         let negative = self.sign() == Sign::Negative;
         let rounded_signif;
+        // The exponent is tracked in a wider type from here on: the printed exponent is that of
+        // the leading digit, which lies beyond `isize::MAX` for a long significand at one of
+        // the largest exponents.
+        let exponent = self.exponent as i128;
         let (signif, exp) = if let Some(prec) = f.precision() {
             // add one because always have one extra digit before the radix point
             let prec = if use_hexadecimal {
@@ -304,13 +379,22 @@ impl<const B: Word> Repr<B> {
                 let shift = -diff as usize;
                 let (signif, rem) = split_digits_ref::<B>(&self.significand, shift);
                 let adjust = R::round_fract::<B>(&signif, rem, shift);
-                rounded_signif = signif + adjust;
-                (&rounded_signif, self.exponent - diff)
+                let signif = signif + adjust;
+                // Rounding up can carry into one more digit (9.5 -> 10). The result is then a
+                // power of the base, so dropping its last (zero) digit is exact and brings the
+                // digit count back to the requested one.
+                if digit_len::<B>(&signif) > prec as usize {
+                    rounded_signif = shr_digits::<B>(&signif, 1);
+                    (&rounded_signif, exponent - diff as i128 + 1)
+                } else {
+                    rounded_signif = signif;
+                    (&rounded_signif, exponent - diff as i128)
+                }
             } else {
-                (&self.significand, self.exponent)
+                (&self.significand, exponent)
             }
         } else {
-            (&self.significand, self.exponent)
+            (&self.significand, exponent)
         };
         // zero's stored exponent encodes the ±0 sign (sentinel -1 / 0), not magnitude, so it must
         // not leak into the rendered digits/exponent — render `0`/`0e0` canonically.
@@ -331,9 +415,9 @@ impl<const B: Word> Repr<B> {
         let signif_str = signif_str.strip_prefix('-').unwrap_or(&signif_str);
         // adjust exp because the radix point is put after the first digit
         let exp_adjust = if use_hexadecimal {
-            exp + (signif_str.len() as isize - 1) * 4
+            exp + (signif_str.len() as i128 - 1) * 4
         } else {
-            exp + signif_str.len() as isize - 1
+            exp + signif_str.len() as i128 - 1
         };
         write!(&mut exp_str, "{}", exp_adjust)?;
         let exp_str = exp_str.as_str();
@@ -360,6 +444,9 @@ impl<const B: Word> Repr<B> {
 
             if width >= min_width {
                 (0, 0)
+            } else if f.sign_aware_zero_pad() {
+                // the `0` flag overrides fill and alignment: zeros go after the sign and prefix
+                (min_width - width, 0)
             } else {
                 match f.align() {
                     Some(Alignment::Left) => (0, min_width - width),

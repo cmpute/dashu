@@ -1,11 +1,15 @@
 /// Implement `impl Op<A> for FBig` by converting A to FBig. This macro includes operations taking by references.
+///
+/// The integer is converted with the precision of its digit count, except next to an
+/// unlimited-precision float (see `FBig::integer_operand`).
 macro_rules! impl_binop_with_primitive_one_way {
     (impl $trait:ident<$target:ty>, $method:ident) => {
         impl<R: Round, const B: Word> $trait<$target> for FBig<R, B> {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: $target) -> Self::Output {
-                self.$method(FBig::<R, B>::from(rhs))
+                let rhs = self.integer_operand(FBig::<R, B>::from(rhs));
+                self.$method(rhs)
             }
         }
 
@@ -13,7 +17,8 @@ macro_rules! impl_binop_with_primitive_one_way {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: $target) -> Self::Output {
-                self.$method(FBig::<R, B>::from(rhs))
+                let rhs = self.integer_operand(FBig::<R, B>::from(rhs));
+                self.$method(rhs)
             }
         }
 
@@ -21,7 +26,8 @@ macro_rules! impl_binop_with_primitive_one_way {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: &$target) -> Self::Output {
-                self.$method(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$method(rhs)
             }
         }
 
@@ -29,7 +35,8 @@ macro_rules! impl_binop_with_primitive_one_way {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: &$target) -> Self::Output {
-                self.$method(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$method(rhs)
             }
         }
     };
@@ -44,7 +51,8 @@ macro_rules! impl_binop_with_primitive {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$method(rhs)
+                let lhs = rhs.integer_operand(FBig::<R, B>::from(self));
+                lhs.$method(rhs)
             }
         }
 
@@ -52,7 +60,8 @@ macro_rules! impl_binop_with_primitive {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: FBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$method(rhs)
+                let lhs = rhs.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$method(rhs)
             }
         }
 
@@ -60,7 +69,8 @@ macro_rules! impl_binop_with_primitive {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$method(rhs)
+                let lhs = rhs.integer_operand(FBig::<R, B>::from(self));
+                lhs.$method(rhs)
             }
         }
 
@@ -68,7 +78,8 @@ macro_rules! impl_binop_with_primitive {
             type Output = FBig<R, B>;
             #[inline]
             fn $method(self, rhs: &FBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$method(rhs)
+                let lhs = rhs.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$method(rhs)
             }
         }
     };
@@ -81,13 +92,15 @@ macro_rules! impl_binop_assign_with_primitive {
         impl<R: Round, const B: Word> $trait<$target> for FBig<R, B> {
             #[inline]
             fn $method(&mut self, rhs: $target) {
-                self.$method(FBig::from(rhs))
+                let rhs = self.integer_operand(FBig::from(rhs));
+                self.$method(rhs)
             }
         }
         impl<R: Round, const B: Word> $trait<&$target> for FBig<R, B> {
             #[inline]
             fn $method(&mut self, rhs: &$target) {
-                self.$method(FBig::from(rhs.clone()))
+                let rhs = self.integer_operand(FBig::from(rhs.clone()));
+                self.$method(rhs)
             }
         }
     };

@@ -20,7 +20,13 @@ mod toom_4;
 
 /// If operand length <= this, simple squaring will be used.
 const THRESHOLD_SIMPLE_SQR_DEFAULT: usize = 30;
-const_assert!(THRESHOLD_SIMPLE_SQR_DEFAULT + 1 >= karatsuba::MIN_LEN);
+const_assert!(THRESHOLD_SIMPLE_SQR_DEFAULT >= MIN_THRESHOLD_SIMPLE_SQR);
+
+/// Smallest usable value of the simple squaring threshold: the Karatsuba kernel squares
+/// both halves of its operand through [`sqr`], which takes at least two words, so it
+/// must not be entered below four words. Used to clamp runtime tuning values.
+const MIN_THRESHOLD_SIMPLE_SQR: usize = 3;
+const_assert!(MIN_THRESHOLD_SIMPLE_SQR + 1 >= karatsuba::MIN_LEN);
 
 /// If operand length <= this, Karatsuba squaring will be used.
 const THRESHOLD_KARATSUBA_SQR_DEFAULT: usize = 96;
@@ -43,15 +49,17 @@ const_assert!(THRESHOLD_NTT_SQR_DEFAULT > THRESHOLD_TOOM4_SQR_DEFAULT);
 ///
 /// When the `tuning` feature is active the user may set `DASHU_THRESHOLD_SIMPLE_SQR`,
 /// `DASHU_THRESHOLD_KARATSUBA_SQR`, `DASHU_THRESHOLD_TOOM4_SQR` or
-/// `DASHU_THRESHOLD_NTT_SQR` to override the compile-time defaults.
+/// `DASHU_THRESHOLD_NTT_SQR` to override the compile-time defaults. As for the
+/// multiplication thresholds, each value is clamped so that no kernel is entered
+/// below its minimum length, and the transform threshold is not below the Toom-4 one.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_SIMPLE_SQR") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::MIN_THRESHOLD_SIMPLE_SQR);
                 }
             }
         }
@@ -62,8 +70,8 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_KARATSUBA_SQR") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::toom_3::MIN_LEN - 1);
                 }
             }
         }
@@ -74,8 +82,8 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_TOOM4_SQR") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::toom_4::MIN_LEN - 1);
                 }
             }
         }
@@ -83,11 +91,15 @@ mod threshold {
     }
     #[inline]
     pub fn ntt() -> usize {
-        #[cfg(feature = "tuning")]
+        // There is no transform kernel with 16-bit words, hence nothing to tune.
+        #[cfg(all(
+            feature = "tuning",
+            not(any(force_bits = "16", target_pointer_width = "16"))
+        ))]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_SQR") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(toom4());
                 }
             }
         }
@@ -107,7 +119,12 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            crate::mul::ntt::memory_requirement_up_to(2 * len, len)
+            if crate::mul::ntt::fits(len, len) {
+                crate::mul::ntt::memory_requirement_up_to(2 * len, len)
+            } else {
+                // beyond the largest transform: multiplied piecewise
+                crate::mul::memory_requirement_exact(2 * len, len)
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
@@ -149,7 +166,18 @@ pub fn sqr(b: &mut [Word], a: &[Word], memory: &mut Memory) {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            debug_assert_zero!(ntt::add_signed_sqr_same_len(b, Sign::Positive, a, memory));
+            if crate::mul::ntt::fits(a.len(), a.len()) {
+                debug_assert_zero!(ntt::add_signed_sqr_same_len(b, Sign::Positive, a, memory));
+            } else {
+                // beyond the largest transform: multiplied piecewise
+                debug_assert_zero!(crate::mul::add_signed_mul_same_len(
+                    b,
+                    Sign::Positive,
+                    a,
+                    a,
+                    memory
+                ));
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {

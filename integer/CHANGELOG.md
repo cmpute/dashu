@@ -21,6 +21,10 @@
   /45 divisions) are now always-on `assert_eq!` checks like Toom-3's,
   instead of debug-only assertions, so a wrong interpolation constant
   fails loudly in release builds too.
+- `nth_root` now uses Newton's method with precision doubling: roots of a large (prime) order, which previously could take minutes or not terminate in practice, are immediate, and large cube and other small-order roots are several times faster.
+- (breaking) `IBig % uN`, the remainder of `IBig::div_rem(uN)` / `IBig::div_rem_assign(uN)` and `uN / IBig` (for an unsigned primitive `uN`) now return an `IBig` instead of `uN`. The result takes its sign from the `IBig` operand, so these operations used to panic whenever it was negative (e.g. `IBig::from(-1) % 2u32`).
+- The `num-integer` (`num-integer_v01`) feature now enables `num-traits` (`num-traits_v02`); it failed to compile when enabled on its own.
+- `num_integer::Integer::extended_gcd` for `UBig` documents that it panics when a Bézout coefficient is negative (the trait's coefficients are unsigned), with a message pointing at `gcd_ext`.
 
 ### Fix
 - Exclude NTT-only thresholds and scratch helpers on 16-bit word targets,
@@ -65,6 +69,34 @@
   with the chunk kernels' own budget; the chunk kernels and the tail run
   sequentially over the same scratch, so the requirement is the maximum.
   Scratch for moderately unbalanced Toom-band products drops by 1.2-2x.
+- Fix wrong results of large multiplications and squarings that go through the transform-based (NTT) kernel with a coefficient width that straddles word boundaries (e.g. operands of 4001–4096 64-bit words, unbalanced products such as 2500 x 15000 words, and 65537 words with 32-bit words): carries were lost while accumulating the coefficients into the product.
+- Fix `high::mul_high` returning `sticky = false` for windows above 96 words when a product of one operand's low quarter and the other's middle part is nonzero below the window.
+- Fix `high::div_high` panicking (or attempting a huge allocation) instead of returning `None` when `out_words * Word::BITS` overflows `usize`.
+- Fix "not enough memory allocated" panics in `Reduced` and `Montgomery` multiplication, `pow` and `MontgomeryRepr::reduce` when a residue has fewer words than a large modulus, and in `Reduced` multiplication of a value by itself.
+- Fix "not enough memory allocated" panics in `gcd_ext` for large operands with a large common factor.
+- Fix `gcd_ext` returning cofactors that do not satisfy the Bezout identity for some large operands (a word of a coefficient was dropped).
+- Fix `ConstDivisor::reduce` and `UBig % &ConstDivisor` panicking (debug) or returning a wrong remainder (release) for a double-word dividend and a single-word modulus with its top bit set.
+- Fix `<ConstDivisor as num_modular::Reducer<UBig>>::check` accepting the modulus itself for moduli of three or more words, which made `add` and `dbl` return the modulus instead of zero.
+- Fix `Reduced::pow` with a zero exponent returning 1 (or failing a debug assertion) in the ring of integers modulo 1.
+- `UBig::trailing_ones` / `IBig::trailing_ones` returned wrong counts for values larger than two words, and panicked when every word was all ones.
+- `CubicRoot::cbrt` (and `num_integer::Roots::cbrt`) on a negative `IBig` returns the negative root instead of panicking.
+- `IBig::try_from(f32/f64)` (and `num_traits::FromPrimitive::from_f32/from_f64`) truncates towards zero for negative values as well; it used to round them towards negative infinity (`-0.5` gave `-1`).
+- `UBig::from_chunks` no longer allocates `chunk_bits` words per chunk (about 64 times the size of the result, running out of memory for large `chunk_bits`), and now panics when `chunk_bits` is zero as documented.
+- `UBig::to_f32` / `IBig::to_f32` no longer report `Exact` for a value that rounds up to 2^32 (16-bit words) or 2^64 (32-bit words), such as `u64::MAX`.
+- `UBig::to_f64` / `IBig::to_f64` (and `to_f32`) are correctly rounded and tagged for multi-word values whose only bit below the rounding bit is the next one down (through the `FloatEncoding::encode` fix in `dashu-base`).
+- `UBig::ilog` / `IBig::ilog` of zero now panic for every base; they returned a value for power-of-two bases (release builds) and for bases of 2^128 and above.
+- Parsing rejects strings without any digit other than underscore separators (`"_"`, `"-_"`, `"0x_"`) with `ParseError::NoDigits` instead of returning zero.
+- `UBig::from_str_with_radix_default` / `IBig::from_str_with_radix_default` return `ParseError::UnsupportedRadix` for a default radix outside 2..=36 instead of panicking.
+- `num_integer::Integer` for `IBig`: `div_floor` (and `div_mod_floor`, `div_ceil`) returned 0 instead of -1 when the operands have different signs and `|a| < |b|`; `lcm` (and `gcd_lcm`) returned a negative value for operands of different signs.
+- `num_integer::Integer::{gcd, gcd_lcm, extended_gcd}` for `UBig` and `IBig` return zero for `(0, 0)` instead of panicking.
+- `num_order::NumOrd` between `UBig`/`IBig` and `f32`/`f64`: zero compared as greater than positive floats below 0.5, and `IBig` values compared as greater than `+inf` and less than `-inf`.
+- `num_traits::Signed::abs_sub` for `IBig` returns `max(a - b, 0)` instead of `|a - b|`.
+- With the `tuning` feature, the `DASHU_THRESHOLD_*` overrides of the multiplication, squaring and short product (`high::mul_high`, `high::sqr_high`) thresholds are clamped to the range their algorithms support, as the division thresholds already were. Values that were too small (or, for `DASHU_THRESHOLD_SIMPLE_MUL`, too large) made products panic.
+- Fix a panic ("entered unreachable code") when multiplying or squaring operands beyond the largest transform size, i.e. more than `2^26 + 1` words in total with 32-bit words: such products are now split into pieces.
+- `num_integer::Integer::is_multiple_of` and `divides` for `UBig` and `IBig` return `self.is_zero()` for a zero divisor, as the trait defines, instead of panicking.
+- `<ConstDivisor as num_modular::Reducer<UBig>>::check` rejects values of one or two words that are not multiples of the normalization shift for moduli of three or more words (it accepted every such value).
+- `UBig::try_from(f32/f64)` (and `num_traits::FromPrimitive::from_f32/from_f64` for `UBig`) truncates a negative value in `(-1, 0)` to zero, like `IBig` and the primitive unsigned integers, instead of failing.
+- `UBig::pow` / `IBig::pow` panic for a power whose bit length overflows `usize` instead of returning a wrong value in release builds (`UBig::from(16u8).pow(1 << 62)` was 1).
 
 ### Add
 - 32-bit targets now have a word-crossing 20-bit packing width alongside

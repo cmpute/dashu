@@ -92,12 +92,20 @@ name = "serde"
 required-features = ["serde"]
 
 [[test]]
+name = "num_traits"
+required-features = ["num-traits_v02"]
+
+[[test]]
 name = "num_order"
 required-features = ["num-order", "dashu-int/num-order"]
 
 [[test]]
 name = "postgres"
 required-features = ["postgres-types", "diesel_v1", "diesel_v2", "diesel_v2/postgres"]
+
+[[test]]
+name = "postgres_types"
+required-features = ["postgres-types"]
 
 [[test]]
 name = "rkyv"

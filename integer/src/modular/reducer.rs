@@ -1,5 +1,6 @@
 use crate::{
     add_ops::repr::{sub_large, sub_large_dword, sub_large_ref_val},
+    arch::word::Word,
     buffer::Buffer,
     cmp,
     div_const::{ConstDivisor, ConstDivisorRepr},
@@ -102,9 +103,11 @@ impl Reducer<UBig> for ConstDivisor {
             (ConstDivisorRepr::Single(_), TypedReprRef::RefLarge(_)) => false,
             (ConstDivisorRepr::Double(d), TypedReprRef::RefSmall(dw)) => d.0.check(&dw),
             (ConstDivisorRepr::Double(_), TypedReprRef::RefLarge(_)) => false,
-            (ConstDivisorRepr::Large(_), TypedReprRef::RefSmall(_)) => true,
+            (ConstDivisorRepr::Large(d), TypedReprRef::RefSmall(dw)) => {
+                dw as Word & math::ones_word(d.shift) == 0 // must be shifted
+            }
             (ConstDivisorRepr::Large(d), TypedReprRef::RefLarge(words)) => {
-                cmp::cmp_in_place(words, &d.normalized_divisor).is_le()
+                cmp::cmp_in_place(words, &d.normalized_divisor).is_lt()
                     && words[0] & math::ones_word(d.shift) == 0 // must be shifted
             }
         }

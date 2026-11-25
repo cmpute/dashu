@@ -1,5 +1,9 @@
-use dashu_base::Approximation::*;
-use dashu_float::{ops::CubicRoot, round::Rounding::*, DBig, FBig};
+use dashu_base::{Approximation::*, Sign};
+use dashu_float::{
+    ops::CubicRoot,
+    round::{mode, ErrorBounds, Round, Rounded, Rounding::*},
+    Context, DBig, FBig, Repr, Word,
+};
 use dashu_int::IBig;
 
 mod helper_macros;
@@ -387,4 +391,596 @@ fn test_cbrt_inf() {
 #[should_panic]
 fn test_cbrt_unlimited_precision() {
     let _ = dbig!(2).with_precision(0).value().cbrt();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Exact oracle for a rounded square root: the floor neighbour is bracketed by exact squares and
+// the rounding decision is the mode's own `round_low_part` on the exact midpoint comparison.
+// ---------------------------------------------------------------------------------------------
+
+/// The value of a `Repr` as an unlimited-precision float (exact arithmetic).
+fn exact<const B: Word>(r: &Repr<B>) -> FBig<mode::Zero, B> {
+    FBig::from_repr(r.clone(), Context::new(0))
+}
+
+fn exact_sqr<const B: Word>(r: &Repr<B>) -> FBig<mode::Zero, B> {
+    let v = exact(r);
+    &v * &v
+}
+
+/// The correctly rounded `sqrt(sum)` at `p` digits under `R`, given any `p`-digit value `near`
+/// within one ulp of the root. `sum` is an exact unlimited-precision value.
+fn sqrt_oracle<R: Round, const B: Word>(
+    p: usize,
+    sum: &FBig<mode::Zero, B>,
+    near: &Repr<B>,
+) -> Rounded<Repr<B>> {
+    let digits = near.digits();
+    assert!(digits <= p, "{near:?} has more than {p} digits");
+    let base = IBig::from(B);
+    let mut sig = near.significand() * base.clone().pow(p - digits);
+    let mut exp = near.exponent() - (p - digits) as isize;
+    if exact_sqr(near) > *sum {
+        // step down to the floor neighbour (into the finer binade below a power of the base)
+        if sig == base.clone().pow(p - 1) {
+            sig = base.pow(p) - IBig::ONE;
+            exp -= 1;
+        } else {
+            sig -= IBig::ONE;
+        }
+    }
+    let floor = Repr::<B>::new(sig.clone(), exp);
+    let next = Repr::<B>::new(sig.clone() + IBig::ONE, exp);
+    assert!(
+        exact_sqr(&floor) <= *sum && *sum < exact_sqr(&next),
+        "{near:?} is not within an ulp"
+    );
+    if exact_sqr(&floor) == *sum {
+        return Exact(floor);
+    }
+    // sqrt(sum) vs (floor + next)/2  <=>  4·sum vs (floor + next)²
+    let twice_mid = exact(&floor) + exact(&next);
+    let four_sum = sum * exact(&Repr::<B>::new(4.into(), 0));
+    let adjust = R::round_low_part(&sig, Sign::Positive, || {
+        four_sum.partial_cmp(&(&twice_mid * &twice_mid)).unwrap()
+    });
+    Inexact(Repr::new(sig + adjust, exp), adjust)
+}
+
+fn assert_sqrt_correct<R: ErrorBounds, const B: Word>(p: usize, x: &Repr<B>) {
+    let got = Context::<R>::new(p).sqrt(x).unwrap().map(|v| v.into_repr());
+    let want = sqrt_oracle::<R, B>(p, &exact(x), got.value_ref());
+    assert_eq!(got, want, "sqrt({x:?}) at {p} digits");
+}
+
+fn assert_sqrt_correct_all_modes<const B: Word>(p: usize, x: &Repr<B>) {
+    assert_sqrt_correct::<mode::Zero, B>(p, x);
+    assert_sqrt_correct::<mode::Away, B>(p, x);
+    assert_sqrt_correct::<mode::Down, B>(p, x);
+    assert_sqrt_correct::<mode::Up, B>(p, x);
+    assert_sqrt_correct::<mode::HalfEven, B>(p, x);
+    assert_sqrt_correct::<mode::HalfAway, B>(p, x);
+}
+
+fn sweep_sqrt<const B: Word>() {
+    for p in 1..=3 {
+        for sig in 1..=700 {
+            for exp in -2..=2 {
+                assert_sqrt_correct_all_modes::<B>(p, &Repr::new(sig.into(), exp));
+            }
+        }
+    }
+}
+
+/// `sqrt` is correctly rounded, with the right `Exact`/`Inexact` flag, in every base and mode:
+/// exhaustively over small significands at tiny precisions (where exact roots, exact ties and
+/// `p+1`-digit roots are dense).
+#[test]
+fn test_sqrt_exact_oracle_sweep() {
+    sweep_sqrt::<2>();
+    sweep_sqrt::<3>();
+    sweep_sqrt::<4>();
+    sweep_sqrt::<9>();
+    sweep_sqrt::<10>();
+    sweep_sqrt::<16>();
+}
+
+/// The same oracle at the standard binary precisions (and their decimal counterparts).
+#[test]
+fn test_sqrt_exact_oracle_standard_precisions() {
+    let ten20_1 = IBig::from(10u8).pow(20) + IBig::ONE;
+    for sig in [IBig::from(2), IBig::from(3), IBig::from(225), ten20_1] {
+        for exp in [-41isize, -2, 0, 1, 40] {
+            for p in [20usize, 50, 100, 500] {
+                assert_sqrt_correct_all_modes::<2>(p, &Repr::new(sig.clone(), exp));
+            }
+            for p in [6usize, 15, 30, 150] {
+                assert_sqrt_correct_all_modes::<10>(p, &Repr::new(sig.clone(), exp));
+            }
+        }
+    }
+}
+
+/// Regression: an exact root that is a rounding tie in a non-power-of-two base did not terminate
+/// (the certification loop could not accept a tie), e.g. `sqrt(225) = 15` at one decimal digit.
+#[test]
+fn test_sqrt_exact_tie_decimal() {
+    // (precision, significand, exponent, expected significand, expected exponent)
+    let cases: [(usize, i64, isize, i64, isize); 5] = [
+        (1, 196, 0, 1, 1),      // sqrt = 14   -> 1e1 (not a tie)
+        (1, 3025, -2, 6, 0),    // sqrt = 5.5  -> 6
+        (1, 225, 0, 2, 1),      // sqrt = 15   -> 2e1
+        (1, 625, -2, 2, 0),     // sqrt = 2.5  -> 2
+        (2, 15625, -4, 12, -1), // sqrt = 1.25 -> 1.2
+    ];
+    for (p, s, e, ws, we) in cases {
+        let x = Repr::<10>::new(s.into(), e);
+        let got = Context::<mode::HalfEven>::new(p).sqrt(&x).unwrap();
+        assert!(matches!(got, Inexact(..)), "sqrt({s}e{e}) at {p} digits is rounded");
+        assert_eq!(got.value().repr(), &Repr::<10>::new(ws.into(), we), "sqrt({s}e{e})");
+    }
+    // ties away from zero
+    let x = Repr::<10>::new(225.into(), 0);
+    let got = Context::<mode::HalfAway>::new(1).sqrt(&x).unwrap();
+    assert_eq!(got, Inexact(FBig::from_parts(2.into(), 1), AddOne));
+}
+
+/// Regression: a perfect square whose root fits the precision is `Exact` in every base. In a
+/// base with a square factor the normalized significand can make the integer root one digit
+/// wider than the precision with a zero last digit (`36 = 9·4¹`): that was reported `Inexact`
+/// (`Up` returned 7) in base 4 and did not terminate in base 9.
+#[test]
+fn test_sqrt_perfect_square_in_square_factor_base() {
+    fn check<R: ErrorBounds, const B: Word>(k: u32, p: usize) {
+        let x = Repr::<B>::new((k * k).into(), 0);
+        let got = Context::<R>::new(p).sqrt(&x).unwrap();
+        let want = FBig::<R, B>::from_parts(k.into(), 0);
+        assert_eq!(got, Exact(want), "sqrt({}) in base {B} at {p} digits", k * k);
+    }
+    check::<mode::Down, 4>(6, 2);
+    check::<mode::Up, 4>(6, 2);
+    check::<mode::HalfEven, 4>(6, 2);
+    check::<mode::Down, 4>(5, 2);
+    check::<mode::Up, 4>(6, 3);
+    check::<mode::Down, 16>(12, 1);
+    check::<mode::Down, 9>(21, 2);
+    check::<mode::Up, 9>(21, 2);
+    check::<mode::Zero, 9>(20, 2);
+    check::<mode::Down, 10>(6, 1);
+}
+
+/// Regression: a root that merely *rounds* to a short value was reported `Exact` in a
+/// non-power-of-two base (`sqrt(10^20 + 1)` at 4 digits, `sqrt(1 + 4·3^-34)` at 36 digits).
+#[test]
+fn test_sqrt_inexact_root_is_not_exact() {
+    let x = Repr::<10>::new(IBig::from(10u8).pow(20) + IBig::ONE, 0);
+    let got = Context::<mode::HalfEven>::new(4).sqrt(&x).unwrap();
+    assert_eq!(got, Inexact(FBig::from_parts(1.into(), 10), NoOp));
+
+    let x = Repr::<3>::new(IBig::from(3u8).pow(34) + IBig::from(4), -34);
+    let got = Context::<mode::HalfEven>::new(36).sqrt(&x).unwrap();
+    assert_eq!(
+        got,
+        Inexact(FBig::from_parts(IBig::from(3u8).pow(34) + IBig::from(2), -34), AddOne)
+    );
+}
+
+/// Regression: an exponent next to `isize::MIN` overflowed the exponent arithmetic (a debug
+/// panic, and a huge *positive* exponent in release builds).
+#[test]
+fn test_sqrt_extreme_exponents() {
+    for e in [
+        isize::MIN + 2,
+        isize::MIN + 18,
+        isize::MIN + 20,
+        isize::MAX - 1,
+        isize::MAX - 19,
+    ] {
+        let x = Repr::<10>::new(1.into(), e);
+        let got = Context::<mode::Down>::new(1).sqrt(&x).unwrap();
+        assert_eq!(got, Exact(FBig::from_parts(1.into(), e / 2)), "sqrt(1e{e})");
+        let x = Repr::<2>::new(1.into(), e);
+        let got = Context::<mode::Down>::new(53).sqrt(&x).unwrap();
+        assert_eq!(got, Exact(FBig::from_parts(1.into(), e / 2)), "sqrt(2^{e})");
+    }
+    // an odd exponent next to the limits: sqrt(10·10^(e-1))
+    for e in [isize::MIN + 3, isize::MAX - 2] {
+        let x = Repr::<10>::new(1.into(), e);
+        let got = Context::<mode::Down>::new(3).sqrt(&x).unwrap().value();
+        assert_eq!(got.repr(), &Repr::<10>::new(316.into(), (e - 1) / 2 - 2), "sqrt(1e{e})");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// hypot, against the same exact oracle (the exact sum of squares is the radicand)
+// ---------------------------------------------------------------------------------------------
+
+fn assert_hypot_correct<R: ErrorBounds, const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+    let got = Context::<R>::new(p)
+        .hypot(a, b)
+        .unwrap_or_else(|e| panic!("hypot({a:?}, {b:?}) at {p} digits: {e:?}"))
+        .map(|v| v.into_repr());
+    let sum = exact_sqr(a) + exact_sqr(b);
+    let want = sqrt_oracle::<R, B>(p, &sum, got.value_ref());
+    assert_eq!(got, want, "hypot({a:?}, {b:?}) at {p} digits");
+}
+
+fn assert_hypot_correct_all_modes<const B: Word>(p: usize, a: &Repr<B>, b: &Repr<B>) {
+    assert_hypot_correct::<mode::Zero, B>(p, a, b);
+    assert_hypot_correct::<mode::Away, B>(p, a, b);
+    assert_hypot_correct::<mode::Down, B>(p, a, b);
+    assert_hypot_correct::<mode::Up, B>(p, a, b);
+    assert_hypot_correct::<mode::HalfEven, B>(p, a, b);
+    assert_hypot_correct::<mode::HalfAway, B>(p, a, b);
+}
+
+fn sweep_hypot<const B: Word>() {
+    for p in 1..=3 {
+        for a in 1..=40 {
+            for b in 1..=a {
+                for exp in [-2isize, 0, 3] {
+                    let (a, b) = (Repr::new(a.into(), 0), Repr::new(b.into(), exp));
+                    assert_hypot_correct_all_modes::<B>(p, &a, &b);
+                }
+            }
+        }
+    }
+}
+
+/// `hypot` is correctly rounded with the right `Exact`/`Inexact` flag in every mode: over small
+/// operands at tiny precisions (Pythagorean triples, exact ties and near-representable results
+/// are dense there), and at the standard precisions.
+#[test]
+fn test_hypot_exact_oracle_sweep() {
+    sweep_hypot::<2>();
+    sweep_hypot::<3>();
+    sweep_hypot::<10>();
+}
+
+#[test]
+fn test_hypot_exact_oracle_standard_precisions() {
+    let big = (IBig::ONE << 40) - IBig::ONE;
+    for (a, b) in [
+        (1i64, 1i64),
+        (3, 4),
+        (-5, 12),
+        (1, 32),
+        (1, 4095),
+        (7, -4),
+        (1, 1 << 40),
+    ] {
+        for exp in [-45isize, -20, 0, 7] {
+            for p in [1usize, 20, 50, 53, 100, 500] {
+                let (a, b) = (Repr::<2>::new(a.into(), 0), Repr::<2>::new(b.into(), exp));
+                assert_hypot_correct_all_modes::<2>(p, &a, &b);
+                assert_hypot_correct_all_modes::<2>(p, &a, &Repr::new(big.clone(), exp));
+            }
+            for p in [1usize, 6, 15, 30, 150] {
+                let (a, b) = (Repr::<10>::new(a.into(), 0), Repr::<10>::new(b.into(), exp));
+                assert_hypot_correct_all_modes::<10>(p, &a, &b);
+            }
+        }
+    }
+}
+
+/// Regression: a result that merely rounds to a short value was flagged `Exact`
+/// (`hypot(1, 2^40)` at 53 bits, `hypot(1, 32)` at 1 bit).
+#[test]
+fn test_hypot_inexact_result_is_not_exact() {
+    let r2 = |v: u64| Repr::<2>::new(v.into(), 0);
+    let ctx = Context::<mode::HalfEven>::new(53);
+    let got = ctx.hypot(&r2(1 << 40), &r2(1)).unwrap();
+    assert_eq!(got, Inexact(FBig::from_parts(1.into(), 40), NoOp));
+    let got = Context::<mode::HalfAway>::new(53).hypot(&r2(1 << 40), &r2(1));
+    assert!(matches!(got, Ok(Inexact(_, NoOp))));
+
+    let ctx1 = Context::<mode::HalfEven>::new(1);
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(32)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 5), NoOp)
+    );
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(31)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 5), AddOne)
+    );
+    assert_eq!(
+        ctx1.hypot(&r2(1), &r2(4095)).unwrap(),
+        Inexact(FBig::from_parts(1.into(), 12), AddOne)
+    );
+    // still exact where the root is exact
+    assert_eq!(ctx.hypot(&r2(3), &r2(4)).unwrap(), Exact(FBig::from(5u8)));
+}
+
+/// Regression: `hypot(1, 2·3^-17)` at 35 base-3 digits under `Zero` returned `1 + 2 ulp`, above
+/// the true value `√(1 + 4·3^-34) < 1 + 2·3^-34` (and likewise in base 10).
+#[test]
+fn test_hypot_toward_zero_does_not_round_up() {
+    type F3 = FBig<mode::Zero, 3>;
+    let a = F3::from_parts(1.into(), 0).with_precision(1).value();
+    let b = F3::from_parts(2.into(), -17).with_precision(35).value();
+    let expected = F3::from_parts(IBig::from(3u8).pow(34) + IBig::ONE, -34);
+    assert_eq!(a.hypot(&b).repr(), expected.repr());
+    let b = F3::from_parts(1.into(), -17).with_precision(35).value();
+    assert_eq!(a.hypot(&b).repr(), &Repr::one());
+
+    type F10 = FBig<mode::Zero, 10>;
+    let a = F10::from_parts(1.into(), 0).with_precision(1).value();
+    let b = F10::from_parts(2.into(), -18).with_precision(37).value();
+    let expected = F10::from_parts(IBig::from(10u8).pow(36) + IBig::ONE, -36);
+    assert_eq!(a.hypot(&b).repr(), expected.repr());
+}
+
+/// The root of a zero is exactly zero, so it needs no precision: `cbrt`, `nth_root` and
+/// `hypot(0, 0)` on an unlimited-precision zero (`FBig::try_from(0.0)`, `DBig::ZERO`) used to
+/// panic with "precision cannot be 0", while `sqrt` returned 0.
+#[test]
+fn test_roots_of_unlimited_precision_zero() {
+    let zero: FBig = FBig::try_from(0.0f64).unwrap();
+    assert_eq!(zero.precision(), 0);
+    assert_eq!(zero.sqrt(), <FBig>::ZERO);
+    assert_eq!(zero.cbrt(), <FBig>::ZERO);
+    assert_eq!(zero.nth_root(5), <FBig>::ZERO);
+    assert_eq!(zero.nth_root(2), <FBig>::ZERO);
+    assert_eq!(zero.hypot(&zero), <FBig>::ZERO);
+    assert!((-zero.clone()).cbrt().repr().is_neg_zero());
+    assert!((-zero.clone()).hypot(&zero).repr().is_pos_zero());
+
+    assert_eq!(DBig::ZERO.cbrt(), DBig::ZERO);
+    assert_eq!(DBig::ZERO.nth_root(1), DBig::ZERO);
+    assert_eq!(DBig::ZERO.hypot(&DBig::ZERO), DBig::ZERO);
+    // the first root is the value itself, exact at any precision
+    assert_eq!(DBig::ONE.nth_root(1), DBig::ONE);
+
+    // a limited-precision operand still decides the precision of the result
+    let three = dbig!(3).with_precision(10).value();
+    assert_eq!(three.hypot(&DBig::ZERO), three);
+    assert_eq!(three.hypot(&DBig::ZERO).precision(), 10);
+}
+
+/// A non-trivial root still needs a precision.
+#[test]
+#[should_panic]
+fn test_nth_root_unlimited_precision() {
+    let _ = dbig!(2).with_precision(0).value().nth_root(5);
+}
+
+#[test]
+#[should_panic]
+fn test_hypot_unlimited_precision() {
+    let one = DBig::ONE;
+    let _ = one.hypot(&one);
+}
+
+/// `hypot` does not depend on where the operands sit in the exponent range: scaling both by the
+/// same power of the base scales the result. Regressions: operands near `2^(isize::MIN/2)` gave
+/// `Err(Underflow)`, 0 or a huge positive exponent (a debug overflow panic); operands near
+/// `2^(isize::MAX/2)` with a significand wider than the precision gave `Err(Overflow)`.
+#[test]
+fn test_hypot_is_exponent_invariant() {
+    fn check<R: ErrorBounds, const B: Word>(p: usize, a: i64, b: i64, gap: isize, e: isize) {
+        let ctx = Context::<R>::new(p);
+        let at = |e: isize| {
+            ctx.hypot(&Repr::<B>::new(a.into(), e), &Repr::<B>::new(b.into(), e + gap))
+                .unwrap_or_else(|err| panic!("hypot({a}·B^{e}, {b}·B^({e}+{gap})): {err:?}"))
+        };
+        let want = at(0).map(|v| {
+            let r = v.into_repr();
+            FBig::<R, B>::from_parts(r.significand().clone(), r.exponent() + e)
+        });
+        assert_eq!(at(e), want, "hypot({a}·B^{e}, {b}·B^({e}+{gap})) at {p} digits");
+    }
+    let exponents = [
+        isize::MIN / 2 - 70,
+        isize::MIN / 2,
+        isize::MIN / 2 + 64,
+        isize::MIN / 4,
+        isize::MAX / 2 - 3,
+        isize::MAX / 2,
+        isize::MAX / 2 + 10,
+        isize::MAX - 2000,
+        isize::MIN + 2000,
+    ];
+    for e in exponents {
+        for (a, b, gap) in [
+            (1i64, 1i64, 0isize),
+            (1, 5, 0),
+            (1, 47, 0),
+            (1, 1023, 0),
+            (1, (1 << 40) - 1, 0),
+            (3, 4, 0),
+            (7, 4, 0),
+            (7, 5, -30),
+            (1, 1, 300),
+        ] {
+            for p in [1usize, 2, 10, 20, 50, 53, 100, 500] {
+                check::<mode::HalfEven, 2>(p, a, b, gap, e);
+                check::<mode::Down, 2>(p, a, b, gap, e);
+                check::<mode::Up, 2>(p, a, b, gap, e);
+                check::<mode::HalfAway, 10>(p, a, b, gap, e);
+                check::<mode::Zero, 10>(p, a, b, gap, e);
+            }
+        }
+    }
+
+    // the reported shapes, spelled out
+    let ctx = Context::<mode::HalfEven>::new(53);
+    let one = Repr::<2>::one();
+    let sqrt2 = ctx.hypot(&one, &one).unwrap().value();
+    for e in [isize::MIN / 2, isize::MIN / 2 + 64] {
+        let tiny = Repr::<2>::new(1.into(), e);
+        let r = ctx.hypot(&one, &tiny).unwrap();
+        assert_eq!(r, Inexact(FBig::ONE, NoOp), "hypot(1, 2^{e})");
+        let r = ctx.hypot(&tiny, &tiny).unwrap().value();
+        let expect =
+            Repr::<2>::new(sqrt2.repr().significand().clone(), sqrt2.repr().exponent() + e);
+        assert_eq!(r.repr(), &expect, "hypot(2^{e}, 2^{e})");
+        // through the convenience API (this returned 0)
+        let (a, b) = (
+            FBig::<mode::HalfEven, 2>::ONE,
+            FBig::<mode::HalfEven, 2>::from_parts(1.into(), e),
+        );
+        assert_eq!(a.with_precision(53).value().hypot(&b), FBig::<mode::HalfEven, 2>::ONE);
+    }
+}
+
+/// At the very edge of the exponent range the result itself can be out of range, and only then
+/// is a range error reported.
+#[test]
+fn test_hypot_range_errors() {
+    use dashu_float::FpError;
+    let ctx = Context::<mode::HalfEven>::new(10);
+    // 2^(MAX-1)·√2 has a 10-bit significand at exponent MAX-10: representable
+    let big = Repr::<2>::new(1.into(), isize::MAX - 1);
+    assert!(ctx.hypot(&big, &big).is_ok());
+    // hypot(x, tiny) = x (inexact) for the largest power of two
+    let r = ctx.hypot(&big, &Repr::one()).unwrap();
+    assert_eq!(r, Inexact(FBig::from_parts(1.into(), isize::MAX - 1), NoOp));
+    // a 10-bit significand times 2^(MAX-1) is beyond the range
+    let wide = Repr::<2>::new(1023.into(), isize::MAX - 1);
+    assert_eq!(ctx.hypot(&wide, &wide), Err(FpError::Overflow(Sign::Positive)));
+    // 2^(MIN+1)·√2 needs a 10-bit significand below the smallest exponent
+    let small = Repr::<2>::new(1.into(), isize::MIN + 1);
+    assert_eq!(ctx.hypot(&small, &small), Err(FpError::Underflow(Sign::Positive)));
+    assert_eq!(
+        ctx.hypot(&small, &Repr::zero()),
+        Ok(Exact(FBig::from_parts(1.into(), isize::MIN + 1)))
+    );
+}
+
+/// A negligible second operand costs one rounding of the first, in every mode. Regression: under
+/// `Up`/`Down` the cost grew with the exponent gap (`hypot(1, 10^10000000)` took two minutes).
+#[test]
+fn test_hypot_negligible_operand() {
+    let ten37 = IBig::from(10u8).pow(37);
+    for gap in [40isize, 10_000, 10_000_000, isize::MAX / 2, isize::MAX - 2] {
+        let small = Repr::<10>::one();
+        let large = Repr::<10>::new(1.into(), gap);
+        for (a, b) in [(&small, &large), (&large, &small)] {
+            let up = Context::<mode::Up>::new(38).hypot(a, b).unwrap();
+            assert_eq!(up, Inexact(FBig::from_parts(ten37.clone() + IBig::ONE, gap - 37), AddOne));
+            let away = Context::<mode::Away>::new(38).hypot(a, b).unwrap();
+            assert_eq!(
+                away,
+                Inexact(FBig::from_parts(ten37.clone() + IBig::ONE, gap - 37), AddOne)
+            );
+            let down = Context::<mode::Down>::new(38).hypot(a, b).unwrap();
+            assert_eq!(down, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+            let zero = Context::<mode::Zero>::new(38).hypot(a, b).unwrap();
+            assert_eq!(zero, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+            let even = Context::<mode::HalfEven>::new(38).hypot(a, b).unwrap();
+            assert_eq!(even, Inexact(FBig::from_parts(1.into(), gap), NoOp));
+        }
+    }
+    // a first operand wider than the precision: the sticky part breaks an exact tie upward
+    let a = Repr::<10>::new(125.into(), 0);
+    let b = Repr::<10>::new(1.into(), -1000);
+    let r = Context::<mode::HalfEven>::new(2).hypot(&a, &b).unwrap();
+    assert_eq!(r, Inexact(FBig::from_parts(13.into(), 1), AddOne));
+    // just outside the shortcut: the gap is too small to be negligible at the precision
+    for p in [1usize, 20, 50, 100, 500] {
+        for gap in [
+            p as isize / 2 - 1,
+            p as isize / 2,
+            p as isize / 2 + 1,
+            p as isize / 2 + 3,
+            p as isize,
+        ] {
+            let (a, b) = (Repr::<2>::new(3.into(), gap), Repr::<2>::new(5.into(), 0));
+            assert_hypot_correct_all_modes::<2>(p, &a, &b);
+            let (a, b) = (Repr::<10>::new(3.into(), gap), Repr::<10>::new(5.into(), 0));
+            assert_hypot_correct_all_modes::<10>(p, &a, &b);
+        }
+    }
+}
+
+/// `nth_root` does not depend on where the operand sits in the exponent range: moving the
+/// exponent by a multiple of `n` moves the root's exponent by that multiple. Regression: for an
+/// exponent next to `isize::MIN`/`isize::MAX` the alignment arithmetic left the `isize` range —
+/// an overflow panic in debug builds, and in release builds a root with the wrong exponent
+/// (`cbrt(8·10^(isize::MIN+2))` came back as `2·10^3074457345618258603`) or the wrong
+/// significand (`cbrt(27·10^(isize::MAX−1))`).
+#[test]
+fn test_nth_root_extreme_exponents() {
+    // the reported calls: both cube roots are exact
+    let ctx = Context::<mode::HalfEven>::new(10);
+    let e = isize::MIN + 2;
+    let got = ctx.cbrt(&Repr::<10>::new(8.into(), e)).unwrap();
+    assert_eq!(got, Exact(FBig::from_parts(2.into(), e / 3)), "cbrt(8e{e})");
+    let e = isize::MAX - 1;
+    let got = ctx.cbrt(&Repr::<10>::new(27.into(), e)).unwrap();
+    assert_eq!(got, Exact(FBig::from_parts(3.into(), e / 3)), "cbrt(27e{e})");
+
+    fn check<R: Round, const B: Word>(p: usize, n: usize, sig: i32, e: isize) {
+        let ctx = Context::<R>::new(p);
+        // the same significand with the exponent reduced into `0..n`
+        let near = e.rem_euclid(n as isize);
+        let moved = (e as i128 - near as i128) / n as i128;
+        let got = ctx.nth_root(n, &Repr::<B>::new(sig.into(), e)).unwrap();
+        let want = ctx.nth_root(n, &Repr::<B>::new(sig.into(), near)).unwrap();
+        let want = want.map(|v| {
+            let (signif, exp) = v.into_repr().into_parts();
+            FBig::from_parts(signif, (exp as i128 + moved) as isize)
+        });
+        assert_eq!(got, want, "nth_root({n}, {sig}·{B}^{e}) at precision {p}");
+    }
+    for n in [3usize, 4, 5, 7] {
+        for d in 1..=(2 * n as isize + 1) {
+            for e in [isize::MIN + d, isize::MAX - d] {
+                for p in [20, 50, 100, 500] {
+                    // 3^n has an exact root at an aligned exponent, 7 never has one
+                    check::<mode::HalfEven, 2>(p, n, 3i32.pow(n as u32), e);
+                    check::<mode::Down, 2>(p, n, 7, e);
+                    check::<mode::Up, 2>(p, n, 7, e);
+                }
+                check::<mode::HalfAway, 10>(10, n, 3i32.pow(n as u32), e);
+                check::<mode::Zero, 10>(10, n, 7, e);
+                check::<mode::Away, 3>(10, n, 7, e);
+                // a negative operand has an odd root
+                if n % 2 == 1 {
+                    check::<mode::Down, 10>(10, n, -7, e);
+                    check::<mode::HalfEven, 2>(50, n, -(3i32.pow(n as u32)), e);
+                }
+            }
+        }
+    }
+}
+
+/// The root of a zero is an exact zero for every `n`: `-0` is a zero, not a negative number.
+/// An odd root keeps the sign of the zero and an even root is `+0` (IEEE 754 rootn), while
+/// `sqrt(-0)` is `-0` (IEEE 754 squareRoot).
+/// Regression: an even root of `-0` was reported as out of domain (a panic through
+/// `FBig::nth_root`).
+#[test]
+fn test_nth_root_of_negative_zero() {
+    fn check<const B: Word>(p: usize) {
+        let ctx = Context::<mode::HalfEven>::new(p);
+        for n in 1..=6 {
+            let got = ctx.nth_root(n, &Repr::<B>::neg_zero()).unwrap();
+            if n % 2 == 0 {
+                assert!(matches!(&got, Exact(v) if v.repr().is_pos_zero()), "nth_root({n}, -0)");
+            } else {
+                assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "nth_root({n}, -0)");
+            }
+            let got = ctx.nth_root(n, &Repr::<B>::zero()).unwrap();
+            assert!(matches!(&got, Exact(v) if v.repr().is_pos_zero()), "nth_root({n}, +0)");
+        }
+        let got = ctx.sqrt(&Repr::<B>::neg_zero()).unwrap();
+        assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "sqrt(-0)");
+    }
+    for p in [0, 20, 50, 100, 500] {
+        check::<2>(p);
+        check::<10>(p);
+    }
+
+    // the reported calls
+    let z: FBig = FBig::try_from(-0.0f64).unwrap();
+    assert!(z.repr().is_neg_zero());
+    assert!(z.sqrt().repr().is_neg_zero());
+    assert!(z.nth_root(2).repr().is_pos_zero());
+    assert!(z.nth_root(3).repr().is_neg_zero());
+    assert!((-DBig::ZERO).nth_root(4).repr().is_pos_zero());
+    assert!(DBig::ZERO.nth_root(4).repr().is_pos_zero());
+    // a negative number still has no even root
+    let got = Context::<mode::HalfEven>::new(5).nth_root(2, &Repr::<2>::new((-1).into(), -100));
+    assert_eq!(got, Err(dashu_float::FpError::OutOfDomain));
 }

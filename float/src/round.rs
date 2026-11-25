@@ -171,8 +171,59 @@ pub trait ErrorBounds: Round {
     /// and `incl_R` represents whether the bounds `f - L` and `f + R` are inclusive respectively.
     ///
     /// When the input number has unlimited precision, the output must be (ZERO, ZERO, true, true).
+    ///
+    /// The bounds must not reach beyond the values that round to `f`. They may fall short of
+    /// them where the exact bound has no finite expansion: half an ulp cannot be written down
+    /// in an odd base, so the round-to-nearest modes return a value just below it there.
     fn error_bounds<const B: Word>(f: &FBig<Self, B>)
         -> (FBig<Self, B>, FBig<Self, B>, bool, bool);
+}
+
+/// The bound on the side of `f` that faces zero, given the bound on the side that faces away
+/// from it. The two are the same except when `|f|` is a power of the base: the floats just
+/// below a power of the base are `B` times denser than the ones above it (which is what
+/// [`FBig::ulp`] measures), so the values that round to `f` reach only a `B`-th as far there.
+fn toward_zero<R: Round, const B: Word>(f: &FBig<R, B>, mut bound: FBig<R, B>) -> FBig<R, B> {
+    // the significand is stored without trailing zero digits: a power of the base is ±1
+    if f.repr.significand.abs_cmp(&IBig::ONE).is_eq() {
+        bound.repr.exponent = bound.repr.exponent.saturating_sub(1);
+    }
+    bound
+}
+
+/// The bounds of a round-to-nearest mode: half an ulp on the side away from zero, and the
+/// (possibly narrower, see [`toward_zero`]) counterpart on the side facing zero.
+fn nearest_bounds<R: Round, const B: Word>(
+    f: &FBig<R, B>,
+    half_ulp: FBig<R, B>,
+    incl_l: bool,
+    incl_r: bool,
+) -> (FBig<R, B>, FBig<R, B>, bool, bool) {
+    let inner = toward_zero(f, half_ulp.clone());
+    match f.repr.sign() {
+        Sign::Positive => (inner, half_ulp, incl_l, incl_r),
+        Sign::Negative => (half_ulp, inner, incl_l, incl_r),
+    }
+}
+
+/// Half an ulp of `f`, the error bound of the round-to-nearest modes.
+///
+/// In an even base this is the single digit `B/2` one place below the ulp. In an odd base half
+/// an ulp is the endless expansion `0.ddd…` with `d = (B-1)/2`, so it is cut off after enough
+/// digits for well over a hundred bits: the result is below half an ulp (a bound above it
+/// would cover values that round to a neighbor of `f`), by less than one part in 2^128.
+fn half_ulp<R: Round, const B: Word>(f: &FBig<R, B>) -> FBig<R, B> {
+    let mut half_ulp = f.ulp();
+    if B % 2 == 0 {
+        half_ulp.repr.exponent = half_ulp.repr.exponent.saturating_sub(1);
+        half_ulp.repr.significand = UBig::from_word(B / 2).into();
+    } else {
+        // (B^k - 1) / 2 is the digit (B-1)/2 repeated k times
+        let k = (256 / B.bit_len()) + 1;
+        half_ulp.repr.exponent = half_ulp.repr.exponent.saturating_sub(k as isize);
+        half_ulp.repr.significand = ((UBig::from_word(B).pow(k) - UBig::ONE) >> 1).into();
+    }
+    half_ulp
 }
 
 impl Round for mode::Zero {
@@ -259,8 +310,8 @@ impl ErrorBounds for mode::Away {
             (FBig::ZERO, FBig::ZERO, true, true)
         } else {
             match f.repr().sign() {
-                Sign::Positive => (f.ulp(), FBig::ZERO, false, true),
-                Sign::Negative => (FBig::ZERO, f.ulp(), true, false),
+                Sign::Positive => (toward_zero(f, f.ulp()), FBig::ZERO, false, true),
+                Sign::Negative => (FBig::ZERO, toward_zero(f, f.ulp()), true, false),
             }
         }
     }
@@ -290,7 +341,14 @@ impl ErrorBounds for mode::Down {
     fn error_bounds<const B: Word>(
         f: &FBig<Self, B>,
     ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
-        (FBig::ZERO, f.ulp(), true, false)
+        if f.precision() == 0 {
+            // unlimited precision: the value is exact (and has no ulp to ask for)
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+        match f.repr().sign() {
+            Sign::Positive => (FBig::ZERO, f.ulp(), true, false),
+            Sign::Negative => (FBig::ZERO, toward_zero(f, f.ulp()), true, false),
+        }
     }
 }
 
@@ -318,7 +376,14 @@ impl ErrorBounds for mode::Up {
     fn error_bounds<const B: Word>(
         f: &FBig<Self, B>,
     ) -> (FBig<Self, B>, FBig<Self, B>, bool, bool) {
-        (f.ulp(), FBig::ZERO, false, true)
+        if f.precision() == 0 {
+            // unlimited precision: the value is exact (and has no ulp to ask for)
+            return (FBig::ZERO, FBig::ZERO, true, true);
+        }
+        match f.repr().sign() {
+            Sign::Positive => (toward_zero(f, f.ulp()), FBig::ZERO, false, true),
+            Sign::Negative => (f.ulp(), FBig::ZERO, false, true),
+        }
     }
 }
 
@@ -367,9 +432,7 @@ impl ErrorBounds for mode::HalfAway {
             return (FBig::ZERO, FBig::ZERO, true, true);
         }
 
-        let mut half_ulp = f.ulp();
-        half_ulp.repr.exponent -= 1;
-        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+        let half_ulp = half_ulp(f);
 
         let (incl_l, incl_r) = if f.repr.is_pos_zero() {
             // `+0` is the canonical zero with the symmetric half-ulp interval on both sides.
@@ -382,7 +445,7 @@ impl ErrorBounds for mode::HalfAway {
         } else {
             (true, false)
         };
-        (half_ulp.clone(), half_ulp, incl_l, incl_r)
+        nearest_bounds(f, half_ulp, incl_l, incl_r)
     }
 }
 
@@ -432,20 +495,32 @@ impl ErrorBounds for mode::HalfEven {
             return (FBig::ZERO, FBig::ZERO, true, true);
         }
 
-        let mut half_ulp = f.ulp();
-        half_ulp.repr.exponent -= 1;
-        half_ulp.repr.significand = UBig::from_word((B + 1) / 2).into(); // ceil division
+        let half_ulp = half_ulp(f);
 
         // `-0` carries a sign (a distinct rounding target), so it takes the one-sided (Negative)
-        // interval, matching `mode::HalfAway::error_bounds`. `+0` (significand 0, even) and all
-        // nonzero values fall through to the round-to-even parity rule.
+        // interval, matching `mode::HalfAway::error_bounds`, and `+0` keeps the open symmetric
+        // one. A nonzero value owns the two ties next to it when its last digit *at the
+        // context's precision* is even. The significand is stored without its trailing zero
+        // digits, so that digit is a zero (even) when the significand is shorter than the
+        // precision, and otherwise it is the last stored digit, whose parity is the parity of
+        // the significand in an even base. In an odd base the bound is strictly inside half an
+        // ulp (which is never a representable tie there), so both ends can be included.
         let (incl_l, incl_r) = if f.repr.is_neg_zero() {
             (false, true)
+        } else if f.repr.is_pos_zero() {
+            (false, false)
         } else {
-            let incl = f.repr.significand.bit(0);
-            (incl, incl)
+            let incl = B % 2 == 1 || f.repr.digits() < f.precision() || !f.repr.significand.bit(0);
+            // The side of a power of the base that faces zero lies in the finer binade below,
+            // where the tie is decided in that binade's units: there the power of the base is
+            // `B^p`, which is even in an even base, so it owns that tie whatever its own parity.
+            let is_power = f.repr.significand.abs_cmp(&IBig::ONE).is_eq();
+            match f.repr.sign() {
+                Sign::Positive => (incl || is_power, incl),
+                Sign::Negative => (incl, incl || is_power),
+            }
         };
-        (half_ulp.clone(), half_ulp, incl_l, incl_r)
+        nearest_bounds(f, half_ulp, incl_l, incl_r)
     }
 }
 

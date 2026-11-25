@@ -101,6 +101,10 @@ required-features = ["num-traits"]
 name = "rkyv"
 required-features = ["rkyv"]
 
+[[test]]
+name = "zeroize"
+required-features = ["zeroize"]
+
 [[bench]]
 name = "primitive"
 required-features = ["rand"]

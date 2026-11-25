@@ -214,6 +214,149 @@ fn test_from_str_other_bases() {
 }
 
 #[test]
+fn test_from_str_zero_with_scale() {
+    // The scale of a zero is ignored: only a leading '-' makes a negative zero, and no scale
+    // turns a zero into an infinity.
+    let max = isize::MAX;
+    let min = isize::MIN;
+    let positive = [
+        "0e0".to_string(),
+        "0e-1".to_string(),
+        "0e-2".to_string(),
+        "+0e-1".to_string(),
+        "0.0e-1".to_string(),
+        "0@-1".to_string(),
+        "0e5".to_string(),
+        format!("0e{max}"),
+        format!("0e{min}"),
+        format!("0.00e{min}"),
+    ];
+    for s in &positive {
+        let x = DBig::from_str(s).unwrap();
+        assert!(x.repr().is_pos_zero(), "{s:?} parsed to {x:?}");
+    }
+    for s in ["-0", "-0e0", "-0e-1", "-0e-2", "-0.0e7"] {
+        let x = DBig::from_str(s).unwrap();
+        assert!(x.repr().is_neg_zero(), "{s:?} parsed to {x:?}");
+    }
+    assert!(DBig::from_str(&format!("-0e{max}"))
+        .unwrap()
+        .repr()
+        .is_neg_zero());
+
+    for s in ["0b0", "0b-1", "0b-2", "0x0p-1", "0x0p-2", "0x.0p-1", "0@-1"] {
+        let x = FBin::from_str(s).unwrap();
+        assert!(x.repr().is_pos_zero(), "{s:?} parsed to {x:?}");
+    }
+    for s in ["-0b-1", "-0x0p-1", "-0x0p-2"] {
+        let x = FBin::from_str(s).unwrap();
+        assert!(x.repr().is_neg_zero(), "{s:?} parsed to {x:?}");
+    }
+    assert!(FOct::from_str("0o-1").unwrap().repr().is_pos_zero());
+    assert!(FHex::from_str("0h-1").unwrap().repr().is_pos_zero());
+}
+
+#[test]
+fn test_from_str_single_sign() {
+    // the sign is accepted once, in front of the integral part
+    for s in [
+        "0.+1", "-1.+5", "0.-1", "++1", "-+1", "+-1", "--1", "+", "-", ".+5", "1.+5e3",
+    ] {
+        assert!(DBig::from_str(s).is_err(), "{s:?} must be rejected");
+    }
+    for s in ["0x+1", "0x+1.8", "0x1.+8", "+0x+1p3", "1.+1", "+.+1b2"] {
+        assert!(FBin::from_str(s).is_err(), "{s:?} must be rejected");
+    }
+    assert!(FHex::from_str("a.+b").is_err());
+
+    // a single sign on the integral part and on the scale is still fine
+    assert_eq!(DBig::from_str("+1.5e+3").unwrap(), DBig::from_parts(IBig::from(15), 2));
+    assert_eq!(DBig::from_str("-1.5e-3").unwrap(), DBig::from_parts(IBig::from(-15), -4));
+    assert_eq!(DBig::from_str("+.5").unwrap(), DBig::from_parts(IBig::from(5), -1));
+    assert_eq!(FBin::from_str("+0x1.8p+1").unwrap(), FBin::from_parts(IBig::from(3), 0));
+}
+
+#[test]
+fn test_from_str_prefix_without_digits() {
+    for s in [
+        ".", "-.", "0x", "0x.", "-0x.", "+0x.", "0X.", "0x.p5", "0x.@1", "-0X.P-3",
+    ] {
+        assert_eq!(FBin::from_str(s), Err(ParseError::NoDigits), "{s:?}");
+    }
+    // either part alone is enough
+    assert_eq!(FBin::from_str("0x.8").unwrap(), FBin::from_parts(IBig::from(1), -1));
+    assert_eq!(FBin::from_str("0x8.").unwrap(), FBin::from_parts(IBig::from(1), 3));
+    assert!(FBin::from_str("0x0.").unwrap().repr().is_pos_zero());
+}
+
+#[test]
+fn test_from_str_extreme_exponent() {
+    let max = isize::MAX;
+    let min = isize::MIN;
+
+    // A nonzero number never lands on the reserved exponents `isize::MIN` / `isize::MAX`
+    // (whether written directly, reached through the fractional digits, or reached when
+    // trailing zeros are folded into the exponent), and the arithmetic never wraps around.
+    let rejected = [
+        format!("1e{max}"),
+        format!("1e{min}"),
+        format!("-1e{max}"),
+        format!("1.5e{min}"),
+        format!("1.5e{}", min + 1),
+        format!("0.15e{}", min + 2),
+        format!("10e{}", max - 1),
+        format!("1000e{}", max - 3),
+        format!("100e{}", max - 1),
+        format!("1e{max}0"),
+        format!("0.1e{}", min + 1),
+        format!("0.010e{}", min + 2),
+        format!("0.{}1e{}", "0".repeat(40), min + 20),
+    ];
+    for s in &rejected {
+        assert_eq!(DBig::from_str(s), Err(ParseError::InvalidDigit), "{s:?}");
+    }
+    for s in [
+        format!("1.1@{min}"),
+        format!("1@{max}"),
+        format!("0x1.8p{min}"),
+    ] {
+        assert_eq!(FBin::from_str(&s), Err(ParseError::InvalidDigit), "{s:?}");
+    }
+
+    // the neighbours are ordinary finite values
+    let accepted = [
+        (format!("1e{}", max - 1), 1, max - 1),
+        (format!("1e{}", min + 1), 1, min + 1),
+        (format!("1.5e{}", min + 2), 15, min + 1),
+        (format!("10e{}", max - 2), 1, max - 1),
+        // The scale minus the number of fractional digits is below `isize::MIN` in these, but
+        // the trailing zeros of the fraction bring the exponent back to `isize::MIN + 1`.
+        (format!("10e{min}"), 1, min + 1),
+        (format!(".10e{}", min + 2), 1, min + 1),
+        (format!(".100e{}", min + 2), 1, min + 1),
+        (format!("0.1000e{}", min + 3), 1, min + 2),
+        (format!("0.010e{}", min + 3), 1, min + 1),
+        (format!("1.50000e{}", min + 2), 15, min + 1),
+        (format!("0.1{}e{}", "0".repeat(40), min + 2), 1, min + 1),
+    ];
+    for (s, signif, exp) in &accepted {
+        let x = DBig::from_str(s).unwrap();
+        assert_eq!(x.repr().significand(), &IBig::from(*signif), "{s:?}");
+        assert_eq!(x.repr().exponent(), *exp, "{s:?}");
+        assert!(x.repr().is_finite());
+        assert_eq!(&x - &x, DBig::ZERO, "{s:?}");
+    }
+    // the same with the other scale markers
+    let x = FBin::from_str(&format!("0.1000b{}", min + 2)).unwrap();
+    assert_eq!(x.repr().exponent(), min + 1);
+    assert_eq!(x.precision(), 5);
+    let x = FBin::from_str(&format!("0x0.80p{}", min + 2)).unwrap();
+    assert_eq!(x.repr().exponent(), min + 1);
+    let x = FHex::from_str(&format!("-0.100@{}", min + 2)).unwrap();
+    assert_eq!((x.repr().significand(), x.repr().exponent()), (&IBig::NEG_ONE, min + 1));
+}
+
+#[test]
 fn test_from_parts() {
     assert_eq!(FBin::from_parts(ibig!(0), 2), FBin::ZERO);
     assert_eq!(FBin::from_parts(ibig!(-4), -2), FBin::NEG_ONE);
@@ -252,6 +395,137 @@ fn test_from_parts() {
         DBig::from_parts_const(Sign::Negative, 100200, 0, None),
         DBig::from_parts_const(Sign::Negative, 1002, 2, None)
     );
+}
+
+// A zero significand has no digits to infer a precision from, but a requested minimum
+// precision still applies to it (it used to be dropped: the result was `ZERO`, of unlimited
+// precision, so that the zero literal `dbig!(0.000)` lost its 4 digits of precision).
+#[test]
+fn test_from_parts_const_zero_precision() {
+    const D: DBig = DBig::from_parts_const(Sign::Positive, 0, -3, Some(4));
+    const F: FBin = FBin::from_parts_const(Sign::Negative, 0, 7, Some(20));
+    assert!(D.repr().is_pos_zero() && F.repr().is_pos_zero());
+    assert_eq!(D.precision(), 4);
+    assert_eq!(F.precision(), 20);
+    for precision in [1usize, 20, 50, 100, 500] {
+        let zero = FBin::from_parts_const(Sign::Positive, 0, 0, Some(precision));
+        assert_eq!(zero, FBin::ZERO);
+        assert_eq!(zero.precision(), precision);
+        // the same as for a nonzero significand with fewer digits than requested
+        let one = FBin::from_parts_const(Sign::Positive, 1, 0, Some(precision));
+        assert_eq!(one.precision(), precision);
+    }
+
+    // without a requested precision the zero has unlimited precision, as before
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 0, 0, None).precision(), 0);
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2, None).precision(), 0);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 0, 0, Some(0)).precision(), 0);
+}
+
+// The const constructors agree with their heap counterparts on the value, the inferred
+// precision (the digit count of the significand as given, trailing zeros included) and the
+// saturation of the exponent. The const digit count used to be taken after the trailing zeros
+// were stripped, and to stop one short for significands at or above the largest power of the
+// base that fits in a double word.
+#[test]
+fn test_from_parts_const_matches_from_parts() {
+    use dashu_float::Repr;
+
+    fn check<const B: Word>(sig: DoubleWord, exp: isize) {
+        for sign in [Sign::Positive, Sign::Negative] {
+            let c = FBig::<mode::Zero, B>::from_parts_const(sign, sig, exp, None);
+            let h = FBig::<mode::Zero, B>::from_parts(IBig::from_parts(sign, sig.into()), exp);
+            assert_eq!(c.repr(), h.repr(), "base {B}: {sig} * B^{exp}");
+            assert_eq!(c.precision(), h.precision(), "base {B}: {sig} * B^{exp}");
+            assert!(c.repr().digits() <= c.precision());
+            // a minimum precision only ever raises it
+            let m = FBig::<mode::Zero, B>::from_parts_const(sign, sig, exp, Some(7));
+            assert_eq!(m.precision(), h.precision().max(7));
+            let r = Repr::<B>::new_const(sign, sig, exp);
+            assert_eq!(&r, h.repr());
+        }
+    }
+    fn sweep<const B: Word>() {
+        let b = B as DoubleWord;
+        let mut sigs = vec![
+            1,
+            2,
+            b - 1,
+            b,
+            b + 1,
+            b * b,
+            b * b * b - 1,
+            1230,
+            1200,
+            1234,
+        ];
+        sigs.extend([
+            DoubleWord::MAX,
+            DoubleWord::MAX - 1,
+            DoubleWord::MAX / 2 + 1,
+        ]);
+        // the largest power of the base in a double word, its neighbors and its multiples
+        let mut top: DoubleWord = 1;
+        while let Some(next) = top.checked_mul(b) {
+            top = next;
+        }
+        sigs.extend([top - 1, top, top + 1, top / b, top / b * (b - 1)]);
+        if let Some(twice) = top.checked_mul(2) {
+            sigs.extend([twice, twice + 1]);
+        }
+        for sig in sigs {
+            for exp in [0isize, -2, 5, isize::MIN + 1, isize::MAX - 200] {
+                check::<B>(sig, exp);
+            }
+        }
+    }
+    sweep::<2>();
+    sweep::<3>();
+    sweep::<8>();
+    sweep::<10>();
+    sweep::<16>();
+    sweep::<36>();
+
+    // the reported cases
+    let sig = 10u128.pow(38) + 1;
+    let c = DBig::from_parts_const(Sign::Positive, sig as DoubleWord, 0, None);
+    assert_eq!(c.precision(), 39);
+    assert_eq!(&c + DBig::ZERO, DBig::from_parts(IBig::from(sig), 0));
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 1230, 0, None).precision(), 4);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 1200, 0, None).precision(), 4);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 10, 0, None).precision(), 2);
+    assert_eq!(FBin::from_parts_const(Sign::Positive, 2, 0, None).precision(), 2);
+    assert_eq!(
+        DBig::from_parts_const(Sign::Positive, 1230, 0, None) + DBig::ONE,
+        DBig::from_parts(ibig!(1231), 0)
+    );
+
+    // folding trailing zeros into an exponent next to `isize::MAX` saturates like `Repr::new`
+    // does (it used to overflow: a panic in debug builds, `isize::MIN` in release builds)
+    for (sig, exp) in [
+        (
+            (1 as DoubleWord) << (DoubleWord::BITS - 2),
+            isize::MAX - (DoubleWord::BITS as isize - 2),
+        ),
+        (
+            (1 as DoubleWord) << (DoubleWord::BITS - 1),
+            isize::MAX - (DoubleWord::BITS as isize - 2),
+        ),
+        (4, isize::MAX),
+    ] {
+        let c = Repr::<2>::new_const(Sign::Positive, sig, exp);
+        assert_eq!(c, Repr::<2>::new(IBig::from(sig), exp));
+        assert_eq!((c.significand(), c.exponent()), (&IBig::ONE, isize::MAX));
+    }
+    for (sig, exp) in [
+        (100, isize::MAX - 1),
+        (10, isize::MAX),
+        (1000, isize::MAX - 3),
+    ] {
+        let c = Repr::<10>::new_const(Sign::Negative, sig, exp);
+        assert_eq!(c, Repr::<10>::new(-IBig::from(sig), exp));
+        assert_eq!(c.exponent(), isize::MAX);
+    }
 }
 
 #[test]
@@ -760,6 +1034,205 @@ fn test_scientific_format_decimal() {
 }
 
 #[test]
+fn test_format_width_without_precision() {
+    // integers whose last digit is nonzero, and zero, take exactly `width` characters
+    assert_eq!(format!("{:6}", dbig!(123)), "   123");
+    assert_eq!(format!("{:3}", DBig::ZERO), "  0");
+    assert_eq!(format!("{:*>2}", DBig::ZERO), "*0");
+    assert_eq!(format!("{:*<4}", dbig!(-7)), "-7**");
+    assert_eq!(
+        format!("{:5}|{:<5}|{:^5}", dbig!(12), dbig!(12), dbig!(12)),
+        "   12|12   | 12  "
+    );
+    assert_eq!(
+        format!("{:5}|{:<5}|{:^5}", dbig!(-3), dbig!(-3), dbig!(-3)),
+        "   -3|-3   | -3  "
+    );
+    assert_eq!(format!("{:05}", dbig!(-3)), "-0003");
+    assert_eq!(format!("{:+5}", dbig!(3)), "   +3");
+    assert_eq!(format!("{:8}", fbig!(0x1)), "       1");
+    assert_eq!(format!("{:8}", fbig!(-0x5)), "    -101");
+    // neighbours that already worked
+    assert_eq!(format!("{:6}", dbig!(1230)), "  1230");
+    assert_eq!(format!("{:6}", dbig!(12.3)), "  12.3");
+    assert_eq!(format!("{:6.1}", dbig!(123)), " 123.0");
+    assert_eq!(format!("{:6.0}", dbig!(123)), "   123");
+}
+
+#[test]
+fn test_format_width_is_exact() {
+    // whenever the unpadded text is shorter than the width, the padded text has exactly
+    // `width` characters and consists of the unpadded text plus fill characters
+    let mut values = vec![DBig::ZERO, DBig::from_str("-0").unwrap()];
+    for signif in [1, 7, 12, 95, 123, 999, 1001, 12345] {
+        for exp in [-7, -3, -2, -1, 0, 1, 2, 5] {
+            values.push(DBig::from_parts(IBig::from(signif), exp));
+            values.push(DBig::from_parts(IBig::from(-signif), exp));
+        }
+    }
+    for x in &values {
+        for w in 0..14usize {
+            let plain = format!("{}", x);
+            for padded in [
+                format!("{:*>w$}", x),
+                format!("{:*<w$}", x),
+                format!("{:*^w$}", x),
+            ] {
+                assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+                assert_eq!(padded.trim_matches('*'), plain);
+            }
+            assert_eq!(format!("{:0w$}", x).len(), plain.len().max(w));
+
+            let plain = format!("{:+}", x);
+            let padded = format!("{:*>+w$}", x);
+            assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+            assert_eq!(padded.trim_matches('*'), plain);
+
+            let plain = format!("{:e}", x);
+            for padded in [
+                format!("{:*>w$e}", x),
+                format!("{:*<w$e}", x),
+                format!("{:*^w$e}", x),
+            ] {
+                assert_eq!(padded.len(), plain.len().max(w), "{plain} at width {w}: {padded:?}");
+                assert_eq!(padded.trim_matches('*'), plain);
+            }
+            assert_eq!(format!("{:0w$e}", x).len(), plain.len().max(w));
+
+            for p in 0..6usize {
+                let plain = format!("{:.p$}", x);
+                for padded in [
+                    format!("{:*>w$.p$}", x),
+                    format!("{:*<w$.p$}", x),
+                    format!("{:*^w$.p$}", x),
+                ] {
+                    assert_eq!(
+                        padded.len(),
+                        plain.len().max(w),
+                        "{plain} at width {w}: {padded:?}"
+                    );
+                    assert_eq!(padded.trim_matches('*'), plain);
+                }
+                assert_eq!(format!("{:0w$.p$}", x).len(), plain.len().max(w));
+
+                let plain = format!("{:.p$e}", x);
+                for padded in [
+                    format!("{:*>w$.p$e}", x),
+                    format!("{:*<w$.p$e}", x),
+                    format!("{:*^w$.p$e}", x),
+                ] {
+                    assert_eq!(
+                        padded.len(),
+                        plain.len().max(w),
+                        "{plain} at width {w}: {padded:?}"
+                    );
+                    assert_eq!(padded.trim_matches('*'), plain);
+                }
+                assert_eq!(format!("{:0w$.p$e}", x).len(), plain.len().max(w));
+            }
+        }
+    }
+}
+
+#[test]
+fn test_format_precision_tiny_value() {
+    // A value far below the last printed digit is rounded from its sign alone, in constant
+    // time and memory, whatever its exponent.
+    for s in [
+        "7e-10",
+        "7e-1000",
+        "7e-100000",
+        "7e-100000000000",
+        "0.7e-9223372036854775778",
+        "123456789e-9223372036854775000",
+    ] {
+        let x = DBig::from_str(s).unwrap();
+        assert_eq!(format!("{:.3}", x), "0.000", "{s}");
+        assert_eq!(format!("{:.0}", x), "0", "{s}");
+        assert_eq!(format!("{:8.2}", x), "    0.00", "{s}");
+        assert_eq!(format!("{:.3}", -x.clone()), "-0.000", "{s}");
+
+        // directed modes still see the nonzero tail
+        type Up = FBig<mode::Up, 10>;
+        type Down = FBig<mode::Down, 10>;
+        type Away = FBig<mode::Away, 10>;
+        type Zero = FBig<mode::Zero, 10>;
+        assert_eq!(format!("{:.3}", Up::from_str(s).unwrap()), "0.001", "{s}");
+        assert_eq!(format!("{:.3}", -Up::from_str(s).unwrap()), "-0.000", "{s}");
+        assert_eq!(format!("{:.3}", Down::from_str(s).unwrap()), "0.000", "{s}");
+        assert_eq!(format!("{:.3}", -Down::from_str(s).unwrap()), "-0.001", "{s}");
+        assert_eq!(format!("{:.3}", Away::from_str(s).unwrap()), "0.001", "{s}");
+        assert_eq!(format!("{:.3}", -Away::from_str(s).unwrap()), "-0.001", "{s}");
+        assert_eq!(format!("{:.3}", Zero::from_str(s).unwrap()), "0.000", "{s}");
+        assert_eq!(format!("{:.0}", Up::from_str(s).unwrap()), "1", "{s}");
+    }
+    let tiny = FBin::from_parts(IBig::from(5), -1_000_000_000_000);
+    assert_eq!(format!("{:.4}", tiny), "0.0000");
+
+    // the boundary between the two paths: one and two places below the last printed digit
+    assert_eq!(format!("{:.3}", dbig!(0.0005)), "0.001");
+    assert_eq!(format!("{:.3}", dbig!(0.0004)), "0.000");
+    assert_eq!(format!("{:.3}", dbig!(0.00099)), "0.001");
+    assert_eq!(format!("{:.3}", dbig!(0.00009)), "0.000");
+    assert_eq!(format!("{:.3}", dbig!(0.000099999)), "0.000");
+}
+
+#[test]
+fn test_scientific_format_carry() {
+    // rounding that carries into a new leading digit still prints exactly `precision`
+    // fractional digits
+    assert_eq!(format!("{:.0e}", dbig!(94)), "9e1");
+    assert_eq!(format!("{:.0e}", dbig!(95)), "1e2");
+    assert_eq!(format!("{:.0e}", dbig!(9.4)), "9e0");
+    assert_eq!(format!("{:.0e}", dbig!(9.5)), "1e1");
+    assert_eq!(format!("{:.1e}", dbig!(99.4)), "9.9e1");
+    assert_eq!(format!("{:.1e}", dbig!(99.5)), "1.0e2");
+    assert_eq!(format!("{:.1e}", dbig!(9.96)), "1.0e1");
+    assert_eq!(format!("{:.1e}", dbig!(996)), "1.0e3");
+    assert_eq!(format!("{:.1e}", dbig!(0.999)), "1.0e0");
+    assert_eq!(format!("{:.1e}", dbig!(9.94)), "9.9e0");
+    assert_eq!(format!("{:.1e}", dbig!(9.99)), "1.0e1");
+    assert_eq!(format!("{:.1e}", dbig!(-9.99)), "-1.0e1");
+    assert_eq!(format!("{:.3E}", dbig!(99999)), "1.000E5");
+    assert_eq!(format!("{:.2e}", dbig!(12345)), "1.23e4");
+    assert_eq!(format!("{:8.0e}", dbig!(9.5)), "     1e1");
+    assert_eq!(format!("{:08.1e}", dbig!(-99.5)), "-001.0e2");
+
+    // other bases, including the hexadecimal form of a binary float (4 bits per digit)
+    type FBinAway = FBig<mode::HalfAway, 2>;
+    type FHexAway = FBig<mode::HalfAway, 16>;
+    assert_eq!(format!("{:.1b}", FBinAway::from_parts(IBig::from(0b111), 0)), "1.0b3");
+    assert_eq!(format!("{:.0b}", FBinAway::from_parts(IBig::from(0b11), -1)), "1b1");
+    assert_eq!(format!("{:.1x}", FHexAway::from_parts(IBig::from(0xfff), 0)), "1.0h3");
+    let x = FBinAway::from_parts(IBig::from(0x1ff), 0);
+    let hex = format!("{:.1x}", x);
+    assert_eq!(hex, "0x8.0p6");
+    assert_eq!(FBinAway::from_str(&hex).unwrap(), FBinAway::from_parts(IBig::from(1), 9));
+}
+
+#[test]
+fn test_scientific_format_zero_flag_alignment() {
+    // the `0` flag overrides fill and alignment, as it does for `Display` and for `f64`
+    let d = dbig!(1.5);
+    assert_eq!(format!("{:08e}", d), "0001.5e0");
+    assert_eq!(format!("{:<08e}", d), "0001.5e0");
+    assert_eq!(format!("{:^08e}", d), "0001.5e0");
+    assert_eq!(format!("{:>08e}", d), "0001.5e0");
+    assert_eq!(format!("{:*<08E}", -d.clone()), "-001.5E0");
+    assert_eq!(format!("{:<+010.2e}", d), "+0001.50e0");
+    assert_eq!(format!("{:<08}", d), "000001.5");
+
+    let f = FBin::from_parts(IBig::from(3), -1);
+    assert_eq!(format!("{:010b}", f), "000001.1b0");
+    assert_eq!(format!("{:<010b}", f), "000001.1b0");
+    assert_eq!(format!("{:^010b}", f), "000001.1b0");
+    assert_eq!(format!("{:<010x}", f), format!("{:010x}", f));
+    assert_eq!(format!("{:^010X}", f), format!("{:010X}", f));
+    let o = FOct::from_parts(IBig::from(0o15), -1);
+    assert_eq!(format!("{:<08o}", o), format!("{:08o}", o));
+}
+
+#[test]
 fn test_format_other_bases() {
     assert_eq!(format!("{}", FBig::<mode::Zero, 3>::from_parts(ibig!(52), -2)), "12.21");
     assert_eq!(format!("{:o}", FBig::<mode::Zero, 8>::from_parts(ibig!(100), -2)), "1.44o0");
@@ -874,4 +1347,143 @@ fn test_string_roundtrip() {
         assert_eq!(DBig::from_str(format!("{:e}", case).as_str()).unwrap(), case);
         assert_eq!(DBig::from_str(format!("{:+010E}", case).as_str()).unwrap(), case);
     }
+}
+
+#[test]
+fn test_scientific_format_extreme_exponent() {
+    // The printed exponent is the one of the leading digit, which is beyond `isize::MAX` for
+    // a significand of several digits at one of the largest exponents.
+    let max = isize::MAX as i128;
+    let min = isize::MIN as i128;
+    let x = DBig::from_str(&format!("123e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.23e{}", max + 1));
+    assert_eq!(format!("{:E}", -x.clone()), format!("-1.23E{}", max + 1));
+    assert_eq!(format!("{:.1e}", x), format!("1.2e{}", max + 1));
+    assert_eq!(format!("{:.4e}", x), format!("1.2300e{}", max + 1));
+    assert_eq!(format!("{:30e}", x), format!("      1.23e{}", max + 1));
+    let x = DBig::from_str(&format!("12e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.2e{max}"));
+    let x = DBig::from_str(&format!("1e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1e{}", max - 1));
+    // a carry out of the leading digit moves the exponent once more
+    let x = DBig::from_str(&format!("95e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:.0e}", x), format!("1e{}", max + 1));
+    let x = DBig::from_str(&format!("9995e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:.2e}", x), format!("1.00e{}", max + 3));
+
+    // the other end of the range, and the other bases
+    let x = DBig::from_str(&format!("123e{}", min + 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.23e{}", min + 3));
+    let x = FBin::from_parts(IBig::from(0b101), isize::MAX - 1);
+    assert_eq!(format!("{:b}", x), format!("1.01b{}", max + 1));
+    assert_eq!(format!("{:x}", x), format!("0x5p{}", max - 1));
+    let x = FBin::from_parts(IBig::from(0x123), isize::MAX - 1);
+    assert_eq!(format!("{:x}", x), format!("0x1.23p{}", max + 7));
+    let x = FHex::from_parts(IBig::from(0xabc), isize::MAX - 1);
+    assert_eq!(format!("{:x}", x), format!("a.bch{}", max + 1));
+    let x = FOct::from_parts(IBig::from(0o17), isize::MAX - 1);
+    assert_eq!(format!("{:o}", x), format!("1.7o{max}"));
+}
+
+#[test]
+fn test_format_negative_zero_precision() {
+    // A zero is never rounded, whatever the rounding mode: the exponent that marks the sign
+    // of `-0` is not the position of a nonzero fraction.
+    fn check<R: dashu_float::round::Round, const B: Word>() {
+        let neg = -FBig::<R, B>::ZERO;
+        let pos = FBig::<R, B>::ZERO;
+        assert!(neg.repr().is_neg_zero());
+        assert_eq!(format!("{}", neg), "-0");
+        assert_eq!(format!("{:.0}", neg), "-0");
+        assert_eq!(format!("{:.1}", neg), "-0.0");
+        assert_eq!(format!("{:.3}", neg), "-0.000");
+        assert_eq!(format!("{:5.0}", neg), "   -0");
+        assert_eq!(format!("{:<5.0}|", neg), "-0   |");
+        assert_eq!(format!("{:05.0}", neg), "-0000");
+        assert_eq!(format!("{:7.2}", neg), "  -0.00");
+        assert_eq!(format!("{:.0}", pos), "0");
+        assert_eq!(format!("{:+.0}", pos), "+0");
+        assert_eq!(format!("{:.2}", pos), "0.00");
+        assert_eq!(format!("{:.0}", neg.repr()), "-0");
+    }
+    check::<mode::Zero, 2>();
+    check::<mode::Away, 2>();
+    check::<mode::Up, 2>();
+    check::<mode::Down, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::Zero, 10>();
+    check::<mode::Away, 10>();
+    check::<mode::Up, 10>();
+    check::<mode::Down, 10>();
+    check::<mode::HalfEven, 10>();
+    check::<mode::HalfAway, 10>();
+    check::<mode::Up, 16>();
+    check::<mode::Away, 3>();
+
+    assert_eq!(format!("{:.0e}", -FBig::<mode::Up, 10>::ZERO), "-0e0");
+    assert_eq!(format!("{:.2e}", -FBig::<mode::Away, 10>::ZERO), "-0.00e0");
+    assert_eq!(format!("{:.0b}", -FBig::<mode::Away, 2>::ZERO), "-0b0");
+}
+
+#[test]
+fn test_format_infinity_flags() {
+    // An infinity honors the width, fill, alignment, `+` and `0` flags like a finite number
+    // (and like `f64`); the precision does not apply to it.
+    macro_rules! check {
+        ($fmt:literal) => {
+            assert_eq!(format!($fmt, DBig::INFINITY), format!($fmt, f64::INFINITY), "{}", $fmt);
+            assert_eq!(
+                format!($fmt, DBig::NEG_INFINITY),
+                format!($fmt, f64::NEG_INFINITY),
+                "{}",
+                $fmt
+            );
+            assert_eq!(format!($fmt, FBin::INFINITY), format!($fmt, f64::INFINITY), "{}", $fmt);
+            assert_eq!(
+                format!($fmt, FBin::NEG_INFINITY),
+                format!($fmt, f64::NEG_INFINITY),
+                "{}",
+                $fmt
+            );
+            assert_eq!(
+                format!($fmt, DBig::INFINITY.repr()),
+                format!($fmt, f64::INFINITY),
+                "{}",
+                $fmt
+            );
+        };
+    }
+    check!("{}");
+    check!("{:+}");
+    check!("{:8}");
+    check!("{:+8}");
+    check!("{:<6}|");
+    check!("{:>8}");
+    check!("{:^9}");
+    check!("{:*^9}");
+    check!("{:*^+10}");
+    check!("{:#<7}");
+    check!("{:08}");
+    check!("{:+08}");
+    check!("{:<08}");
+    check!("{:.2}");
+    check!("{:8.2}");
+    check!("{:2}");
+    check!("{:e}");
+    check!("{:>8e}");
+    check!("{:+E}");
+    check!("{:*<9.1e}");
+
+    assert_eq!(format!("{:+8}", DBig::INFINITY), "    +inf");
+    assert_eq!(format!("{:<6}|", DBig::NEG_INFINITY), "-inf  |");
+    assert_eq!(format!("{:*^9}", DBig::INFINITY), "***inf***");
+    assert_eq!(format!("{:>8e}", DBig::INFINITY), "     inf");
+
+    // the base-specific scientific formats
+    assert_eq!(format!("{:>6b}", FBin::INFINITY), "   inf");
+    assert_eq!(format!("{:<6x}|", FBin::NEG_INFINITY), "-inf  |");
+    assert_eq!(format!("{:+7X}", FBin::INFINITY), "   +inf");
+    assert_eq!(format!("{:^7o}", FOct::INFINITY), "  inf  ");
+    assert_eq!(format!("{:07x}", FHex::NEG_INFINITY), "-000inf");
 }

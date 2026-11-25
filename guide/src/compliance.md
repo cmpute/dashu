@@ -156,6 +156,7 @@ implemented special-value matrix.
 | `log(0) = -∞` | ✅ | |
 | `log(+∞) = +∞` (C) | ❌ Deviates | Rejected with `FpError::InfiniteInput` (matching `dashu-float`'s `ln`, which rejects). |
 | $\arg(0 + i\cdot\infty) = +\pi/2$, $\arg(0 - i\cdot\infty) = -\pi/2$ | ✅ | `arg = atan2(im, re)`, reusing `dashu-float`'s Annex-G `atan2` table. |
+| $\arg(+0 \pm i0) = \pm 0$, $\arg(-0 \pm i0) = \pm\pi$ | ✅ | Handled by the complex `arg` itself, consistently with `log` (the real `atan2` rejects two zero arguments). |
 | `abs`/`hypot` overflow-safe modulus | ✅ | Thin composition over `dashu-float`'s `hypot`. |
 
 ### Exceptional Conditions

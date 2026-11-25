@@ -134,6 +134,64 @@ fn test_hash() {
 }
 
 #[test]
+fn test_hash_relaxed_common_factor_of_modulus() {
+    use dashu_int::{IBig, UBig};
+    use dashu_ratio::Relaxed;
+
+    fn hash<T: NumHash>(value: &T) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        value.num_hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // The hash is computed modulo 2^127 - 1. A `Relaxed` keeps common odd factors, so that
+    // modulus can divide both of its components; the hash must still be that of the value.
+    let p = UBig::from((1u128 << 127) - 1);
+    let ip = IBig::from(p.clone());
+
+    // the neighbouring common factors never were a problem
+    for k in [&p - UBig::from(2u8), p.clone(), &p + UBig::from(2u8)] {
+        let r = Relaxed::from_parts(IBig::from(k.clone()), k);
+        assert!(r.num_eq(&IBig::ONE));
+        assert_eq!(hash(&r), hash(&IBig::ONE));
+        assert_eq!(hash(&r), hash(&RBig::ONE));
+    }
+
+    // reached through arithmetic
+    let r = Relaxed::from_parts(IBig::ONE, p.clone()) * Relaxed::from(ip.clone());
+    assert_eq!(r.denominator(), &p); // not in the lowest terms
+    assert!(r.num_eq(&IBig::ONE));
+    assert_eq!(hash(&r), hash(&IBig::ONE));
+
+    // other values, with the modulus cancelling once or twice
+    let p2 = p.sqr();
+    let cases = [
+        (IBig::from(3), UBig::from(5u8)),
+        (IBig::from(-7), UBig::from(3u8)),
+        (IBig::from(-1), UBig::ONE),
+        (ip.clone(), UBig::ONE), // an integer divisible by the modulus
+        (IBig::from(-5) * &ip, UBig::ONE),
+        (IBig::ONE, p.clone()), // a denominator divisible by the modulus
+        (IBig::from(-3), &p * UBig::from(5u8)),
+    ];
+    for (num, den) in cases {
+        let reduced = RBig::from_parts(num.clone(), den.clone());
+        for factor in [&p, &p2] {
+            let r = Relaxed::from_parts(&num * factor, &den * factor);
+            assert!(r.num_eq(&reduced), "{} / {}", num, den);
+            assert_eq!(hash(&r), hash(&reduced), "{} / {}", num, den);
+        }
+        if den.is_one() {
+            let r = Relaxed::from_parts(&num * &p, p.clone());
+            assert!(r.num_eq(&num));
+            assert_eq!(hash(&r), hash(&num), "{}", num);
+        }
+    }
+}
+
+#[test]
 fn test_primitive_floats() {
     // trivial cases
     assert_eq!(rbig!(0).num_cmp(&0f32), Ordering::Equal);
@@ -183,5 +241,95 @@ fn test_primitive_floats() {
         use core::f64::consts::PI;
         assert_eq!(rbig!(~165707065/52746197).num_cmp(&PI), Ordering::Greater);
         assert_eq!(rbig!(~165707065/52746198).num_cmp(&PI), Ordering::Less);
+    }
+}
+
+#[test]
+fn test_ord_zero_with_float() {
+    // zero against nonzero floats of every magnitude, in particular below 1/4 where the
+    // bit length of a zero numerator used to be taken as a magnitude estimate
+    let f64_cases = [
+        1.0f64,
+        0.5,
+        0.25,
+        0.125,
+        0.1,
+        1e-30,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        1e300,
+        f64::MAX,
+        f64::INFINITY,
+    ];
+    for f in f64_cases {
+        assert_eq!(rbig!(0).num_cmp(&f), Ordering::Less, "0 vs {f:e}");
+        assert_eq!(rbig!(~0).num_cmp(&f), Ordering::Less, "~0 vs {f:e}");
+        assert_eq!(rbig!(0).num_partial_cmp(&f), Some(Ordering::Less), "0 vs {f:e}");
+        assert_eq!(f.num_cmp(&rbig!(0)), Ordering::Greater, "{f:e} vs 0");
+        assert_eq!(f.num_cmp(&rbig!(~0)), Ordering::Greater, "{f:e} vs ~0");
+        assert_eq!(rbig!(0).num_cmp(&-f), Ordering::Greater, "0 vs -{f:e}");
+        assert_eq!(rbig!(~0).num_cmp(&-f), Ordering::Greater, "~0 vs -{f:e}");
+        assert_eq!((-f).num_cmp(&rbig!(0)), Ordering::Less, "-{f:e} vs 0");
+    }
+    let f32_cases = [
+        1.0f32,
+        0.25,
+        0.125,
+        0.1,
+        1e-30,
+        f32::MIN_POSITIVE,
+        f32::from_bits(1),
+        f32::MAX,
+        f32::INFINITY,
+    ];
+    for f in f32_cases {
+        assert_eq!(rbig!(0).num_cmp(&f), Ordering::Less, "0 vs {f:e}");
+        assert_eq!(rbig!(~0).num_cmp(&f), Ordering::Less, "~0 vs {f:e}");
+        assert_eq!(f.num_cmp(&rbig!(0)), Ordering::Greater, "{f:e} vs 0");
+        assert_eq!(rbig!(0).num_cmp(&-f), Ordering::Greater, "0 vs -{f:e}");
+        assert_eq!((-f).num_cmp(&rbig!(~0)), Ordering::Less, "-{f:e} vs ~0");
+    }
+    assert_eq!(rbig!(0).num_cmp(&0f64), Ordering::Equal);
+    assert_eq!(rbig!(0).num_cmp(&-0f32), Ordering::Equal);
+
+    // the ordering against floats agrees with the exact ordering of the rationals
+    let floats = [
+        0.0f64, 1e-300, 0.1, 0.125, 0.2, 0.25, 0.3, 0.5, 1.0, 1.5, 3.0, 1e10, 1e300,
+    ];
+    let ratios = [
+        rbig!(0),
+        rbig!(1 / 0x10000000000000000000000000000),
+        rbig!(1 / 10),
+        rbig!(1 / 8),
+        rbig!(1 / 5),
+        rbig!(1 / 4),
+        rbig!(1 / 3),
+        rbig!(1 / 2),
+        rbig!(1),
+        rbig!(3 / 2),
+        rbig!(3),
+        rbig!(0x10000000000000000000000000000),
+    ];
+    for r in &ratios {
+        for f in floats {
+            for (r, f) in [
+                (r.clone(), f),
+                (-r.clone(), -f),
+                (-r.clone(), f),
+                (r.clone(), -f),
+            ] {
+                let exact = r.cmp(&RBig::try_from(f).unwrap());
+                assert_eq!(r.num_cmp(&f), exact, "{r} vs {f:e}");
+                assert_eq!(f.num_cmp(&r), exact.reverse(), "{f:e} vs {r}");
+                assert_eq!(r.clone().relax().num_cmp(&f), exact, "~{r} vs {f:e}");
+                let f = f as f32;
+                if f.is_infinite() {
+                    continue;
+                }
+                let exact = r.cmp(&RBig::try_from(f).unwrap());
+                assert_eq!(r.num_cmp(&f), exact, "{r} vs {f:e}f32");
+                assert_eq!(f.num_cmp(&r), exact.reverse(), "{f:e}f32 vs {r}");
+            }
+        }
     }
 }

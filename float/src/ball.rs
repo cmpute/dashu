@@ -150,9 +150,20 @@ impl<const B: Word> Ball<B> {
         Ok(Self { mid, rad })
     }
 
-    /// `√self`: `rad_a/(2·LB(|mid_r|)) + ε` — the ε term covers the `fl(√a)` vs `√a`
-    /// denominator gap exactly as the old `+1` did (valid for `rad_a ≤ |mid_a|`, which
-    /// every caller guarantees and the assertion below enforces).
+    /// `√self`: `rad_a/LB(|mid_r|) + ε`, for `2·rad_a ≤ |mid_a|`.
+    ///
+    /// The root is concave, so the far end of the ball is the *lower* one:
+    /// `√m − √(m − r) = r/(√m + √(m − r)) ≤ r/√m` (the upper end moves by less,
+    /// `≤ r/(2√m)`). The slope at the midpoint, `r/(2√m)`, under-covers that lower end — by a
+    /// factor of two as `r → m`. With `r ≤ m/2` the denominator `√m + √(m − r) ≥ 1.7·√m` also
+    /// absorbs the rounding of the midpoint (`√m ≥ 0.75·mid_r` at any precision), so
+    /// `r/LB(|mid_r|)` bounds the propagated error and `ε` the root's own rounding.
+    ///
+    /// A wider ball (`2·rad_a > |mid_a|`) reaches towards the branch point, where no multiple
+    /// of the input radius bounds the root: like a midpoint that rounded onto zero (below) it
+    /// gets the whole-line radius, which sends the Ziv loop to a higher guard. `acos`/`asin`
+    /// next to `±1` and `acosh` next to `1` reach this when the argument is wider than the
+    /// first working precision, so `1 − x²` (or `x − 1`) is all rounding error.
     ///
     /// The zero-midpoint special case: an **exact** zero (`rad == 0`) stays exact, which is what
     /// lets `asin`'s `1−x²` at `|x| = 1` resolve to `±π/2` outside the Ziv loop. A ball whose mid
@@ -171,17 +182,14 @@ impl<const B: Word> Ball<B> {
                 Self::with_error(mid, Mag::INFINITY)
             });
         }
-        // The denominator below is the derivative at the ball's *lower* endpoint `mid − rad`, so
-        // the bound needs that endpoint to stay clear of the root's pole: every caller keeps
-        // `rad ≤ |mid|` (the radius of a computed ball is a few ulps of its midpoint).
-        debug_assert!(
-            self.rad <= Mag::from_repr_lower(&self.mid),
-            "Ball::sqrt requires rad <= |mid| (rad {:?}, mid {:?})",
-            self.rad,
-            self.mid,
-        );
-        let denom = Mag::from_repr_lower(&mid).mul2(); // 2·LB(|mid_r|)
-        let rad = self.rad.div(&denom).add(&eps);
+        if self.rad.is_zero() {
+            return Ok(Self { mid, rad: eps });
+        }
+        // `2·rad ≤ LB(|mid|)` keeps the lower endpoint `mid − rad` at or above `mid/2`.
+        if self.rad.mul2() > Mag::from_repr_lower(&self.mid) {
+            return Ok(Self::with_error(mid, Mag::INFINITY));
+        }
+        let rad = self.rad.div(&Mag::from_repr_lower(&mid)).add(&eps);
         Ok(Self { mid, rad })
     }
 
@@ -453,6 +461,50 @@ mod tests {
         let r = exact(4, 0).sqrt(p).unwrap();
         assert!(r.is_exact());
         assert_eq!(r.mid, Repr::new(IBig::from(2), 0));
+    }
+
+    /// The root ball must cover the root of *both* ends of the input ball. The concave root
+    /// moves furthest at the lower end, which the midpoint slope `rad/(2√mid)` misses — by the
+    /// most when the midpoint's root is exact (no rounding ulp to hide behind) or the radius is
+    /// a large fraction of the midpoint.
+    #[test]
+    fn sqrt_covers_both_ends() {
+        let ball = |sig: i64, exp: isize, rad_exp: i128| Ball {
+            mid: Repr::<2>::new(IBig::from(sig), exp),
+            rad: crate::mag::Mag::ONE.mul_pow2(rad_exp),
+        };
+        for (b, prec) in [
+            (ball(2, 0, -8), 10), // inexact root, small radius
+            (ball(1, 0, -8), 2),  // exact root, small radius
+            (ball(1, 0, -30), 30),
+            (ball(9, 0, -3), 4),
+            (ball(1, 0, -1), 2), // rad = mid/2: the widest ball with a finite root radius
+            (ball(5, -2, -1), 10),
+            (ball(1, 0, 0), 2), // rad = mid: reaches the branch point
+            (ball(2, 0, 0), 10),
+            (ball(1, -74, -75), 76), // the `1 − x²` of acos(1 − 3·2^-77) at 76 bits
+        ] {
+            let r = b.sqrt(prec).unwrap();
+            let two_rad = b.rad.mul2();
+            if two_rad > crate::mag::Mag::from_repr_lower(&b.mid) {
+                assert!(r.rad.is_infinite(), "{b:?} must ask for a retry");
+                continue;
+            }
+            assert!(!r.rad.is_infinite(), "{b:?} has a finite root radius");
+            // lo² ≤ mid − rad and mid + rad ≤ hi², exactly (lo ≥ 0 here)
+            let rad_in = b.rad.to_repr::<2>();
+            let rad_out = r.rad.to_repr::<2>();
+            let (lo, hi) = (&r.mid - &rad_out, &r.mid + &rad_out);
+            assert!(lo.sign() == Sign::Positive);
+            assert!(
+                (&lo * &lo).cmp(&(&b.mid - &rad_in)) != core::cmp::Ordering::Greater,
+                "√ of {b:?} at {prec}: lower end {lo:?} is above √(mid − rad)"
+            );
+            assert!(
+                (&hi * &hi).cmp(&(&b.mid + &rad_in)) != core::cmp::Ordering::Less,
+                "√ of {b:?} at {prec}: upper end {hi:?} is below √(mid + rad)"
+            );
+        }
     }
 
     #[test]

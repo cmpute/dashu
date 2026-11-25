@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fix
+- `FloatEncoding::encode` for `f32`/`f64` is now correctly rounded (to nearest, ties to even) for every input: a mantissa wider than the float whose only discarded bit lies right below the rounding bit is no longer reported as `Exact` or rounded down, values between half of the smallest subnormal and the smallest subnormal are no longer flushed to zero, results in the subnormal range are rounded and tagged correctly, and `encode(i32::MIN, -180)` / `encode(i64::MIN, -1137)` no longer overflow a shift.
+- `AbsOrd::abs_cmp` on signed primitive integers no longer panics (debug) or returns the wrong order (release) when an operand is the minimum value of the type.
+- `Abs::abs` on `f32`/`f64` returns `+0.0` for `-0.0`.
+- `EstimatedLog2::log2_est` on `u128` no longer returns infinity for values that round to 2^128 as `f32`.
+- Without the `std` feature, `EstimatedLog2::log2_bounds` on `f32`/`f64` always brackets the exact logarithm (it could return two equal bounds above it, e.g. for `f32::from_bits(3)`).
+- Fix the documented bound of the remainder of `CubicRootRem::cbrt_rem`: `rem <= 3*root*root + 3*root` (it was stated as strict).
+
 ## 0.6.0
 
 ### Add

@@ -87,15 +87,24 @@ impl Numeric {
     }
 }
 
+/// The largest `dscale` the server accepts. The wire format has 16 bits for it, but the server
+/// keeps 14 (its `NUMERIC_DSCALE_MASK` is `0x3FFF`) and refuses a value received with a larger
+/// one ("invalid scale in external numeric value").
+const MAX_DSCALE: usize = 0x3FFF;
+
+/// The number of decimal digits before the decimal point that the format can hold: the weight
+/// of the leading base-10000 digit is an `i16`.
+const MAX_INTEGER_DIGITS: usize = (i16::MAX as usize + 1) * 4;
+
+/// Number of decimal digits that the leading base-10000 digit lacks to be a full four-digit
+/// group. The digit is expected to be in `1..=9999`; anything else is counted as a full group.
 #[inline]
 const fn leading_decimal_zeros(n: &i16) -> usize {
     match n {
-        10000.. => unreachable!(),
-        1000..=9999 => 0,
         100..=999 => 1,
         10..=99 => 2,
         1..=9 => 3,
-        i16::MIN..=0 => unreachable!(),
+        _ => 0,
     }
 }
 
@@ -107,14 +116,21 @@ fn numeric_to_repr(num: Numeric) -> (Repr<10>, usize) {
             Sign::Positive => (Repr::<10>::infinity(), 0),
             Sign::Negative => (Repr::<10>::neg_infinity(), 0),
         };
-    } else if num.digits.is_empty() {
+    }
+
+    // The server strips leading zero digits, but other producers might not (and a zero can
+    // be written with explicit zero digits), so do not rely on the first digit being nonzero.
+    let leading = num.digits.iter().take_while(|d| **d == 0).count();
+    let nonzero = &num.digits[leading..];
+    if nonzero.is_empty() {
+        // NUMERIC has no negative zero, and a zero has no significant digits
         return (Repr::zero(), 0);
     }
 
     // calculate the significand
     const NBASE: UBig = UBig::from_word(10000);
     let mut signif = UBig::ZERO;
-    for d in num.digits.iter() {
+    for d in nonzero.iter() {
         signif *= NBASE;
         signif += *d as u16;
     }
@@ -122,9 +138,12 @@ fn numeric_to_repr(num: Numeric) -> (Repr<10>, usize) {
     let exp = (num.weight as isize + 1 - num.digits.len() as isize) * 4;
     let repr = Repr::new(num.sign * signif, exp);
 
-    // calculate the precision
-    let digit_len = num.digits.len() * 4 - leading_decimal_zeros(num.digits.first().unwrap());
-    let precision = (digit_len as isize + exp + num.dscale as isize) as usize;
+    // The precision counts the decimal digits from the leading one down to `dscale` places
+    // after the decimal point. It is never less than the number of significant digits, even
+    // if `dscale` claims fewer fractional digits than there are.
+    let digit_len = (nonzero.len() * 4 - leading_decimal_zeros(&nonzero[0])) as isize;
+    let significant = digit_len - (repr.exponent - exp);
+    let precision = (digit_len + exp + num.dscale as isize).max(significant) as usize;
 
     (repr, precision)
 }
@@ -152,54 +171,80 @@ fn repr_to_numeric(repr: &Repr<10>, precision: Option<usize>) -> Result<Numeric,
             Sign::Positive => Numeric::infinity(),
             Sign::Negative => Numeric::neg_infinity(),
         });
-    } else if repr.is_pos_zero() {
+    } else if repr.significand.is_zero() {
+        // NUMERIC has no negative zero: both zeros are stored as zero
         return Ok(Numeric::zero());
     }
 
-    // check if there are too many digits to be represented.
-    let digit_len_est = repr.significand.log2_bounds().1 * core::f32::consts::LOG10_2;
-    if digit_len_est > (u16::MAX / 4) as f32 {
-        return Err(ConversionError::LossOfPrecision);
+    // Check the range before the significand is expanded into digits. Every digit after the
+    // decimal point has to be covered by `dscale`, and the leading digit by the weight; a
+    // number that passes has at most `MAX_INTEGER_DIGITS + MAX_DSCALE` decimal digits, which is
+    // well within the 16-bit count of base-10000 digits. (The magnitude test is a cheap filter
+    // on the logarithm; the weight is checked exactly below.)
+    let required_digits = repr
+        .exponent
+        .checked_neg()
+        .ok_or(ConversionError::OutOfBounds)?;
+    if required_digits > MAX_DSCALE as isize {
+        return Err(ConversionError::OutOfBounds);
     }
-    let mut digits = Vec::with_capacity(digit_len_est as usize + 1);
+    let log10_lb = repr.log2_bounds().0 * core::f32::consts::LOG10_2;
+    if log10_lb > (MAX_INTEGER_DIGITS + 1) as f32 {
+        return Err(ConversionError::OutOfBounds);
+    }
+    let digit_len_est = repr.significand.log2_bounds().1 * core::f32::consts::LOG10_2;
+    let mut digits = Vec::with_capacity(digit_len_est as usize / 4 + 2);
 
     // destruct the repr
     let Repr {
         significand,
         exponent,
     } = repr.clone();
-    let mut exp: i16 = exponent
-        .try_into()
-        .map_err(|_| ConversionError::OutOfBounds)?;
     let (sign, mut signif) = significand.into_parts();
 
     // represent the exponent in base NBASE = 10000
-    let exp_rem = exp.rem_euclid(4);
+    let exp_rem = exponent.rem_euclid(4);
     if exp_rem != 0 {
         signif *= 10u16.pow(exp_rem as u32);
-        exp -= exp_rem;
     };
+    // exponent of the last digit, which is a multiple of 4
+    let exp = exponent
+        .checked_sub(exp_rem)
+        .ok_or(ConversionError::OutOfBounds)?;
     let weight = exp / 4; // exponent in base NBASE
 
     // calculate the actual digits (base-NBASE = 10000, most significant first)
     digits.extend(signif.to_digits(10000).into_iter().map(|d| d as i16));
 
-    // count the actual digits in base 10 and calculate number of digits after decimal point
-    if let Some(prec) = precision {
-        if prec > 0 {
+    // Calculate the number of digits after the decimal point. The server truncates the value
+    // to `dscale` fractional digits, so it must cover every fractional digit of the value. A
+    // precision beyond the significant digits adds trailing zeros, and a precision below them
+    // (a guard digit) must not take any digit away.
+    let fract_digits = match precision {
+        Some(prec) if prec > 0 => {
             let leading_zeros = leading_decimal_zeros(digits.first().unwrap());
-            let digit_len = digits.len() * 4 - leading_zeros;
-
-            // calculate the position of the last digit
-            exp += digit_len as i16 - prec as i16;
+            let digit_len = digits.len() * 4 - leading_zeros - exp_rem as usize;
+            let fract_digits = exponent.checked_neg().ok_or(ConversionError::OutOfBounds)?;
+            match prec.checked_sub(digit_len) {
+                // the padding is cosmetic, so it stops at the largest representable scale
+                Some(padding) => fract_digits.saturating_add_unsigned(padding),
+                None => fract_digits,
+            }
         }
-    }
+        _ => exp.checked_neg().ok_or(ConversionError::OutOfBounds)?,
+    };
+    let dscale = fract_digits.clamp(0, MAX_DSCALE as isize) as u16;
+
+    let weight = weight
+        .checked_add(digits.len() as isize - 1)
+        .and_then(|w| i16::try_from(w).ok())
+        .ok_or(ConversionError::OutOfBounds)?;
 
     Ok(Numeric {
         sign,
         is_inf: false,
-        weight: weight - 1 + digits.len() as i16,
-        dscale: (-exp).max(0) as u16, // dscale is always positive
+        weight,
+        dscale,
         digits,
     })
 }

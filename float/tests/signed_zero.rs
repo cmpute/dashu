@@ -409,3 +409,98 @@ fn signed_zero_formatting() {
     }
     assert!(DBig::from_str("+0").unwrap().repr().is_pos_zero());
 }
+
+/// `x - x` and `x + (-x)` are `+0` (or `-0` under roundTowardNegative) whatever the operands'
+/// shared exponent is. The exponent used to leak into the zero result, so an operand at
+/// exponent `-1` (0.5, 0.3, 1.5…) cancelled to the `-0` encoding, and one at a sentinel
+/// exponent (`isize::MAX`) to an infinity that the rounding step then rejected with a panic.
+#[test]
+fn test_exact_cancellation_ignores_operand_exponent() {
+    fn check<R: dashu_float::round::Round, const B: dashu_float::Word>() {
+        let expect_neg = R::IS_ROUND_TOWARD_NEGATIVE;
+        for precision in [0, 1, 20, 50, 100, 500] {
+            let context = Context::<R>::new(precision);
+            for exponent in [-3, -2, -1, 0, 1, isize::MAX, isize::MIN] {
+                for significand in [1, -1, 3, -3] {
+                    let repr = Repr::<B>::new(significand.into(), exponent);
+                    let x = FBig::<R, B>::from_repr(repr.clone(), context);
+                    let neg_x = -x.clone();
+                    let results = [
+                        &x - &x,
+                        x.clone() - &x,
+                        &x - x.clone(),
+                        x.clone() - x.clone(),
+                        &x + &neg_x,
+                        x.clone() + &neg_x,
+                        &x + neg_x.clone(),
+                        x.clone() + neg_x.clone(),
+                        context.sub(&repr, &repr).unwrap().value(),
+                        context.add(&repr, neg_x.repr()).unwrap().value(),
+                    ];
+                    for result in results {
+                        assert!(result.repr().significand().is_zero());
+                        assert_eq!(
+                            result.repr().is_neg_zero(),
+                            expect_neg,
+                            "{significand} * {B}^{exponent} at precision {precision}: {:?}",
+                            result.repr()
+                        );
+                        assert_eq!(result.repr().is_pos_zero(), !expect_neg);
+                    }
+                }
+            }
+        }
+    }
+    check::<mode::Zero, 2>();
+    check::<mode::Away, 2>();
+    check::<mode::Up, 10>();
+    check::<mode::Down, 2>();
+    check::<mode::Down, 10>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 10>();
+
+    // the originally reported decimal inputs, and the sign leaking into a quotient
+    for s in ["3", "0.25", "0.3", "1.5", "-0.7", "0.5", "0.1"] {
+        let x = DBig::from_str(s).unwrap();
+        assert!((&x - &x).repr().is_pos_zero(), "{s} - {s}");
+        assert!((&x + &(-x.clone())).repr().is_pos_zero(), "{s} + (-{s})");
+        assert_eq!(DBig::ONE / (&x - &x), DBig::INFINITY);
+    }
+}
+
+/// The exact `Repr` operators have no rounding mode, so their zero results follow the
+/// round-to-nearest rule of IEEE 754 §6.3: only a sum of two `-0` is `-0`, independent of the
+/// operand order and of the exponent at which nonzero operands cancel.
+#[test]
+fn test_repr_add_sub_zero_signs() {
+    fn check<const B: dashu_float::Word>() {
+        let (pz, nz) = (Repr::<B>::zero(), Repr::<B>::neg_zero());
+        assert!((&pz + &pz).is_pos_zero());
+        assert!((&pz + &nz).is_pos_zero());
+        assert!((&nz + &pz).is_pos_zero());
+        assert!((&nz + &nz).is_neg_zero());
+        assert!((&pz - &pz).is_pos_zero());
+        assert!((&pz - &nz).is_pos_zero());
+        assert!((&nz - &pz).is_neg_zero());
+        assert!((&nz - &nz).is_pos_zero());
+
+        let context = Context::<mode::HalfEven>::new(0);
+        for (a, b) in [(&pz, &pz), (&pz, &nz), (&nz, &pz), (&nz, &nz)] {
+            let sum = context.add(a, b).unwrap().value();
+            let diff = context.sub(a, b).unwrap().value();
+            assert_eq!((a + b).is_neg_zero(), sum.repr().is_neg_zero());
+            assert_eq!((a - b).is_neg_zero(), diff.repr().is_neg_zero());
+        }
+
+        for exponent in [-2, -1, 0, 5, isize::MAX, isize::MIN] {
+            let x = Repr::<B>::new(3.into(), exponent);
+            let neg_x = Repr::<B>::new((-3).into(), exponent);
+            assert!((&x + &neg_x).is_pos_zero(), "exponent {exponent}");
+            assert!((&neg_x + &x).is_pos_zero(), "exponent {exponent}");
+            assert!((&x - &x).is_pos_zero(), "exponent {exponent}");
+            assert!((&neg_x - &neg_x).is_pos_zero(), "exponent {exponent}");
+        }
+    }
+    check::<2>();
+    check::<10>();
+}

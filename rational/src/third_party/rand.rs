@@ -33,6 +33,11 @@ use dashu_int::{
 /// A uniform distribution between 0 and 1, parameterized by a denominator limit. It can be used
 /// to replace the `Standard` / `Open01` / `OpenClosed01` distributions from the `rand` crate when
 /// you want to customize the denominator limit of the generated rational.
+///
+/// The limit must leave at least one rational to choose from: it must be at least 1 for the
+/// half-open intervals `[0, 1)` and `(0, 1]`, and at least 2 for the closed interval `[0, 1]`
+/// (whose denominator is `limit - 1`) and for the open interval `(0, 1)` (which contains no
+/// rational with the denominator 1). The constructors panic otherwise.
 pub struct Uniform01<'a> {
     pub(crate) limit: &'a UBig,
     pub(crate) include_zero: bool,
@@ -40,44 +45,73 @@ pub struct Uniform01<'a> {
 }
 
 impl<'a> Uniform01<'a> {
-    /// Create a uniform distribution in `[0, 1)` with a given limit of the denominator.
+    /// Build the distribution, panicking if the limit is below `min_limit`, that is if
+    /// there would be no rational to choose from.
     #[inline]
-    pub fn new(limit: &'a UBig) -> Self {
+    fn with_bounds(limit: &'a UBig, include_zero: bool, include_one: bool, min_limit: u8) -> Self {
+        if *limit < UBig::from(min_limit) {
+            panic!(
+                "the denominator limit of a uniform distribution in {}0, 1{} must be at least {}",
+                if include_zero { '[' } else { '(' },
+                if include_one { ']' } else { ')' },
+                min_limit
+            );
+        }
         Self {
             limit,
-            include_zero: true,
-            include_one: false,
+            include_zero,
+            include_one,
         }
+    }
+
+    /// Create a uniform distribution in `[0, 1)` with a given limit of the denominator.
+    ///
+    /// The generated rationals are `k / limit` with `0 <= k < limit`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is zero.
+    #[inline]
+    pub fn new(limit: &'a UBig) -> Self {
+        Self::with_bounds(limit, true, false, 1)
     }
 
     /// Create a uniform distribution in `[0, 1]` with a given limit of the denominator.
+    ///
+    /// The generated rationals are `k / (limit - 1)` with `0 <= k < limit`: the denominator
+    /// is less by one than the limit, so that there are `limit` of them as for the other
+    /// intervals.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is less than 2 (the denominator `limit - 1` would be zero).
     #[inline]
     pub fn new_closed(limit: &'a UBig) -> Self {
-        Self {
-            limit,
-            include_zero: true,
-            include_one: true,
-        }
+        Self::with_bounds(limit, true, true, 2)
     }
 
     /// Create a uniform distribution in `(0, 1)` with a given limit of the denominator.
+    ///
+    /// The generated rationals are `k / limit` with `0 < k < limit`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is less than 2 (no rational in `(0, 1)` has the denominator 1).
     #[inline]
     pub fn new_open(limit: &'a UBig) -> Self {
-        Self {
-            limit,
-            include_zero: false,
-            include_one: false,
-        }
+        Self::with_bounds(limit, false, false, 2)
     }
 
     /// Create a uniform distribution in `(0, 1]` with a given limit of the denominator.
+    ///
+    /// The generated rationals are `k / limit` with `0 < k <= limit`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is zero.
     #[inline]
     pub fn new_open_closed(limit: &'a UBig) -> Self {
-        Self {
-            limit,
-            include_zero: false,
-            include_one: true,
-        }
+        Self::with_bounds(limit, false, true, 1)
     }
 
     /// Draw a random rational `Repr` (un-reduced).

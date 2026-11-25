@@ -6,9 +6,21 @@
 //! `[ã − E, ã + E]` lies inside the candidate's [`ErrorBounds`] preimage — the set of reals that
 //! round to it. If every part fits, the rounded value is *guaranteed* correct; otherwise the driver
 //! retries with more guard digits, sharing the recomputed working evaluation across all parts
-//! (retrying while *any* part straddles a rounding boundary). The loop provably terminates (a true
-//! tie is resolved deterministically by the mode), with a large sanity cap as an unreachable
-//! backstop.
+//! (retrying while *any* part straddles a rounding boundary).
+//!
+//! A part whose true value is exactly representable — or exactly a rounding tie — sits *on* a
+//! boundary, and no nonzero radius can ever fit around it. Such parts are certified through a
+//! **zero radius**: every closure computes on balls whose operations stay exact whenever their
+//! result is, and the functions route their structurally exact parts (the axes, the branch
+//! cuts, integer and dyadic powers) through exact operations or exact shortcuts. The same rule
+//! settles the inexactness *flag*: a part is reported `Exact`, or rounded in a given direction,
+//! only when that is proven — with a nonzero radius the candidate must lie strictly outside the
+//! error interval, otherwise the driver retries. That proof is pursued up to a generous budget
+//! of extra digits (several times the precision plus a couple of thousand); a value still
+//! indistinguishable from a representable number there is returned — correctly rounded under
+//! the nearest modes — with the flag of its approximation. The directed modes have no such
+//! exit (the value sits on the boundary of a one-sided preimage), so an exactly-representable
+//! result that no closure can prove exact runs to the retry cap there.
 //!
 //! The driver is generic in the part count `N`: most functions compute one complex result (`N = 2`
 //! parts), while `sin_cos` computes two (`N = 4`, sharing one evaluation of the real `sin_cos` and
@@ -31,10 +43,11 @@ use core::cmp::Ordering;
 
 use dashu_base::Approximation;
 use dashu_float::round::{ErrorBounds, Rounding};
-use dashu_float::{Context as FloatCtxt, FBig, FpError};
-use dashu_int::Word;
+use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, Repr};
+use dashu_int::{IBig, Word};
 
-use crate::repr::Context;
+use crate::ball::kernel_ball;
+use crate::repr::{reborrow_cache, Context};
 
 /// Maximum number of Ziv retries before falling back to the best-effort rounded value.
 ///
@@ -43,7 +56,16 @@ use crate::repr::Context;
 /// essentially all inputs (the guard-digit heuristic is sized for that) and in a handful of
 /// attempts only for inputs pathologically close to a tie. The cap exists so a bug in an error
 /// radius can never produce an infinite loop.
-const MAX_ZIV_RETRIES: usize = 32;
+pub(crate) const MAX_ZIV_RETRIES: usize = 32;
+
+/// The driver keeps refining to *prove* each part's inexactness flag until the guard exceeds
+/// `FLAG_PROOF_FACTOR · (precision + initial guard) + FLAG_PROOF_SLACK` digits; see
+/// `Context::contained`.
+const FLAG_PROOF_FACTOR: usize = 8;
+const FLAG_PROOF_SLACK: usize = 2048;
+
+/// Guard digits (base-B) for re-rounding a single real kernel result or constant.
+const KERNEL_GUARD: usize = 8;
 
 // A test-only retry counter (extra attempts beyond the first), mirroring `dashu-float`'s counter
 // so tests can assert the loop converges on the first attempt for typical inputs — i.e. `0` means
@@ -75,6 +97,13 @@ impl<R: ErrorBounds> Context<R> {
         self.assert_limited();
         let p = self.precision();
         let mut guard = initial_guard;
+        // How far the driver refines to *prove* an inexactness flag (see `contained`): beyond
+        // this many guard digits a candidate that fits its preimage is accepted with the
+        // flag of the approximation.
+        let flag_budget = p
+            .saturating_add(initial_guard)
+            .saturating_mul(FLAG_PROOF_FACTOR)
+            .saturating_add(FLAG_PROOF_SLACK);
         #[cfg(all(test, feature = "std"))]
         LAST_ZIV_RETRIES.with(|c| c.set(0));
         for _ in 0..MAX_ZIV_RETRIES {
@@ -82,10 +111,11 @@ impl<R: ErrorBounds> Context<R> {
             // Round each part to the target precision. `with_precision` consumes the value, but the
             // containment test still needs the working-precision original, so round clones.
             let candidates = parts.clone().map(|(v, _)| v.with_precision(p));
+            let prove_flag = guard <= flag_budget;
             if parts
                 .iter()
                 .zip(candidates.iter())
-                .all(|((v, e), c)| Self::contained::<B>(v, e, c.value_ref()))
+                .all(|((v, e), c)| Self::contained::<B>(v, e, c.value_ref(), prove_flag))
             {
                 return Ok(candidates);
             }
@@ -105,6 +135,62 @@ impl<R: ErrorBounds> Context<R> {
         Err(FpError::ZivRetryLimitExceeded)
     }
 
+    /// Correctly round `k` or `−k` to this context's precision, where `k` is a real
+    /// `dashu-float` kernel (`|ctx| ctx.acosh(x, cache)`, …).
+    ///
+    /// `+k` is the kernel's own correctly-rounded result at this precision. `−k` is **not**
+    /// the negation of that: negating a value rounded under a directed mode (`Down`/`Up`)
+    /// yields the value rounded in the *opposite* direction. So `−k` evaluates the kernel at a
+    /// working precision (correctly rounded there, i.e. within one work-ulp), negates the
+    /// resulting ball, and rounds once through the Ziv driver. An exact kernel result stays
+    /// exact (`−(+0) = −0`) — `can_be_exact` says whether the kernel has an exact value at this
+    /// argument at all (see `kernel_ball`).
+    pub(crate) fn round_kernel<const B: Word>(
+        &self,
+        negate: bool,
+        can_be_exact: bool,
+        mut kernel: impl FnMut(&FloatCtxt<R>) -> Result<Approximation<FBig<R, B>, Rounding>, FpError>,
+    ) -> Result<Approximation<FBig<R, B>, Rounding>, FpError> {
+        if !negate {
+            return kernel(&self.float());
+        }
+        let p = self.precision();
+        let [part] = self.ziv::<B, 1>(KERNEL_GUARD, |guard| {
+            let pw = p + guard;
+            let fctx = FloatCtxt::<R>::new(pw);
+            let ball = -kernel_ball(kernel(&fctx)?, pw, |_| can_be_exact);
+            Ok([ball.to_value_radius(&fctx)])
+        })?;
+        Ok(part)
+    }
+
+    /// Correctly round `±π` (or `±π/2` with `halve`) to this context's precision — the
+    /// constant real/imaginary parts on the branch cuts (`log(−0 − 0i) = −∞ − iπ`,
+    /// `asin(x ± 0i) = ±π/2 …` for `|x| > 1`, …). As in [`round_kernel`](Self::round_kernel),
+    /// the sign and the halving are applied *before* the single final rounding.
+    pub(crate) fn round_pi_multiple<const B: Word>(
+        &self,
+        negate: bool,
+        halve: bool,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<Approximation<FBig<R, B>, Rounding>, FpError> {
+        let p = self.precision();
+        let [part] = self.ziv::<B, 1>(KERNEL_GUARD, |guard| {
+            let pw = p + guard;
+            let fctx = FloatCtxt::<R>::new(pw);
+            // π is irrational: never exact
+            let mut ball = kernel_ball(fctx.pi::<B>(reborrow_cache(&mut cache)), pw, |_| false);
+            if halve {
+                ball = ball.div(&Ball::exact(Repr::new(IBig::from(2u8), 0)), pw)?;
+            }
+            if negate {
+                ball = -ball;
+            }
+            Ok([ball.to_value_radius(&fctx)])
+        })?;
+        Ok(part)
+    }
+
     /// Per-part containment test: is the approximation's error interval `[value ± radius]`
     /// entirely inside the rounding preimage of `target` (every real in `[target − lb, target + rb]`
     /// rounds to `target` under `R`)?
@@ -119,6 +205,7 @@ impl<R: ErrorBounds> Context<R> {
         value: &FBig<R, B>,
         radius: &FBig<R, B>,
         target: &FBig<R, B>,
+        prove_flag: bool,
     ) -> bool {
         // The zero-candidate guard, same as `dashu-float`'s driver: no nonzero real rounds to
         // exactly zero (significant-digit rounding with unbounded exponents keeps every nonzero
@@ -142,18 +229,34 @@ impl<R: ErrorBounds> Context<R> {
         if radius.repr().is_infinite() {
             return false;
         }
+        // A radius at least as large as the candidate itself can never fit the candidate's
+        // preimage (which is narrower than the candidate's magnitude). Answer that from the
+        // exponents alone: the exact sums below align their operands, and a radius that is
+        // astronomically larger than the value (an input-error fold amplified through `exp`,
+        // say) would otherwise allocate a number spanning the whole exponent gap.
+        if !radius.repr().significand().is_zero() {
+            let target_top = target
+                .repr()
+                .exponent()
+                .saturating_add(target.repr().digits_ub() as isize);
+            if radius.repr().exponent() >= target_top {
+                return false;
+            }
+        }
         let (lb, rb, incl_l, incl_r) = R::error_bounds::<B>(target);
         let x = FloatCtxt::<R>::new(0);
+        let target_hi = x.add(target.repr(), radius.repr()).unwrap().value(); // target + radius
+        let value_hi = x.add(value.repr(), radius.repr()).unwrap().value(); // value + radius
         let left = x
             .add(value.repr(), lb.repr())
             .unwrap()
             .value()
-            .cmp(&x.add(target.repr(), radius.repr()).unwrap().value());
+            .cmp(&target_hi);
         let right = x
             .add(target.repr(), rb.repr())
             .unwrap()
             .value()
-            .cmp(&x.add(value.repr(), radius.repr()).unwrap().value());
+            .cmp(&value_hi);
         let left_ok = if incl_l {
             left != Ordering::Less
         } else {
@@ -164,7 +267,47 @@ impl<R: ErrorBounds> Context<R> {
         } else {
             right == Ordering::Greater
         };
-        left_ok && right_ok
+        if !(left_ok && right_ok) {
+            // In an odd base half an ulp has no finite expansion, so the round-to-nearest
+            // modes report a bound cut off just inside it, and an interval reaching into the
+            // sliver next to a midpoint would fail at every working precision (see the same
+            // step in `dashu-float`'s driver). Rounding is monotone: the interval is inside
+            // the preimage exactly when both of its (exact) ends round to `target`.
+            if B % 2 == 0 {
+                return false;
+            }
+            let value_lo = x.sub(value.repr(), radius.repr()).unwrap().value(); // value − radius
+            let rounds_to_target = |end: &FBig<R, B>| {
+                end.clone()
+                    .with_precision(target.precision())
+                    .value()
+                    .repr()
+                    == target.repr()
+            };
+            if !(rounds_to_target(&value_lo) && rounds_to_target(&value_hi)) {
+                return false;
+            }
+        }
+        // The candidate's inexactness flag is read off the *approximation* (whether, and in
+        // which direction, `value` was rounded to reach `target`). That is the flag of the true
+        // value only when the true value provably lies on the same side of `target` as `value`:
+        // either the approximation is exact (zero radius), or `target` lies strictly outside
+        // `[value − radius, value + radius]`. Otherwise the true value may sit on the other
+        // side of `target` — and a rounded part would be tagged `Exact`, or an exact one
+        // `Inexact`, or with the wrong direction — so retry at a higher guard. (A part that is
+        // exactly representable should come with a zero radius: that is the closures' duty, as
+        // for the structural zeros above.)
+        //
+        // The proof is only demanded while `prove_flag` (the driver's refinement budget): a
+        // true value that agrees with a representable number to thousands of digits beyond
+        // the precision is either exactly that number through a route the closure cannot see
+        // (`32^0.2 = 2` in base 10) or an extreme argument (`exp(2⁻¹⁰⁰⁰⁰⁰⁰)`); refining without
+        // bound would turn the former into a hang and the latter into seconds of work, so past
+        // the budget the correctly rounded *value* is returned with the approximation's flag.
+        !prove_flag
+            || radius.repr().significand().is_zero()
+            || value.repr().cmp(target_hi.repr()) == Ordering::Greater
+            || target.repr().cmp(value_hi.repr()) == Ordering::Greater
     }
 }
 
@@ -275,8 +418,13 @@ mod tests {
     fn ziv_retries_until_contained() {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         let r = ctx.ziv(2, |guard| {
-            // value 1+1i, imaginary radius 2^(-guard): large on the first attempt, tiny later.
-            Ok([(F::ONE, F::ZERO), (F::ONE, F::ONE >> guard as isize)])
+            // value 1 + (1 + 2^-5)i, imaginary radius 2^(-guard): large on the first attempt,
+            // tiny later (the imaginary value sits off the 4-bit grid, so its rounding
+            // direction is decidable once the radius shrinks).
+            Ok([
+                (F::ONE, F::ZERO),
+                (F::ONE + (F::ONE >> 5), F::ONE >> guard as isize),
+            ])
         });
         drop(r.unwrap());
         assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 1);
@@ -292,7 +440,8 @@ mod tests {
             Ok([
                 (F::ONE, F::ZERO),
                 (F::from(2u8), F::ZERO),
-                (F::from(3u8), rad), // this part forces the retry
+                // 3 + 2^-5: off the 4-bit grid, so its rounding direction is decidable
+                (F::from_parts(97.into(), -5), rad), // this part forces the retry
                 (F::from(4u8), F::ZERO),
             ])
         });
@@ -316,6 +465,23 @@ mod tests {
         let ctx: Context<mode::HalfEven> = Context::new(4);
         // one part carries radius 10 >> 1 ulp at any working precision, so containment always fails.
         let r = ctx.ziv(2, |_| Ok([(F::ONE, F::ZERO), (F::ONE, F::from(10u8))]));
+        assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
+    }
+    // A value that sits exactly on a representable number while its radius never reaches zero
+    // (an exact result the closure cannot prove exact) is refined up to the flag-proof budget
+    // and then returned under a nearest mode — not retried to the cap.
+    #[test]
+    fn ziv_accepts_unprovable_flag_past_the_budget() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let r = ctx.ziv(2, |guard| Ok([(F::ONE, F::ONE >> guard as isize)]));
+        let [part] = r.unwrap();
+        assert_eq!(part.value_ref().repr(), F::ONE.repr());
+        let retries = LAST_ZIV_RETRIES.with(|c| c.get());
+        assert!(retries >= 5, "the flag proof must be attempted first ({retries} retries)");
+        // under a directed mode the same value is on the boundary of a one-sided preimage
+        let ctx: Context<mode::Down> = Context::new(4);
+        type FD = FBig<mode::Down>;
+        let r = ctx.ziv(2, |guard| Ok([(FD::ONE, FD::ONE >> guard as isize)]));
         assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
     }
 }
