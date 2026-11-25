@@ -38,6 +38,15 @@ fn repr_abs<const B: Word>(x: &Repr<B>) -> Repr<B> {
     }
 }
 
+/// A part that left the bottom of the exponent range: a signed zero, flagged inexact (the
+/// componentwise saturation of [`combine_results`](crate::repr::combine_results)).
+fn underflowed_part<R: ErrorBounds, const B: Word>(
+    sign: Sign,
+    f: FloatCtxt<R>,
+) -> Approximation<FBig<R, B>, Rounding> {
+    Approximation::Inexact(FBig::from_repr(Repr::zero_with_sign(sign), f), Rounding::NoOp)
+}
+
 /// An exact signed zero at the float context `f`.
 fn zero_part<R: ErrorBounds, const B: Word>(
     sign: Sign,
@@ -262,13 +271,21 @@ impl<R: ErrorBounds> Context<R> {
             thresh /= 3.0; // t = 2π|y|, and π > 3
         }
         if z.im().log2_bounds().0 > thresh.log2_bounds().1 {
-            let [re] = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
+            let re = self.ziv::<B, 1>(TRIG_GUARD, |guard| {
                 // re = sin 2x / D: the tan composition minus the saturated imaginary part.
                 let pw = p + guard;
                 let k = Self::tan_kernel_balls::<B>(z, pw, pi, &mut cache)?;
                 let re = div_real(&k.sin2x, &k.denom, pw)?;
                 Ok([re.to_value_radius(&FloatCtxt::<R>::new(pw))])
-            })?;
+            });
+            let re = match re {
+                Ok([re]) => re,
+                // `e^t` itself is beyond the exponent range: the result is still bounded
+                Err(FpError::Overflow(_)) => return self.tan_beyond_range(z, pi, &mut cache),
+                // the tiny real part alone left the range: it saturates on its own
+                Err(FpError::Underflow(sign)) => underflowed_part(sign, self.float()),
+                Err(e) => return Err(e),
+            };
             let above = self.tan_saturated_side(z, pi, &mut cache)?;
             let im = self.near_unit_endpoint::<B>(z.im().sign(), above);
             return Ok(combine_parts(re, im));
@@ -318,6 +335,50 @@ impl<R: ErrorBounds> Context<R> {
         Err(FpError::ZivRetryLimitExceeded)
     }
 
+    /// `tan z` (`tan zπ` with `pi`) for an imaginary part so large that `e^t` (`t = 2|y|`, or
+    /// `2π|y|`) is beyond the exponent range, so that the hyperbolic kernels of the composition
+    /// cannot be formed. The result is still bounded and needs only the signs of the circular
+    /// kernels:
+    ///
+    /// - `|im|` is above 1 iff `cos 2x < −e^{−t}` (see
+    ///   [`tan_saturated_side`](Self::tan_saturated_side)). `e^{−t}` is below every positive
+    ///   representable number here, so that is the sign of `cos 2x`, known as soon as its ball
+    ///   excludes zero.
+    /// - `re = sin 2x / D` with `D ≥ cosh t − 1` is below the exponent range (the kernels
+    ///   overflowed at a working precision of several digits, and a significand can only raise
+    ///   the top of the range, not lower its bottom), so it underflows to a zero with the sign
+    ///   of `sin 2x` — or is an exact zero when `sin 2x` is.
+    fn tan_beyond_range<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        pi: bool,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> CfpResult<R, B> {
+        let p = self.precision();
+        let exactly_zero = |b: &Ball<B>| b.mid.significand().is_zero() && b.rad.is_zero();
+        // the ball excludes zero, or is the exact zero: its sign is the sign of the value
+        let sign_known = |b: &Ball<B>| {
+            exactly_zero(b) || !Mag::from_repr_lower(&b.mid).sub_down(&b.rad).is_zero()
+        };
+        let mut guard = TRIG_GUARD;
+        for _ in 0..MAX_ZIV_RETRIES {
+            let pw = p + guard;
+            let (sin2x, cos2x) = Self::tan_circular_balls::<B>(z, pw, pi, cache)?;
+            if sign_known(&sin2x) && sign_known(&cos2x) {
+                let re = if exactly_zero(&sin2x) {
+                    zero_part(sin2x.mid.sign(), self.float())
+                } else {
+                    underflowed_part(sin2x.mid.sign(), self.float())
+                };
+                let above = !exactly_zero(&cos2x) && cos2x.mid.sign() == Sign::Negative;
+                let im = self.near_unit_endpoint::<B>(z.im().sign(), above);
+                return Ok(combine_parts(re, im));
+            }
+            guard = guard.saturating_mul(2).min(usize::MAX - p);
+        }
+        Err(FpError::ZivRetryLimitExceeded)
+    }
+
     /// Round a value lying strictly between `±1` and its nearest rounding boundary — just
     /// `above` or just below one in magnitude, with the given sign — to this context's
     /// precision. Every such value rounds alike, so a representative (`1 ± B^−(p+2)`) is
@@ -343,6 +404,42 @@ impl<R: ErrorBounds> Context<R> {
         FBig::from_repr(proxy, FloatCtxt::<R>::new(0)).with_precision(self.precision())
     }
 
+    /// The circular kernels of the `tan` composition at working precision `pw`, as balls:
+    /// `sin 2x` and `cos 2x` (their ×π twins with `pi`) on the midpoint of the doubled real
+    /// part, each folded to one work-ulp, with the doubling's rounding — if the argument is
+    /// wider than `pw` — propagated.
+    fn tan_circular_balls<const B: Word>(
+        z: &CBig<R, B>,
+        pw: usize,
+        pi: bool,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> Result<(Ball<B>, Ball<B>), FpError> {
+        let gctx = FloatCtxt::<R>::new(pw);
+        // 2x (an exact doubling — same significand, exponent +1 — unless the argument is wider
+        // than the working precision, in which case the rounding joins the radius)
+        let x = Ball::exact(z.re().clone());
+        let x2 = x.add(&x, pw)?;
+        let (sin2x, cos2x) = if pi {
+            gctx.sin_cos_pi(&x2.mid, reborrow_cache(cache))
+        } else {
+            gctx.sin_cos(&x2.mid, reborrow_cache(cache))
+        };
+        // where the real kernels can be exact at all (see `sin_cos_parts`)
+        let x_exact = if pi {
+            six_x_is_integer(&x2.mid)
+        } else {
+            is_zero(&x2.mid)
+        };
+        let mut sx2 = kernel_ball(sin2x?, pw, |_| x_exact);
+        let mut cx2 = kernel_ball(cos2x?, pw, |_| x_exact);
+        // the kernels run on the midpoint: |Δsin|, |Δcos| ≤ |δ(2x)| (times π for the ×π family,
+        // bounded by 4)
+        let x_fold = if pi { x2.rad.mul2().mul2() } else { x2.rad };
+        sx2.add_error(x_fold);
+        cx2.add_error(x_fold);
+        Ok((sx2, cx2))
+    }
+
     /// The shared kernel evaluation of the `tan` composition at working precision `pw`: the
     /// doubled arguments, the real `sin_cos`/`sinh_cosh` kernels (their ×π twins with `pi`) on
     /// the doubled midpoints (each folded to one work-ulp, with the doubling's rounding — if the
@@ -355,35 +452,14 @@ impl<R: ErrorBounds> Context<R> {
         cache: &mut Option<&mut ConstCache>,
     ) -> Result<TanKernel<B>, FpError> {
         let gctx = FloatCtxt::<R>::new(pw);
-        let cb = CBall::from_parts(z.re(), z.im(), pw);
-        // 2x, 2y (exact doublings — same significand, exponent +1 — unless the argument is wider
-        // than the working precision, in which case the rounding joins the radius)
-        let x2 = cb.re.add(&cb.re, pw)?;
-        let y2 = cb.im.add(&cb.im, pw)?;
-        let (sin2x, cos2x) = if pi {
-            gctx.sin_cos_pi(&x2.mid, reborrow_cache(cache))
-        } else {
-            gctx.sin_cos(&x2.mid, reborrow_cache(cache))
-        };
-        // where the real kernels can be exact at all (see `sin_cos_parts`)
-        let x_exact = if pi {
-            six_x_is_integer(&x2.mid)
-        } else {
-            is_zero(&x2.mid)
-        };
+        let (sx2, cx2) = Self::tan_circular_balls::<B>(z, pw, pi, cache)?;
+        // 2y, doubled like 2x
+        let y = Ball::exact(z.im().clone());
+        let y2 = y.add(&y, pw)?;
         let y_exact = is_zero(&y2.mid);
-        let mut sx2 = kernel_ball(sin2x?, pw, |_| x_exact);
-        let mut cx2 = kernel_ball(cos2x?, pw, |_| x_exact);
-        // the kernels run on the midpoints: |Δsin|, |Δcos| ≤ |δ(2x)| (times π for the ×π family,
-        // bounded by 4); |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δ}·|δ| with δ the (π-scaled)
-        // radius of 2y
-        let (x_fold, y_rad) = if pi {
-            (x2.rad.mul2().mul2(), y2.rad.mul2().mul2())
-        } else {
-            (x2.rad, y2.rad)
-        };
-        sx2.add_error(x_fold);
-        cx2.add_error(x_fold);
+        // the kernels run on the midpoint: |Δsinh|, |Δcosh| ≤ 2·‖cosh ball‖·e^{δ}·|δ| with δ
+        // the (π-scaled) radius of 2y
+        let y_rad = if pi { y2.rad.mul2().mul2() } else { y2.rad };
         let (sinh2y, cosh2y) = if pi {
             gctx.sinh_cosh_pi(&y2.mid, reborrow_cache(cache))
         } else {

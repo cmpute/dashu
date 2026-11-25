@@ -502,6 +502,98 @@ fn tan_saturated_imaginary_part_lies_on_the_right_side_of_one() {
     assert_eq!(v.im(), fb::<Down, 2>(1, 0).repr());
 }
 
+/// `tan` / `tanh` / `tan_pi` stay bounded when `e^(2|y|)` itself is beyond the exponent range
+/// (`|y| ≥ 2^62` in base 2): the saturating part rounds from its side of `±1` and the other
+/// part underflows to a signed zero on its own, instead of the whole result being an overflow.
+#[test]
+fn tan_with_imaginary_part_beyond_the_exponent_range() {
+    use dashu_float::round::ErrorBounds;
+    use helpers::reround;
+
+    // `(x, sign of sin 2x (None: exactly zero), whether cos 2x < 0)`
+    type Case = ((i64, isize), Option<Sign>, bool);
+    const RADIAN: [Case; 5] = [
+        ((0, 0), None, false),
+        ((1, 0), Some(Sign::Positive), true), // sin 2 > 0, cos 2 < 0
+        ((-1, 0), Some(Sign::Negative), true),
+        ((3, 0), Some(Sign::Negative), false), // sin 6 < 0, cos 6 > 0
+        ((1, -1), Some(Sign::Positive), false), // sin 1 > 0, cos 1 > 0
+    ];
+    const TIMES_PI: [Case; 5] = [
+        ((0, 0), None, false),
+        ((1, -3), Some(Sign::Positive), false), // 2πx = π/4
+        ((3, -3), Some(Sign::Positive), true),  // 2πx = 3π/4
+        ((1, -2), Some(Sign::Positive), false), // 2πx = π/2: cos is exactly 0
+        ((-3, -3), Some(Sign::Negative), true),
+    ];
+
+    fn check<R: ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        for y_exp in [62isize, 63, 70, 1 << 40, isize::MAX - 10] {
+            for y_sig in [1i64, -1, 3] {
+                for (pi, cases) in [(false, RADIAN), (true, TIMES_PI)] {
+                    for (x, sin_sign, above) in cases {
+                        let what = format!("x={x:?} y={y_sig}·2^{y_exp} pi={pi} p={p}");
+                        let z: CBig<R, 2> = cb(x, (y_sig, y_exp));
+                        let r = if pi {
+                            ctx.tan_pi(&z, None)
+                        } else {
+                            ctx.tan(&z, None)
+                        };
+                        let r = r.unwrap_or_else(|e| panic!("{what}: {e:?}"));
+                        assert!(flags(&r).is_some(), "{what}");
+                        let r = r.value();
+
+                        // im: ±(1 ± ε) rounded once
+                        let eps = fb::<R, 2>(1, -(p as isize) - 5);
+                        let near = if above {
+                            fb::<R, 2>(1, 0) + eps
+                        } else {
+                            fb::<R, 2>(1, 0) - eps
+                        };
+                        let near = if y_sig < 0 { -near } else { near };
+                        let want: FBig<R, 2> = reround(&near, p);
+                        assert_eq!(r.im(), want.repr(), "{what}");
+
+                        // re: an underflowed (or exact) zero with the sign of sin 2x
+                        assert!(r.re().significand().is_zero(), "{what}");
+                        assert_eq!(r.re().sign(), sin_sign.unwrap_or(Sign::Positive), "{what}");
+
+                        if !pi {
+                            // tanh(y + ix) is tan(x + iy) with its parts swapped
+                            let w: CBig<R, 2> = cb((y_sig, y_exp), x);
+                            let t = ctx.tanh(&w, None).unwrap().value();
+                            assert_eq!((t.re(), t.im()), (r.im(), r.re()), "tanh: {what}");
+                        }
+                    }
+                }
+            }
+        }
+
+        // e^(2y) still in range, but the real part sin 2x / D alone leaves the range
+        let z: CBig<R, 2> = cb((1, -(1 << 62)), (5, 59));
+        let r = ctx.tan(&z, None).unwrap().value();
+        assert!(r.re().is_pos_zero());
+        let want: FBig<R, 2> = reround(&(fb::<R, 2>(1, 0) - fb::<R, 2>(1, -(p as isize) - 5)), p);
+        assert_eq!(r.im(), want.repr());
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+        check::<Zero>(p);
+    }
+
+    // the reported case, through the convenience layer
+    let big = FBig::<HalfEven, 2>::from_parts(1.into(), 62)
+        .with_precision(53)
+        .value();
+    let t = CBig::from_parts(big.clone(), F::ZERO).tanh();
+    assert!(t.re().is_one() && t.im().is_pos_zero());
+    let t = CBig::from_parts(F::ZERO, big).tan();
+    assert!(t.re().is_pos_zero() && t.im().is_one());
+}
+
 /// `tan_pi` saturates like `tan`: a large imaginary part returns promptly under every mode
 /// (the directed modes used to climb to ~2π|y|/ln 2 working bits — minutes at |y| = 10⁵).
 #[test]
