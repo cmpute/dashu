@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use dashu::base::{Abs, UnsignedAbs};
+use dashu::base::{Abs, Sign, UnsignedAbs};
 use dashu::float::round::mode;
 use dashu::float::{Context, DBig, Repr};
 use dashu::integer::UBig;
@@ -171,7 +171,13 @@ impl RPy {
                 let scale = if parsed.ty == '%' { 2 } else { 0 };
                 let fraction_digits = parsed.prec.unwrap_or(6).saturating_add(scale);
                 let scaled = (&self.0 * pow10(fraction_digits)).round();
-                let repr = Repr::<10>::new(scaled, -(fraction_digits as isize));
+                let repr = if scaled.is_zero() && self.0.sign() == Sign::Negative {
+                    // a negative value that rounds to zero keeps its sign ('-0.00'), as for
+                    // `float` and `Fraction`
+                    Repr::<10>::neg_zero()
+                } else {
+                    Repr::<10>::new(scaled, -(fraction_digits as isize))
+                };
                 // (a few spare digits, so that the scaling of '%' stays exact)
                 let precision = repr.digits() + 3;
                 DBig::from_repr(repr, Context::new(precision))

@@ -168,6 +168,29 @@ def test_decimal_layout_matches_float():
         assert format(FBig(float(text)), spec) == expected, (text, spec)
 
 
+def test_rational_negative_rounding_to_zero_keeps_sign():
+    # a negative RBig that rounds to zero in a fixed notation prints as '-0.00', as Fraction,
+    # float and DBig do (the sign was dropped)
+    cases = [
+        (Fraction(-1, 1000), ".2f"),
+        (Fraction(-1, 3), ".0f"),
+        (Fraction(-1, 100000), ".1%"),
+        (Fraction(-1, 10**30), "f"),
+        (Fraction(-1, 1000), "+.2F"),
+        (Fraction(-1, 1000), "08.2f"),
+        (Fraction(-1, 1000), ",.2f"),
+        # neighbours that do not round to zero, and zero itself
+        (Fraction(-1, 100), ".2f"),
+        (Fraction(-3, 500), ".2f"),
+        (Fraction(-1, 250), ".2f"),
+        (Fraction(1, 1000), ".2f"),
+        (Fraction(0), ".2f"),
+    ]
+    for value, spec in cases:
+        assert format(RBig(value), spec) == format(value, spec), (value, spec)
+    assert format(RBig(Fraction(-1, 1000)), ".2f") == format(DBig("-0.001"), ".2f") == "-0.00"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
