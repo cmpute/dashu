@@ -668,3 +668,55 @@ fn test_const_cache_ln_base_generic() {
         check::<mode::Down, 255>(p);
     }
 }
+
+/// An exact integer logarithm is recognized whatever its size: `log10(100^e) = 2e` does not fit
+/// `isize` for `|e| > isize::MAX / 2`. Regression: `log10(100^(isize::MAX/2 + 1))` under a
+/// directed mode did not return — the exact shortcut gave up on a logarithm past `isize`, and
+/// the certification loop cannot terminate on an exactly representable result (the nearest
+/// modes returned it).
+#[test]
+fn test_log_exact_integer_past_isize() {
+    use dashu_float::{
+        round::{mode, ErrorBounds},
+        Context, Repr,
+    };
+    use dashu_int::IBig;
+
+    fn check<R: ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let int = |m: i128| Ok(Exact(FBig::<R, 100>::from_parts(IBig::from(m), 0)));
+        for e in [
+            isize::MAX / 2,
+            isize::MAX / 2 + 1, // the reported call: 10^(2^63) on a 64-bit target
+            isize::MAX - 1,
+            isize::MIN / 2 - 1,
+            isize::MIN + 1,
+        ] {
+            let x = Repr::<100>::new(IBig::ONE, e);
+            assert_eq!(ctx.log10(&x, None), int(2 * e as i128), "log10(100^{e})");
+            let x = Repr::<100>::new(10.into(), e);
+            assert_eq!(ctx.log10(&x, None), int(2 * e as i128 + 1), "log10(10·100^{e})");
+        }
+        // likewise log2 in a base that is a higher power of two
+        for e in [isize::MAX - 1, isize::MIN + 1] {
+            let x = Repr::<16>::new(IBig::ONE, e);
+            let want = FBig::<R, 16>::from_parts(IBig::from(4 * e as i128), 0);
+            assert_eq!(ctx.log2(&x, None), Ok(Exact(want)), "log2(16^{e})");
+        }
+    }
+    // (every one of these precisions holds the integer exactly: at most 21 decimal digits)
+    for p in [20, 50, 100, 500] {
+        check::<mode::Zero>(p);
+        check::<mode::Away>(p);
+        check::<mode::Down>(p);
+        check::<mode::Up>(p);
+        check::<mode::HalfEven>(p);
+        check::<mode::HalfAway>(p);
+    }
+    // a precision too small for the integer rounds it, in the mode's direction
+    let x = Repr::<100>::new(IBig::ONE, isize::MAX - 1);
+    let down = Context::<mode::Down>::new(3).log10(&x, None).unwrap();
+    let up = Context::<mode::Up>::new(3).log10(&x, None).unwrap();
+    assert!(matches!(down, Inexact(_, NoOp)) && matches!(up, Inexact(_, AddOne)));
+    assert!(down.value() < up.value());
+}

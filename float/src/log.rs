@@ -859,9 +859,10 @@ fn exact_int_log<const B: Word>(sig: &IBig, e: isize, target: &[Word]) -> Option
         .then_some(m)
 }
 
-/// If `x = sig·B^e` is exactly `10^m` for some integer `m` that fits `isize`, return `m`.
-fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<isize> {
-    exact_int_log::<B>(sig, e, &[2, 5]).and_then(|m| isize::try_from(m).ok())
+/// If `x = sig·B^e` is exactly `10^m` for some integer `m`, return `m`. (`m` can exceed `isize`
+/// in a base that is a higher power of ten: `100^e = 10^(2e)`.)
+fn exact_pow10_log<const B: Word>(sig: &IBig, e: isize) -> Option<i128> {
+    exact_int_log::<B>(sig, e, &[2, 5])
 }
 
 #[cfg(test)]
@@ -923,10 +924,14 @@ mod tests {
     #[test]
     fn test_exact_pow10_log_overflow() {
         // `p*e` overflows isize for a base that is a large power of two at an extreme exponent
-        // (on 32-bit and 64-bit alike); the exact log wouldn't fit isize, so it must be None, not
-        // a wrapped value that could falsely compare equal and return a wrong `Some`.
+        // (on 32-bit and 64-bit alike); the valuations are compared in `i128`, so it must be
+        // None, not a wrapped value that could falsely compare equal and return a wrong `Some`.
         assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MAX), None);
         assert_eq!(exact_pow10_log::<256>(&IBig::ONE, isize::MIN), None);
+        // a power of ten whose logarithm does not fit `isize` is still recognized (the Ziv
+        // loop could never certify it under a directed mode)
+        assert_eq!(exact_pow10_log::<100>(&IBig::ONE, isize::MAX), Some(2 * isize::MAX as i128));
+        assert_eq!(exact_pow10_log::<100>(&IBig::ONE, isize::MIN), Some(2 * isize::MIN as i128));
         // sanity: the normal path is unaffected.
         assert_eq!(exact_pow10_log::<10>(&IBig::ONE, 5), Some(5));
     }
