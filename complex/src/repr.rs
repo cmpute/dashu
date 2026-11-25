@@ -97,19 +97,6 @@ impl<R: Round> Context<R> {
         self.0
     }
 
-    /// The work context of the guard-digit division fallback: a finite `p + g` context at limited
-    /// precision, or the exact `self.float()` (precision 0) when the context is unlimited —
-    /// where `div`/`inv` panic via the float layer's own check (a quotient isn't exactly
-    /// representable in general).
-    #[inline]
-    pub(crate) fn work_context(&self, g: usize) -> FloatCtxt<R> {
-        if self.precision() != 0 {
-            FloatCtxt::new(self.precision() + g)
-        } else {
-            self.float()
-        }
-    }
-
     /// Unwrap a [`CfpResult`], returning the [`CBig`] value directly.
     ///
     /// The complex analog of [`dashu_float::Context::unwrap_fp`]. It drops the per-axis

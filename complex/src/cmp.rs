@@ -5,9 +5,8 @@
 //! magnitude comparison via `|z|²`, and (behind `num-order`) `NumOrd`/`NumHash`.
 
 use crate::cbig::CBig;
-use crate::repr::Context;
 use core::cmp::Ordering;
-use dashu_base::AbsOrd;
+use dashu_base::{AbsOrd, Sign};
 use dashu_float::round::Round;
 use dashu_float::Repr;
 use dashu_int::Word;
@@ -55,20 +54,37 @@ impl<R: Round, const B: Word> Ord for CBig<R, B> {
 impl<R: Round, const B: Word> AbsOrd for CBig<R, B> {
     /// Magnitude comparison by `|z|`. Compared through `|z|²` (the exact squared modulus — both
     /// sides are non-negative, so the order is preserved) to avoid the `sqrt`/`hypot` of [`CBig::abs`].
+    ///
+    /// The comparison is exact for all finite values: it is the sign of
+    /// `re₁² + im₁² − re₂² − im₂²`, found without forming a square that leaves the exponent
+    /// range and without aligning parts that lie far apart. A value with an infinite part is
+    /// larger than every finite one, and equal in magnitude to any other such value.
     #[inline]
     fn abs_cmp(&self, other: &Self) -> Ordering {
-        // Exact squared magnitudes at unlimited precision (no rounding, no overflow).
-        let unlim = Context::<R>::new(0);
-        let f = unlim.float();
-        let n1 = f.unwrap_fp(unlim.norm(self));
-        let n2 = f.unwrap_fp(unlim.norm(other));
-        n1.cmp(&n2)
+        match (self.is_infinite(), other.is_infinite()) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Greater,
+            (false, true) => return Ordering::Less,
+            (false, false) => {}
+        }
+        let terms = crate::wide::products(&[
+            (&self.re, &self.re, Sign::Positive),
+            (&self.im, &self.im, Sign::Positive),
+            (&other.re, &other.re, Sign::Negative),
+            (&other.im, &other.im, Sign::Negative),
+        ]);
+        match crate::wide::sign_of_sum(terms) {
+            None => Ordering::Equal,
+            Some(Sign::Positive) => Ordering::Greater,
+            Some(Sign::Negative) => Ordering::Less,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::Context;
     use dashu_float::round::mode;
 
     type C = CBig<mode::HalfAway, 10>;

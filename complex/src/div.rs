@@ -1,27 +1,26 @@
 //! Complex division and reciprocal.
 //!
-//! `(x+iy)/(u+iv) = ((xu+yv) + i(yu−xv)) / (u²+v²)`: the two numerators and the denominator are
-//! formed **exactly**, and each part is then a single correctly-rounded real division — so the
-//! quotient is correctly rounded per component (`z / z` is exactly `1`), with the inexactness
-//! flags and directed-rounding directions of the exact value.
+//! `(x+iy)/(u+iv) = ((xu+yv) + i(yu−xv)) / (u²+v²)`: each part is the quotient of two exact sums
+//! of products, rounded a single time — so the quotient is correctly rounded per component
+//! (`z / z` is exactly `1`), with the inexactness flags and directed-rounding directions of the
+//! exact value.
 //!
-//! The exact intermediates are as wide as the exponent spread between the operand parts, so when
-//! that spread is astronomically large (or `|w|²` leaves the exponent range) the division falls
-//! back to Smith's overflow-safe method at guard precision, which is only near-correctly rounded.
+//! The exact sums are as wide as the exponent spread between the operand parts. While that is
+//! moderate they are formed outright and each part is one correctly-rounded real division.
+//! When the spread is large (or `|w|²` leaves the exponent range) the same value is found
+//! without them, from an approximate quotient and exact sign tests (see
+//! [`ratio_of_sums`](crate::wide::ratio_of_sums)) — a part that is in range is returned
+//! whatever the size of the intermediates.
 
 use crate::cbig::CBig;
 use crate::mul::{sum_of_products, Term};
 use crate::repr::{combine_results, riemann, CfpResult, Context};
+use crate::wide::ratio_of_sums;
 use core::ops::{Div, DivAssign};
-use dashu_base::{AbsOrd, Inverse, Sign::*};
+use dashu_base::{Inverse, Sign::*};
 use dashu_float::round::Round;
 use dashu_float::{Context as FloatCtxt, FBig, FpError, FpResult, Repr};
 use dashu_int::Word;
-
-/// Guard digits (base-B) for the Smith's-method fallback of `div`/`inv`. The naive
-/// complex-division error is `~(3+√5)·u`; a fixed guard comfortably absorbs it for
-/// well-conditioned denominators.
-const DIV_GUARD: usize = 14;
 
 /// Whether the exact sum of the given products is cheap to form: its width — the distance from
 /// the lowest digit position of any product to the highest — stays within a small multiple of
@@ -61,7 +60,7 @@ fn exact_sum_is_cheap<const B: Word>(terms: &[Term<'_, B>], precision: usize) ->
 impl<R: Round> Context<R> {
     /// Reciprocal `1/z = conj(z)/|z|²` under this context (context layer).
     ///
-    /// Each part is correctly rounded (see [`Context::div`] for the one exception).
+    /// Each part is correctly rounded (see [`Context::div`]).
     pub fn inv<const B: Word>(&self, z: &CBig<R, B>) -> CfpResult<R, B> {
         if z.is_infinite() {
             // An infinite input is a terminal value and is not accepted.
@@ -71,19 +70,18 @@ impl<R: Round> Context<R> {
             return Ok(riemann(*self)); // 1/0 = ∞
         }
         let (u, v) = (z.re(), z.im());
-        let (one, zero) = (Repr::one(), Repr::zero());
+        let one = Repr::one();
         // 1/z = (u − iv)/(u² + v²)
-        self.quotient(&[(&one, u, Positive)], &[(&one, v, Negative)], (&one, &zero), (u, v))
+        self.quotient(&[(&one, u, Positive)], &[(&one, v, Negative)], (u, v))
     }
 
     /// Divide two complex numbers under this context (context layer).
     ///
-    /// Each part is correctly rounded: the numerators `xu + yv`, `yu − xv` and the denominator
-    /// `u² + v²` are formed exactly and each part is one correctly-rounded real division. The one
-    /// exception is an astronomically large exponent spread between the operand parts (or a
-    /// `|w|²` outside the exponent range), where the exact intermediates would be impractically
-    /// wide: the quotient is then computed by Smith's overflow-safe method and is only
-    /// near-correctly rounded.
+    /// Each part is correctly rounded: it is the exact quotient of the numerator `xu + yv` (or
+    /// `yu − xv`) by the denominator `u² + v²`, rounded once — also when the exponent spread
+    /// between the operand parts is large or `|w|²` lies outside the exponent range. A part of
+    /// the quotient that leaves the exponent range saturates on its own (to a signed infinity
+    /// or zero, flagged inexact) and the other part is kept; `Err` is returned when both do.
     ///
     /// `z / 0` is the complex infinity `+∞ + 0i` for a nonzero `z`, `0 / 0` is
     /// [`FpError::Indeterminate`], and an infinite operand is rejected with
@@ -114,7 +112,7 @@ impl<R: Round> Context<R> {
                 sum_of_products(&fctx, &im_num),
             );
         }
-        self.quotient(&re_num, &im_num, (x, y), (u, v))
+        self.quotient(&re_num, &im_num, (u, v))
     }
 
     /// `(re_num + i·im_num) / (u² + v²)` for a finite nonzero divisor `w = u + iv`, where the
@@ -123,15 +121,25 @@ impl<R: Round> Context<R> {
         &self,
         re_num: &[Term<'_, B>],
         im_num: &[Term<'_, B>],
-        z: (&Repr<B>, &Repr<B>),
-        w: (&Repr<B>, &Repr<B>),
+        (u, v): (&Repr<B>, &Repr<B>),
     ) -> CfpResult<R, B> {
-        let (u, v) = w;
         let den = [(u, u, Positive), (v, v, Positive)];
-        match self.exact_quotient(re_num, im_num, &den) {
-            Some((re, im)) => combine_results(re, im),
-            None => self.div_smith(z, w),
+        let fctx = self.float();
+        if let Some((re, im)) = self.exact_quotient(re_num, im_num, &den) {
+            return combine_results(re, im);
         }
+        if self.precision() == 0 {
+            // nothing may be dropped at unlimited precision: the exact sums are needed whatever
+            // their width
+            let exact = FloatCtxt::<R>::new(0);
+            let den = sum_of_products(&exact, &den)?.value();
+            let part = |num| {
+                let num = sum_of_products(&exact, num)?.value();
+                fctx.div(num.repr(), den.repr())
+            };
+            return combine_results(part(re_num), part(im_num));
+        }
+        combine_results(ratio_of_sums(&fctx, re_num, &den), ratio_of_sums(&fctx, im_num, &den))
     }
 
     /// The two parts of the quotient, each correctly rounded from the exact numerator and
@@ -157,58 +165,6 @@ impl<R: Round> Context<R> {
         let im_num = sum_of_products(&exact, im_num).ok()?.value();
         let fctx = self.float();
         Some((fctx.div(re_num.repr(), den.repr()), fctx.div(im_num.repr(), den.repr())))
-    }
-
-    /// Smith's overflow-safe division `(x+iy)/(u+iv)` at guard precision (near-correctly
-    /// rounded): the branch `|u| >= |v|` avoids forming `|denominator|²`.
-    fn div_smith<const B: Word>(
-        &self,
-        (x, y): (&Repr<B>, &Repr<B>),
-        (u, v): (&Repr<B>, &Repr<B>),
-    ) -> CfpResult<R, B> {
-        let gctx = self.work_context(DIV_GUARD);
-        let p = self.precision();
-        // Determine |u| >= |v| via abs_cmp on temporary FBig views (Smith's method).
-        let u_ge_v = {
-            let fu = FBig::from_repr(u.clone(), FloatCtxt::<R>::new(0));
-            let fv = FBig::from_repr(v.clone(), FloatCtxt::<R>::new(0));
-            fu.abs_cmp(&fv).is_ge()
-        };
-
-        // r, d depend on which of |u|, |v| is larger
-        let (r, d) = if u_ge_v {
-            // r = v/u, d = u + r·v  (fuse r·v with the add via FMA)
-            let r = gctx.div(v, u)?.value();
-            let d = gctx.fma(r.repr(), v, u, Positive)?.value();
-            (r, d)
-        } else {
-            // r = u/v, d = v + r·u
-            let r = gctx.div(u, v)?.value();
-            let d = gctx.fma(r.repr(), u, v, Positive)?.value();
-            (r, d)
-        };
-
-        let (num_re, num_im) = if u_ge_v {
-            // re = (x + r·y)/d, im = (y − r·x)/d  (both fuse via FMA)
-            (
-                gctx.fma(r.repr(), y, x, Positive)?.value(),
-                gctx.fma(r.repr(), x, y, Negative)?.value(),
-            )
-        } else {
-            // re = (r·x + y)/d, im = (r·y − x)/d. The numerator products fuse via
-            // FMA; `r·y − x` is `−(x − r·y)`, so one FMA plus an exact negation.
-            (
-                gctx.fma(r.repr(), x, y, Positive)?.value(),
-                -gctx.fma(r.repr(), y, x, Negative)?.value(),
-            )
-        };
-        let re = gctx
-            .div(num_re.repr(), d.repr())
-            .map(|q| q.value().with_precision(p));
-        let im = gctx
-            .div(num_im.repr(), d.repr())
-            .map(|q| q.value().with_precision(p));
-        combine_results(re, im)
     }
 
     /// Divide a complex number by a real scalar (context layer): `(x+iy)/s = (x/s) + i(y/s)`.

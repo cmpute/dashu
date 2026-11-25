@@ -31,8 +31,10 @@ pub(crate) type Term<'a, const B: Word> = (&'a Repr<B>, &'a Repr<B>, Sign);
 /// matters through its sign, so it is replaced by a unit just below that window instead of being
 /// aligned — the exact sum never materializes the exponent gap between the addends.
 ///
-/// Returns [`FpError::InfiniteInput`] for an infinite operand, and the product's
-/// [`FpError::Overflow`] / [`FpError::Underflow`] when one leaves the exponent range.
+/// Returns [`FpError::InfiniteInput`] for an infinite operand, and [`FpError::Overflow`] /
+/// [`FpError::Underflow`] when the result leaves the exponent range. A product that leaves the
+/// range on its own does not: the sum is then formed over a wider exponent range (at unlimited
+/// precision, where nothing may be dropped, the product's error is returned).
 pub(crate) fn sum_of_products<R: Round, const B: Word>(
     ctx: &FloatCtxt<R>,
     terms: &[Term<'_, B>],
@@ -65,7 +67,15 @@ pub(crate) fn sum_of_products<R: Round, const B: Word>(
             }
             continue;
         }
-        let prod = exact.mul(a, b)?.value();
+        let prod = match exact.mul(a, b) {
+            Ok(prod) => prod.value(),
+            // A product outside the exponent range does not put the sum there: it can cancel
+            // against another one, or vanish below the rounding window of the rest.
+            Err(FpError::Overflow(_) | FpError::Underflow(_)) if ctx.precision() != 0 => {
+                return crate::wide::sum_of_products(ctx, terms);
+            }
+            Err(e) => return Err(e),
+        };
         prods.push(if sign == Negative { -prod } else { prod });
     }
     if prods.is_empty() {

@@ -134,6 +134,172 @@ fn reciprocal_near_the_exponent_range_limits() {
     }
 }
 
+/// A divisor whose parts are thousands of digits apart is still divided exactly: the tag, the
+/// value and the rounding direction are those of the exact quotient (the exact numerator and
+/// denominator are affordable for the oracle here, though past the width the implementation
+/// forms them at).
+#[test]
+fn wide_exponent_spread_is_correctly_rounded() {
+    const E: usize = 20000;
+    fn check<R: Round>(p: usize) {
+        let big = f::<R, 2>(1, E as isize, 0);
+        let unit = f::<R, 2>(1, 0, 0);
+        let fctx = FloatContext::<R>::new(p);
+        let ctx = Context::<R>::new(p);
+        for (u, v) in [
+            (unit.clone(), big.clone()),
+            (big.clone(), unit.clone()),
+            (f::<R, 2>(-3, 0, 0), f::<R, 2>(5, E as isize, 0)),
+            (f::<R, 2>(7, E as isize, 0), f::<R, 2>(-1, -(E as isize), 0)),
+        ] {
+            let den = &u * &u + &v * &v;
+            let w = CBig::from_parts(u.clone(), v.clone());
+            // 1/w = (u − iv)/(u² + v²)
+            let inv = ctx.inv(&w).unwrap();
+            assert!(matches!(inv, Inexact(..)), "inv({u:?} + {v:?}i) at {p}: tagged exact");
+            let (re, im) = inv.clone().value().into_parts();
+            assert_eq!(re, fctx.div(u.repr(), den.repr()).unwrap().value(), "inv re, p={p}");
+            assert_eq!(im, fctx.div((-v.clone()).repr(), den.repr()).unwrap().value());
+            assert_correct_quotient(&re, &u, &den, p, "inv re");
+            assert_correct_quotient(&im, &-v.clone(), &den, p, "inv im");
+            assert_eq!(ctx.div(&CBig::ONE, &w).unwrap(), inv);
+
+            // (x + iy)/w with the flags of the two real divisions
+            let (x, y) = (f::<R, 2>(11, 3, 0), f::<R, 2>(-13, -2, 0));
+            let z = CBig::from_parts(x.clone(), y.clone());
+            let q = ctx.div(&z, &w).unwrap();
+            let want_re = fctx.div((&x * &u + &y * &v).repr(), den.repr()).unwrap();
+            let want_im = fctx.div((&y * &u - &x * &v).repr(), den.repr()).unwrap();
+            let flag = |r: &dashu_float::round::Rounded<FBig<R, 2>>| match r {
+                Exact(_) => None,
+                Inexact(_, rnd) => Some(*rnd),
+            };
+            match &q {
+                Exact(_) => panic!("tagged exact"),
+                Inexact(_, flags) => {
+                    assert_eq!(Some(flags.0), flag(&want_re), "p={p}");
+                    assert_eq!(Some(flags.1), flag(&want_im), "p={p}");
+                }
+            }
+            let (re, im) = q.value().into_parts();
+            assert_eq!((re, im), (want_re.value(), want_im.value()), "p={p}");
+
+            // an exact multiple divides exactly: (3 − 2i)·w / w
+            let (a, b) = (f::<R, 2>(3, 0, 0), f::<R, 2>(-2, 0, 0));
+            let z = CBig::from_parts(&a * &u - &b * &v, &a * &v + &b * &u);
+            let q = ctx.div(&z, &w).unwrap();
+            assert!(matches!(q, Exact(_)), "exact multiple, p={p}");
+            assert_eq!(q.value().into_parts(), (a, b));
+        }
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+        check::<Zero>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+    }
+
+    // the reported case: under `Down` the real part of 1/(1 + 2^5000 i) is below 2^-10000
+    let w = CBig::<Down, 2>::from_parts(f(1, 0, 0), f(1, 5000, 0));
+    let inv = Context::<Down>::new(53).inv(&w).unwrap();
+    assert!(matches!(inv, Inexact(..)));
+    assert_eq!(inv.value().re(), f::<Down, 2>((1i64 << 53) - 1, -10053, 0).repr());
+}
+
+/// The quotient is found without intermediates that leave the exponent range, and at any
+/// exponent spread: a part that is in range is returned, and a part that is not saturates on
+/// its own.
+#[test]
+fn quotient_in_range_with_intermediates_out_of_range() {
+    fn check<R: Round>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let p2 = |e: isize| f::<R, 2>(1, e, p);
+        let zero = || f::<R, 2>(0, 0, p);
+        let one = CBig::from_parts(p2(0), zero());
+
+        // 1/(2^e + 2^e i) = 2^-(e+1) − 2^-(e+1) i, exactly, up to the last exponent
+        for e in [
+            isize::MAX - 3,
+            isize::MAX - 2,
+            -(isize::MAX - 2),
+            (1 << 62) + 5,
+        ] {
+            let w = CBig::from_parts(p2(e), p2(e));
+            let want = CBig::from_parts(p2(-(e + 1)), -p2(-(e + 1)));
+            assert_eq!(ctx.inv(&w).unwrap(), Exact(want.clone()), "e={e} p={p}");
+            assert_eq!(ctx.div(&one, &w).unwrap(), Exact(want.clone()), "e={e} p={p}");
+            assert_eq!((&w).inv(), want);
+            assert_eq!(&one / &w, want);
+            // w / w and (3w) / w
+            assert_eq!(ctx.div(&w, &w).unwrap(), Exact(one.clone()));
+            let w3 = CBig::from_parts(f::<R, 2>(3, e - 2, p), f::<R, 2>(3, e - 2, p));
+            let w1 = CBig::from_parts(p2(e - 2), p2(e - 2));
+            let three = CBig::from_parts(f::<R, 2>(3, 0, p), zero());
+            assert_eq!(ctx.div(&w3, &w1).unwrap(), Exact(three));
+        }
+        let e = isize::MAX - 1;
+        let w = CBig::from_parts(p2(e), p2(e));
+        let want = CBig::from_parts(p2(-(e + 1)), -p2(-(e + 1)));
+        assert_eq!(ctx.inv(&w).unwrap(), Exact(want));
+
+        // 1/(2^E + 2^-E i) = (2^-E − 2^-3E i)/(1 + 2^-4E): each part is just below a power
+        // of two in magnitude
+        let below = |e: isize, negative: bool| {
+            let eps = f::<R, 2>(1, -(p as isize) - 5, 0);
+            let near = f::<R, 2>(1, 0, 0) - eps;
+            let near = if negative { -near } else { near };
+            let (sig, exp) = near.with_precision(p).value().into_repr().into_parts();
+            Repr::<2>::new(sig, exp + e)
+        };
+        for e in [1isize << 40, 1 << 60, 1 << 61] {
+            let w = CBig::from_parts(p2(e), p2(-e));
+            let inv = ctx.inv(&w).unwrap();
+            assert!(matches!(inv, Inexact(..)), "E={e} p={p}: tagged exact");
+            assert_eq!(inv.value_ref().re(), &below(-e, false), "E={e} p={p}");
+            assert_eq!(inv.value_ref().im(), &below(-3 * e, true), "E={e} p={p}");
+            assert_eq!(ctx.div(&one, &w).unwrap(), inv);
+        }
+        // … and with E = 2^62 the imaginary part alone is below the range
+        let e = 1isize << 62;
+        let w = CBig::from_parts(p2(e), p2(-e));
+        let inv = ctx.inv(&w).unwrap();
+        assert!(matches!(inv, Inexact(..)));
+        assert_eq!(inv.value_ref().re(), &below(-e, false), "p={p}");
+        assert!(inv.value_ref().im().is_neg_zero(), "p={p}");
+        assert_eq!((&w).inv().re(), &below(-e, false));
+        // the mirrored divisor loses its real part instead
+        let w = CBig::from_parts(p2(-e), p2(e));
+        let inv = ctx.inv(&w).unwrap().value();
+        assert!(inv.re().is_pos_zero(), "p={p}");
+        assert_eq!(inv.im(), &below(-e, true), "p={p}");
+
+        // an astronomically wide divisor: (3 − 2i)·w / w is exact, 1/w is not
+        let e = 1isize << 50;
+        let (u, v) = (f::<R, 2>(1, 0, p), f::<R, 2>(1, e, p));
+        let w = CBig::from_parts(u, v);
+        // (3 − 2i)(1 + 2^e i) = (3 + 2^(e+1)) + (3·2^e − 2)i needs e bits per part: use the
+        // purely real and purely imaginary multiples instead
+        let w3 = CBig::from_parts(f::<R, 2>(3, 0, p), f::<R, 2>(3, e, p));
+        let three = CBig::from_parts(f::<R, 2>(3, 0, p), zero());
+        assert_eq!(ctx.div(&w3, &w).unwrap(), Exact(three));
+        let wi = CBig::from_parts(f::<R, 2>(-1, e, p), f::<R, 2>(1, 0, p)); // i·w
+        let i = CBig::from_parts(zero(), f::<R, 2>(1, 0, p));
+        assert_eq!(ctx.div(&wi, &w).unwrap(), Exact(i));
+        let inv = ctx.inv(&w).unwrap();
+        assert!(matches!(inv, Inexact(..)));
+        assert_eq!(inv.value_ref().re(), &below(-2 * e, false), "p={p}");
+        assert_eq!(inv.value_ref().im(), &below(-e, true), "p={p}");
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+        check::<Zero>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+    }
+}
+
 /// `|num − q·den| ≤ ½·ulp(q)·den` (nearest) or `0 ≤ ± (num − q·den) < ulp(q)·den` (directed),
 /// with all quantities exact (unlimited-precision `FBig` arithmetic is lossless).
 fn assert_correct_quotient<R: Round>(

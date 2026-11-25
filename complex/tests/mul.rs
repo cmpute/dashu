@@ -326,6 +326,87 @@ fn part_out_of_range_keeps_the_other_part() {
 }
 
 #[test]
+fn product_out_of_range_inside_a_part() {
+    // A single product leaving the exponent range does not erase the part it belongs to: the
+    // part is still the exact sum rounded once.
+    fn check<R: Round>(p: usize) {
+        let f = |sig: i32, exp: isize| {
+            FBig::<R, 2>::from_repr(Repr::new(sig.into(), exp), FloatContext::new(p))
+        };
+        let ctx = Context::<R>::new(p);
+        let zero = CBig::from_parts(f(0, 0), f(0, 0));
+        let one = exact::<R>(1, 0);
+        let eps = exact::<R>(1, -(p as isize) - 5);
+        for e in [
+            -(1isize << 20),
+            -(1 << 61),
+            -(1 << 62) - 10,
+            isize::MIN / 2 - (1 << 60),
+        ] {
+            // z = 1 + s·i with s = 2^e: z² = (1 − s²) + 2s·i, and s² is far below the range
+            let z = CBig::from_parts(f(1, 0), f(1, e));
+            let want_re = (one.clone() - eps.clone()).with_precision(p);
+            let want_im = f(1, e + 1);
+            for (name, r) in [
+                ("sqr", ctx.sqr(&z)),
+                ("mul", ctx.mul(&z, &z)),
+                ("fma", ctx.fma(&z, &z, &zero, Sign::Positive)),
+            ] {
+                let r = r.unwrap_or_else(|err| panic!("{name} e={e} p={p}: {err:?}"));
+                let flags = match &r {
+                    Exact(_) => panic!("{name} e={e} p={p}: tagged exact"),
+                    Inexact(_, flags) => *flags,
+                };
+                let r = r.value();
+                assert_eq!(r.re(), want_re.value_ref().repr(), "{name} e={e} p={p}");
+                assert_eq!(r.im(), want_im.repr(), "{name} e={e} p={p}");
+                let want_flag = match &want_re {
+                    Exact(_) => unreachable!(),
+                    Inexact(_, flag) => *flag,
+                };
+                assert_eq!(flags, (want_flag, Rounding::NoOp), "{name} e={e} p={p}");
+            }
+            assert_eq!(z.sqr().re(), want_re.value_ref().repr());
+            assert_eq!((&z * &z).re(), want_re.value_ref().repr());
+
+            // (1 + s·i)(1 − s·i) = 1 + s² exactly real
+            let r = ctx.mul(&z, &z.conj()).unwrap().value();
+            let want = (one.clone() + eps.clone()).with_precision(p).value();
+            assert_eq!(r.re(), want.repr(), "norm-like e={e} p={p}");
+            assert!(r.im().significand().is_zero());
+        }
+
+        // products beyond the top of the range that cancel: (b + b·i)(b − b·i) has an exactly
+        // zero imaginary part, and b·b − b·b + 5 = 5
+        let b = f(3, (1 << 62) + 10);
+        let z = CBig::from_parts(b.clone(), b.clone());
+        let r = ctx.mul(&z, &z.conj()).unwrap().value();
+        assert!(r.re().is_infinite() && r.re().sign() == Sign::Positive);
+        assert!(r.im().significand().is_zero());
+        let (z1, z2) = (CBig::from_parts(b.clone(), b.clone()), CBig::from_parts(b.clone(), b));
+        let r = ctx.fma(&z1, &z2, &CBig::from_parts(f(5, 0), f(0, 0)), Sign::Positive);
+        let r = r.unwrap().value();
+        assert_eq!(r.re(), f(5, 0).repr());
+        assert!(r.im().is_infinite());
+
+        // a result below the range still underflows on its own
+        let s = f(1, -(1 << 62) - 10);
+        let z = CBig::from_parts(s.clone(), f(0, 0));
+        let w = CBig::from_parts(s, f(1, 0));
+        let r = ctx.mul(&z, &w).unwrap().value();
+        assert!(r.re().is_pos_zero());
+        assert_eq!(r.im(), f(1, -(1 << 62) - 10).repr());
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+        check::<Zero>(p);
+    }
+}
+
+#[test]
 fn astronomically_separated_addends_round_like_the_exact_sum() {
     // (2^E + i)(1 + i) = (2^E − 1) + (2^E + 1)i with E far beyond any materializable width: the
     // tiny addend only acts as a sticky bit.
