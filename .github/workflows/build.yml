@@ -60,9 +60,12 @@ jobs:
             echo "  diesel        -> 2.2.12"
             echo "  ctutils       -> 0.4.2"
             echo "  sha2          -> 0.11.0"
+            echo "  postcard      -> 1.1.3"
             cargo update -p diesel@2 --precise 2.2.12
             cargo update -p ctutils --precise 0.4.2
             cargo update -p sha2 --precise 0.11.0
+            # (dev-dependency; 1.2.0 requires Rust 1.88)
+            cargo update -p postcard --precise 1.1.3
           fi
       - run: cargo check --all-features --tests
         if: matrix.rust != '1.68'
