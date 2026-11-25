@@ -161,13 +161,8 @@ fn log_next_to_one() {
         let k10 = (p + 10) as isize;
         against_oracle(p, cb::<R, 10>((1, 0), (1, -k10)), k10 as usize);
         against_oracle(p, cb::<R, 10>((-1, 0), (-3, -k10)), k10 as usize);
-        // (The round-to-nearest modes are left out in base 3: `s/2` is within `3^(−2k)` of a
-        // rounding tie there, which the Ziv certification cannot currently resolve in an odd
-        // base — see `log_next_to_one_odd_base_nearest`.)
-        if !core::any::type_name::<R>().contains("Half") {
-            against_oracle(p, cb::<R, 3>((1, 0), (1, -k10)), k10 as usize);
-            against_oracle(p, cb::<R, 3>((1, -k10), (-1, 0)), k10 as usize);
-        }
+        against_oracle(p, cb::<R, 3>((1, 0), (1, -k10)), k10 as usize);
+        against_oracle(p, cb::<R, 3>((1, -k10), (-1, 0)), k10 as usize);
 
         // far beyond what any working precision could resolve
         for e in [1isize << 20, 10_000_000, 1 << 40, (1 << 61) - 7] {
@@ -238,10 +233,10 @@ fn log_next_to_one() {
 }
 
 /// In an odd base `ln|1 + i·3^-k| = 3^(−2k)/2 − …` is within `3^(−2k)` (relative) of a rounding
-/// tie, because `1/2 = 0.111…₃`. The round-to-nearest error bounds of `dashu-float` are cut off
-/// about 129 digits inside half an ulp in base 3 (`half_ulp` in `float/src/round.rs`), so a
-/// value closer to the tie than that is never certified and the Ziv loops (the complex one and
-/// the float kernels' own) climb until their retry cap. Shallow cases return:
+/// tie, because `1/2 = 0.111…₃`. The inner half-ulp bound of an odd base (`half_ulp` in
+/// `float/src/round.rs`) stops about 129 digits short of the tie in base 3, so a value closer
+/// than that needs the exact-endpoint fallback of the Ziv containment test. Shallow cases never
+/// reach it:
 #[test]
 fn log_next_to_one_odd_base_nearest_shallow() {
     for (p, k) in [(20usize, 30isize), (50, 60), (100, 110)] {
@@ -255,10 +250,9 @@ fn log_next_to_one_odd_base_nearest_shallow() {
     }
 }
 
-/// … and a deep one does not (at 500 digits the value is 3^-520 ulps from the tie). The same
-/// input returns at the base commit `a0fc535`.
+/// … and a deep one does (at 500 digits the value is 3^-520 ulps from the tie). Regression:
+/// without the fallback this call did not return.
 #[test]
-#[ignore = "odd bases: the Ziv certification cannot resolve a value within ~3^-129 ulps of a tie (dashu-float ErrorBounds, since f2b0479); does not return"]
 fn log_next_to_one_odd_base_nearest() {
     let z: CBig<HalfEven, 3> = cb((1, 0), (1, -510));
     let got = Context::<HalfEven>::new(500).log(&z, None).unwrap().value();
