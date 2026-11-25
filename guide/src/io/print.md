@@ -28,7 +28,7 @@ assert_eq!(format!("{}", DBig::from_str("12.34")?), "12.34");
 assert_eq!(format!("{:.1}", DBig::from_str("12.34")?), "12.3");
 ```
 
-For scientific notation use `LowerExp`/`UpperExp`: the exponent marker is `e`/`E` in base 10 and `@` in other bases. Infinities render as `inf` / `-inf` under both `Display` and `Debug`.
+For scientific notation use `LowerExp`/`UpperExp`: the exponent marker is `e`/`E` in base 10 and `@` in other bases. Infinities render as `inf` / `-inf` under both `Display` and `Debug`; under `Display` and the scientific formats they honor the width, fill, alignment, `+` and `0` flags like a finite number does (`{:+8}` gives `    +inf`), while the precision does not apply to them.
 
 ```rust
 use core::str::FromStr;

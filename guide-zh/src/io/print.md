@@ -28,7 +28,7 @@ assert_eq!(format!("{}", DBig::from_str("12.34")?), "12.34");
 assert_eq!(format!("{:.1}", DBig::from_str("12.34")?), "12.3");
 ```
 
-要使用科学记数法，请使用 `LowerExp`/`UpperExp`：在十进制下指数标记为 `e`/`E`，在其他基数下为 `@`。无穷值在 `Display` 和 `Debug` 下均渲染为 `inf` / `-inf`。
+要使用科学记数法，请使用 `LowerExp`/`UpperExp`：在十进制下指数标记为 `e`/`E`，在其他基数下为 `@`。无穷值在 `Display` 和 `Debug` 下均渲染为 `inf` / `-inf`；在 `Display` 和科学记数法格式下，它们与有限数一样遵循宽度、填充、对齐、`+` 和 `0` 标志（`{:+8}` 输出 `    +inf`），而精度对它们不起作用。
 
 ```rust
 use core::str::FromStr;

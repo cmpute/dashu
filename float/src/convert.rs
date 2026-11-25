@@ -223,6 +223,11 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// If the given precision is less than the current value in the context,
     /// it will be rounded with the rounding mode specified by the generic parameter.
     ///
+    /// Rounding a number next to the largest exponent can overflow. The result then saturates
+    /// the way an overflowing operation does under the rounding mode: to an infinity under the
+    /// modes that round to nearest or away from zero, and to a finite number that is not
+    /// beyond the input under the modes that round toward zero there.
+    ///
     /// # Examples
     ///
     /// ```rust
