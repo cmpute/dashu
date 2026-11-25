@@ -20,7 +20,7 @@ use crate::{
     },
     utils::{
         common_root, factor_base, ilog_exact, log2_base, shl_digits, shl_digits_in_place,
-        shr_digits,
+        shr_digits, split_digits,
     },
 };
 
@@ -252,7 +252,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
         let repr = if self.repr.is_infinite() {
             Exact(self.repr)
         } else if !self.context.is_limited() || self.context.precision > precision {
-            new_context.repr_round(self.repr)
+            new_context.repr_round_in_range(self.repr)
         } else {
             Exact(self.repr)
         };
@@ -611,6 +611,64 @@ fn convert_base_odd<const B: Word>(repr: Repr<B>, width: usize) -> Repr<2> {
 }
 
 impl<R: Round> Context<R> {
+    /// Round a finite `repr` to this context's precision, for the conversions that change
+    /// nothing but the precision ([`FBig::with_precision`] and a base change to the same base).
+    ///
+    /// Dropping digits raises the exponent, so the rounded value can reach the reserved
+    /// exponent `isize::MAX` or leave the exponent range when the input lies at its upper
+    /// edge. That is an overflow, as it is for an arithmetic result, and it saturates the way
+    /// [`Self::overflow_repr_endpoint`] says for the rounding mode: to the infinity under the
+    /// modes that round to nearest or away from zero on that side, but never under a mode
+    /// that rounds toward zero there. Such a mode gets the rounded value itself while it
+    /// still has an exponent (it is not beyond the input, which the largest finite number
+    /// could be), and the largest finite number of this precision otherwise.
+    ///
+    /// ([`Self::repr_round`], which serves the arithmetic kernels, marks every such result as
+    /// an infinity for them to report as an overflow.)
+    fn repr_round_in_range<const B: Word>(&self, repr: Repr<B>) -> Rounded<Repr<B>> {
+        assert_finite(&repr);
+        let digits = repr.digits();
+        if !self.is_limited() || digits <= self.precision {
+            return Exact(repr);
+        }
+
+        let shift = digits - self.precision;
+        let sign = repr.sign();
+        let (signif_hi, signif_lo) = split_digits::<B>(repr.significand, shift);
+        let adjust = R::round_fract::<B>(&signif_hi, signif_lo, shift);
+        let rounded = signif_hi + adjust;
+        if rounded.is_zero() {
+            return Inexact(Repr::zero_with_sign(sign), adjust);
+        }
+        // fold the trailing zeros (of a carry) into an exponent that cannot overflow yet
+        let Repr {
+            significand,
+            exponent: folded,
+        } = Repr::<B>::new(rounded, 0);
+        let exponent = repr.exponent as i128 + shift as i128 + folded as i128;
+        if exponent < isize::MAX as i128 {
+            return Inexact(
+                Repr {
+                    significand,
+                    exponent: exponent as isize,
+                },
+                adjust,
+            );
+        }
+        let endpoint = self.overflow_repr_endpoint::<B>(sign).map(FBig::into_repr);
+        if exponent == isize::MAX as i128 && endpoint.value_ref().is_finite() {
+            Inexact(
+                Repr {
+                    significand,
+                    exponent: isize::MAX,
+                },
+                adjust,
+            )
+        } else {
+            endpoint
+        }
+    }
+
     // Convert `repr` (base B) to the nearest f64 under this context's rounding mode. A generous
     // round-to-odd base conversion is rounded once to the target's precision at its own magnitude
     // (fewer than 53 bits for subnormals), so `into_f64_internal` re-rounds nothing — which would
@@ -750,7 +808,7 @@ impl<R: Round> Context<R> {
             return if repr.is_infinite() {
                 Exact(repr)
             } else {
-                self.repr_round(repr)
+                self.repr_round_in_range(repr)
             };
         }
 

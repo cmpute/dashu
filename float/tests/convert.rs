@@ -1462,3 +1462,119 @@ fn test_to_float_exponent_beyond_binary_range() {
     let tiny = FBig::<HalfEven, 16>::from_parts(IBig::ONE, isize::MIN / 2);
     assert_eq!(tiny.to_f64().value(), 0.0);
 }
+
+#[test]
+fn test_precision_change_near_max_exponent() {
+    use dashu_float::round::mode::{Away, Down};
+    use dashu_float::{round::Round, Word};
+
+    // Dropping places raises the exponent. A result that reaches `isize::MAX` or goes beyond
+    // it is an overflow, which saturates the way the rounding mode says: a mode that rounds
+    // toward zero (or toward the other infinity) never turns a finite number into an
+    // infinity, and never returns a value beyond its input.
+    fn check<R: Round, const B: Word>(inward_pos: bool, inward_neg: bool) {
+        for precision in [1usize, 20, 50, 100, 500] {
+            // `precision + 1` places, all of them `B - 1`: rounding drops the lowest one,
+            // and rounding away from zero carries into a new place
+            let wide = UBig::from_word(B).pow(precision + 1) - UBig::ONE;
+            for negative in [false, true] {
+                let sig = if negative {
+                    -IBig::from(wide.clone())
+                } else {
+                    IBig::from(wide.clone())
+                };
+                let inward = if negative { inward_neg } else { inward_pos };
+
+                // the result needs the exponent isize::MAX, or one more after a carry
+                let x = FBig::<R, B>::from_parts(sig.clone(), isize::MAX - 1);
+                assert!(x.repr().is_finite());
+                let r = x.clone().with_precision(precision).value();
+                assert_eq!(r.precision(), precision);
+                let same_base = x.clone().with_base_and_precision::<B>(precision).value();
+                assert_eq!(r.repr(), same_base.repr());
+                if inward {
+                    assert!(r.repr().is_finite(), "{:?} -> {:?}", x, r);
+                    assert_eq!(r.repr().exponent(), isize::MAX);
+                    assert_eq!(r.repr().digits(), precision);
+                    // toward zero: not beyond the input in magnitude
+                    assert!(if negative { r >= x } else { r <= x }, "{:?} -> {:?}", x, r);
+                } else {
+                    // the carry leaves the range
+                    assert!(r.repr().is_infinite(), "{:?} -> {:?}", x, r);
+                    assert_eq!(r.repr().sign(), x.repr().sign());
+                }
+
+                // Two exponents lower the carry gives `B^(precision + 1)` at the exponent
+                // `isize::MAX - 3`, a single place at `isize::MAX - 2 + precision`, which is
+                // below the reserved exponent at one place of precision only.
+                let x = FBig::<R, B>::from_parts(sig.clone(), isize::MAX - 3);
+                let r = x.clone().with_precision(precision).value();
+                if inward {
+                    assert!(r.repr().is_finite(), "{:?} -> {:?}", x, r);
+                    assert_eq!(r.repr().exponent(), isize::MAX - 2);
+                    assert!(if negative { r >= x } else { r <= x });
+                } else if precision < 2 {
+                    assert!(r.repr().is_finite(), "{:?} -> {:?}", x, r);
+                    assert_eq!(r.repr().digits(), 1);
+                    assert_eq!(r.repr().exponent(), isize::MAX - 2 + precision as isize);
+                    assert!(if negative { r <= x } else { r >= x });
+                } else {
+                    assert!(r.repr().is_infinite(), "{:?} -> {:?}", x, r);
+                }
+
+                // an input already at the largest exponent
+                let x = FBig::<R, B>::from_parts(sig.clone(), isize::MAX);
+                let r = x.clone().with_precision(precision).value();
+                if inward {
+                    // the largest finite number of that precision
+                    assert!(r.repr().is_finite());
+                    assert_eq!(r.repr().exponent(), isize::MAX);
+                    assert_eq!(r.repr().digits(), precision);
+                    assert!(if negative { r >= x } else { r <= x });
+                } else {
+                    assert!(r.repr().is_infinite());
+                }
+            }
+        }
+    }
+    check::<Zero, 2>(true, true);
+    check::<Down, 2>(true, false);
+    check::<Up, 2>(false, true);
+    check::<Away, 2>(false, false);
+    check::<HalfEven, 2>(false, false);
+    check::<HalfAway, 2>(false, false);
+    check::<Zero, 10>(true, true);
+    check::<Down, 10>(true, false);
+    check::<Up, 10>(false, true);
+    check::<HalfAway, 10>(false, false);
+    check::<Zero, 16>(true, true);
+
+    // the reported cases
+    let x = FBig::<Down, 2>::from_parts(IBig::from(3), isize::MAX - 1);
+    assert_eq!(
+        x.clone().with_precision(1),
+        Inexact(FBig::from_parts(IBig::ONE, isize::MAX), NoOp)
+    );
+    let x = FBig::<Zero, 2>::from_parts(IBig::from(-3), isize::MAX - 1);
+    assert_eq!(
+        x.clone().with_precision(1),
+        Inexact(FBig::from_parts(IBig::NEG_ONE, isize::MAX), NoOp)
+    );
+    // The rounded value is kept when it is below the largest finite number: 5/4 rounds down
+    // to 1, and 3/2 (all ones at two places) would be above the input.
+    let x = FBig::<Down, 2>::from_parts(IBig::from(5), isize::MAX - 2);
+    assert_eq!(
+        x.clone().with_precision(2),
+        Inexact(FBig::from_parts(IBig::ONE, isize::MAX), NoOp)
+    );
+    assert!(x.clone().with_precision(2).value() <= x);
+    // a mode that rounds up there overflows to the infinity, as it does in arithmetic
+    let x = FBig::<Up, 2>::from_parts(IBig::from(3), isize::MAX - 2);
+    assert_eq!(x.with_precision(1), Inexact(FBig::INFINITY.with_precision(1).value(), AddOne));
+    let x = FBig::<HalfEven, 2>::from_parts(IBig::from(5), isize::MAX - 2);
+    assert!(x.with_precision(2).value().repr().is_infinite());
+    // an unchanged precision, or a wider one, leaves any finite value alone
+    let x = FBig::<Zero, 2>::from_parts(IBig::from(3), isize::MAX);
+    assert_eq!(x.clone().with_precision(2), Exact(x.clone()));
+    assert_eq!(x.clone().with_precision(7).value().repr(), x.repr());
+}

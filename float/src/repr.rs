@@ -138,8 +138,7 @@ const fn negate_special_exponent(exp: isize) -> isize {
 /// or when the rounded significand's trailing zero digits fold (in `normalize`)
 /// across the sentinel. Such a value is not a valid finite result
 /// ([`Repr::check_finite_exponent`] rejects it), so callers with an error
-/// channel can map it to [`FpError::Overflow`],
-/// and callers without one (`with_precision`) return the proper infinity.
+/// channel can map it to [`FpError::Overflow`].
 pub(crate) fn rounded_to_repr<const B: Word>(
     significand: IBig,
     exponent: isize,
