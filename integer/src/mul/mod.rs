@@ -257,7 +257,10 @@ pub fn memory_requirement_up_to(total_len: usize, smaller_len: usize) -> Layout 
 fn memory_chain_budget(a: usize, b: usize) -> Layout {
     debug_assert!(a >= b);
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
-    if b >= threshold::ntt_asym_min() && a >= threshold::ntt_asym_ratio().saturating_mul(b) {
+    if b >= threshold::ntt_asym_min()
+        && a >= threshold::ntt_asym_ratio().saturating_mul(b)
+        && ntt::fits(a, b)
+    {
         // The chunked NTT budget is expressed over the full product and
         // covers its internal chunk pipelines and their tails.
         return ntt::memory_requirement_up_to(a + b, b);
@@ -288,6 +291,9 @@ fn memory_chain_budget(a: usize, b: usize) -> Layout {
         // covers the chunk pipelines and their tails.
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
+            if !ntt::fits(a, b) {
+                return pieces_budget(a, b, ntt::MAX_OPERAND_LEN);
+            }
             ntt::memory_requirement_up_to(a + b, b)
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
@@ -305,6 +311,33 @@ fn memory_chain_budget(a: usize, b: usize) -> Layout {
     // chunk and the tail re-dispatch sequentially over the same scratch,
     // so the tail needs max(own, tail), not the sum.
     chunk_tail_budget_max(a, b, ladder)
+}
+
+/// Budget of [`add_signed_mul_in_pieces`] for operands of `a >= b` words: the piece
+/// products run sequentially over the same scratch.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+fn pieces_budget(a: usize, b: usize, piece_len: usize) -> Layout {
+    debug_assert!(a >= b && piece_len > 0);
+    if b <= piece_len {
+        // chunks of `piece_len` words of the long operand, then the tail, against `b`
+        let chunk = if a >= piece_len {
+            memory_chain_budget(piece_len, b)
+        } else {
+            memory::zero_layout()
+        };
+        let tail = a % piece_len;
+        let tail = if tail == 0 {
+            memory::zero_layout()
+        } else {
+            memory_chain_budget(tail.max(b), tail.min(b))
+        };
+        memory::max_layout(chunk, tail)
+    } else {
+        memory::max_layout(
+            pieces_budget(a, piece_len, piece_len),
+            memory_chain_budget(a, b - piece_len),
+        )
+    }
 }
 
 /// Maximum of three layouts (word counts).
@@ -366,7 +399,9 @@ fn band_budget_envelope(total: usize) -> Layout {
 ///   [`band_budget_envelope`];
 /// * transform-based shapes pay a budget that is monotone in their total, plus (when the
 ///   long operand is processed in chunks, i.e. it is at least 3 times the short one) the
-///   budget of the tail `(b, a % b)`, whose total is below `2 * b <= total / 2`.
+///   budget of the tail `(b, a % b)`, whose total is below `2 * b <= total / 2`;
+/// * shapes beyond the largest transform are split into pieces multiplied one after the
+///   other ([`pieces_budget`]), each of which is again a shape within the caps.
 pub(crate) fn memory_chain_budget_envelope(total_cap: usize, smaller_cap: usize) -> Layout {
     let cap = smaller_cap.min(total_cap / 2);
     if cap == 0 {
@@ -473,6 +508,7 @@ pub fn add_signed_mul<'a>(
     #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
     if b.len() >= threshold::ntt_asym_min()
         && a.len() >= threshold::ntt_asym_ratio().saturating_mul(b.len())
+        && ntt::fits(a.len(), b.len())
     {
         return ntt::add_signed_mul(c, sign, a, b, memory);
     }
@@ -495,7 +531,11 @@ pub fn add_signed_mul<'a>(
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            ntt::add_signed_mul(c, sign, a, b, memory)
+            if ntt::fits(a.len(), b.len()) {
+                ntt::add_signed_mul(c, sign, a, b, memory)
+            } else {
+                add_signed_mul_in_pieces(c, sign, a, b, ntt::MAX_OPERAND_LEN, memory)
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
@@ -503,6 +543,49 @@ pub fn add_signed_mul<'a>(
             unreachable!("NTT unavailable on 16-bit targets");
         }
     }
+}
+
+/// c += sign * a * b for `a.len() >= b.len()`, as a sum of products of pieces of at
+/// most `piece_len` words of each operand.
+///
+/// This is how operands beyond the largest transform ([`ntt::MAX_OPERAND_LEN`]) are
+/// multiplied: the long operand is cut into chunks of `piece_len` words, and so is the
+/// short one when it is longer than that. Every piece product goes back through
+/// [`add_signed_mul`]. The scratch space is given by [`pieces_budget`].
+///
+/// Returns carry.
+#[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+#[must_use]
+fn add_signed_mul_in_pieces(
+    c: &mut [Word],
+    sign: Sign,
+    a: &[Word],
+    b: &[Word],
+    piece_len: usize,
+    memory: &mut Memory,
+) -> SignedWord {
+    debug_assert!(a.len() >= b.len() && c.len() == a.len() + b.len() && piece_len > 0);
+
+    if b.len() <= piece_len {
+        // (a closure, as the dispatcher ties the lifetimes of its two operands together)
+        #[allow(clippy::redundant_closure)]
+        return helpers::add_signed_mul_split_into_chunks(
+            c,
+            sign,
+            a,
+            b,
+            piece_len,
+            memory,
+            |c, sign, a, b, memory| add_signed_mul(c, sign, a, b, memory),
+        );
+    }
+
+    // c += a * b_lo, then c += a * b_hi * Word^piece_len
+    let (b_lo, b_hi) = b.split_at(piece_len);
+    let mid = a.len() + piece_len;
+    let carry = add_signed_mul_in_pieces(&mut c[..mid], sign, a, b_lo, piece_len, memory);
+    let carry = crate::add::add_signed_word_in_place(&mut c[mid..], carry);
+    carry + add_signed_mul(&mut c[piece_len..], sign, a, b_hi, memory)
 }
 
 /// c += sign * a * b with len(a) == len(b)
@@ -530,7 +613,11 @@ pub fn add_signed_mul_same_len(
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            ntt::add_signed_mul_same_len(c, sign, a, b, memory)
+            if ntt::fits(n, n) {
+                ntt::add_signed_mul_same_len(c, sign, a, b, memory)
+            } else {
+                add_signed_mul_in_pieces(c, sign, a, b, ntt::MAX_OPERAND_LEN, memory)
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
@@ -1064,6 +1151,100 @@ mod threshold_tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Operands beyond the largest transform are multiplied piecewise. The real piece
+    /// length is out of reach of a unit test, so the splitting (and its scratch budget)
+    /// is exercised with short pieces.
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+    #[test]
+    fn test_mul_in_pieces() {
+        let shapes = [
+            (1, 1),
+            (5, 5),
+            (6, 5),
+            (7, 3),
+            (16, 16),
+            (17, 16),
+            (33, 32),
+            (40, 7),
+            (64, 64),
+            (65, 64),
+            (100, 37),
+            (131, 130),
+            (300, 150),
+        ];
+        for piece_len in [1, 2, 5, 16, 33, 64, 1000] {
+            for (la, lb) in shapes {
+                // all ones (the longest carry chains) and an irregular pattern
+                for (seed, step) in [(Word::MAX, 0), (0x9e37 as Word, 0x79b9 as Word)] {
+                    let fill = |len: usize, mult: Word| -> Vec<Word> {
+                        (0..len)
+                            .map(|i| {
+                                seed.wrapping_add(step.wrapping_mul(mult.wrapping_mul(i as Word)))
+                            })
+                            .collect()
+                    };
+                    let (a, b) = (fill(la, 3), fill(lb, 7));
+                    for sign in [Positive, crate::Sign::Negative] {
+                        let mut expected = fill(la + lb, 11);
+                        let mut c = expected.clone();
+
+                        let mut allocation =
+                            crate::memory::MemoryAllocation::new(memory_chain_budget(la, lb));
+                        let expected_carry =
+                            add_signed_mul(&mut expected, sign, &a, &b, &mut allocation.memory());
+
+                        let mut allocation =
+                            crate::memory::MemoryAllocation::new(pieces_budget(la, lb, piece_len));
+                        let carry = add_signed_mul_in_pieces(
+                            &mut c,
+                            sign,
+                            &a,
+                            &b,
+                            piece_len,
+                            &mut allocation.memory(),
+                        );
+                        assert_eq!(
+                            (carry, c),
+                            (expected_carry, expected),
+                            "la={la} lb={lb} piece_len={piece_len}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
+    #[test]
+    fn test_transform_capacity() {
+        use crate::arch::ntt::MAX_LOG_N;
+
+        // the pieces of an oversized product always fit a single convolution
+        let max = ntt::MAX_OPERAND_LEN;
+        assert!(ntt::fits(max, max));
+        assert!(ntt::fits(max, 1));
+        assert!(ntt::fits(max, max / 3));
+        if MAX_LOG_N < usize::BITS - 2 {
+            // one coefficient more than the largest transform (operands of 33554433
+            // words each with 32-bit words) does not fit, and neither does a chunked
+            // convolution above a third of the largest transform
+            assert!(ntt::fits(max + 1, max));
+            assert!(!ntt::fits(max + 2, max));
+            assert!(!ntt::fits(max + 1, max + 1));
+            assert!(ntt::fits(8 * max, max / 2));
+            assert!(!ntt::fits(8 * max, max));
+            assert!(!ntt::fits(3 * max, max * 3 / 4));
+        }
+        if Word::BITS == 32 && usize::BITS == 64 {
+            // such a product is budgeted piecewise (the scratch of the largest transform
+            // is only addressable with 32-bit words on a 64-bit host)
+            assert_eq!(
+                memory_chain_budget(max + 1, max + 1).size(),
+                pieces_budget(max + 1, max + 1, max).size()
+            );
         }
     }
 }
