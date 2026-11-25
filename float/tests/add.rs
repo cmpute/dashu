@@ -660,4 +660,112 @@ mod triage {
         let diff = &F::from_parts(IBig::from(-1), e) - &F::from_parts(IBig::from(9), e);
         assert!(diff.repr().is_infinite() && diff.sign() == Sign::Negative);
     }
+
+    /// An integer operand (a primitive, `UBig` or `IBig`) is exact: next to an
+    /// unlimited-precision float the result stays exact and unlimited. The integer used to
+    /// bring the number of its digits as a precision, which — "unlimited" yielding to any
+    /// limited precision — became the precision of the result: `12.34 + 1u8` was `10` (F41).
+    /// The operators of `*` and `/` share the conversion and are covered here too.
+    #[test]
+    fn test_integer_operand_keeps_unlimited_precision() {
+        use dashu_float::CachedFBig;
+        use dashu_int::UBig;
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        #[track_caller]
+        fn same<R: Round, const B: Word>(got: FBig<R, B>, want: &FBig<R, B>) {
+            assert_eq!(got.repr(), want.repr());
+            assert_eq!(got.precision(), want.precision());
+        }
+
+        fn check<R: Round, const B: Word>() {
+            let exact = Context::<R>::new(0);
+            let x = FBig::<R, B>::from_repr(repr(1234, -2), exact);
+            let cx = CachedFBig::with_cache(x.repr().clone(), exact);
+
+            macro_rules! check_integer {
+                ($n:expr) => {{
+                    let n = $n;
+                    // the same integer as an exact float
+                    let f = FBig::<R, B>::from_repr(Repr::from(IBig::from(n.clone())), exact);
+                    let (sum, diff, rdiff, prod) = (&x + &f, &x - &f, &f - &x, &x * &f);
+                    assert_eq!(sum.precision(), 0);
+
+                    same(&x + n.clone(), &sum);
+                    same(x.clone() + &n, &sum);
+                    same(n.clone() + &x, &sum);
+                    same(&n + x.clone(), &sum);
+                    same(&x - n.clone(), &diff);
+                    same(x.clone() - &n, &diff);
+                    same(n.clone() - &x, &rdiff);
+                    same(&n - x.clone(), &rdiff);
+                    same(&x * n.clone(), &prod);
+                    same(n.clone() * &x, &prod);
+                    let mut y = x.clone();
+                    y += n.clone();
+                    same(y, &sum);
+                    let mut y = x.clone();
+                    y -= &n;
+                    same(y, &diff);
+                    let mut y = x.clone();
+                    y *= n.clone();
+                    same(y, &prod);
+
+                    // the cached wrapper mirrors the operators
+                    same((&cx + n.clone()).into_fbig(), &sum);
+                    same((n.clone() - &cx).into_fbig(), &rdiff);
+                    same((cx.clone() * &n).into_fbig(), &prod);
+                    let mut cy = cx.clone();
+                    cy -= n.clone();
+                    same(cy.into_fbig(), &diff);
+
+                    // a limited precision is combined with the digits of the integer, as
+                    // it is for the integer converted with `From`
+                    for precision in [20usize, 50, 100, 500] {
+                        let xp = x.clone().with_precision(precision).value();
+                        let fp = FBig::<R, B>::from(n.clone());
+                        same(&xp + n.clone(), &(&xp + &fp));
+                        same(n.clone() - &xp, &(&fp - &xp));
+                        same(&xp * n.clone(), &(&xp * &fp));
+                        same(&xp / 7u8, &(&xp / FBig::<R, B>::from(7u8)));
+                        assert_eq!((&xp + n.clone()).precision(), precision.max(fp.precision()));
+                    }
+                }};
+            }
+            check_integer!(0u8);
+            check_integer!(1u8);
+            check_integer!(5i32);
+            check_integer!(-77i64);
+            check_integer!(usize::MAX);
+            check_integer!(u128::MAX);
+            check_integer!(i128::MIN);
+            check_integer!(UBig::from(123456789u32).pow(9));
+            check_integer!(-IBig::from(987654321u32).pow(7));
+            same(&x + 0u8, &x);
+
+            // A quotient has no unlimited-precision form in general: dividing an
+            // unlimited-precision float by an integer panics like dividing it by an
+            // unlimited-precision float does (it used to round to the digits of the integer).
+            let four = FBig::<R, B>::from_repr(repr(4, 0), exact);
+            assert!(catch_unwind(AssertUnwindSafe(|| &x / &four)).is_err());
+            assert!(catch_unwind(AssertUnwindSafe(|| &x / 4u8)).is_err());
+            assert!(catch_unwind(AssertUnwindSafe(|| 4u8 / &x)).is_err());
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 10>();
+        check::<mode::Up, 3>();
+
+        // the reported case
+        use core::str::FromStr;
+        let x = dashu_float::DBig::from_str("12.34").unwrap();
+        let x = x.with_precision(0).value();
+        let sum = &x + 1u8;
+        assert_eq!(sum, dashu_float::DBig::from_str("13.34").unwrap());
+        assert_eq!(sum.precision(), 0);
+        assert_eq!(1u8 - &x, dashu_float::DBig::from_str("-11.34").unwrap());
+        let mut y = x.clone();
+        y += 5i32;
+        assert_eq!(y, dashu_float::DBig::from_str("17.34").unwrap());
+    }
 }

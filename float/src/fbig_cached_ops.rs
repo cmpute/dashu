@@ -191,28 +191,32 @@ macro_rules! impl_cached_binop_one_way_with_primitive {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: $target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op(rhs)
             }
         }
         impl<'l, R: Round, const B: Word> $Op<$target> for &'l CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: $target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op(rhs)
             }
         }
         impl<'r, R: Round, const B: Word> $Op<&'r $target> for CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &$target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op(rhs)
             }
         }
         impl<'l, 'r, R: Round, const B: Word> $Op<&'r $target> for &'l CachedFBig<R, B> {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &$target) -> Self::Output {
-                self.$op(FBig::<R, B>::from(rhs.clone()))
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op(rhs)
             }
         }
     };
@@ -224,28 +228,32 @@ macro_rules! impl_cached_binop_reverse_with_primitive {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self));
+                lhs.$op(rhs)
             }
         }
         impl<'l, R: Round, const B: Word> $Op<CachedFBig<R, B>> for &'l $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$op(rhs)
             }
         }
         impl<'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self));
+                lhs.$op(rhs)
             }
         }
         impl<'l, 'r, R: Round, const B: Word> $Op<&'r CachedFBig<R, B>> for &'l $target {
             type Output = CachedFBig<R, B>;
             #[inline]
             fn $op(self, rhs: &CachedFBig<R, B>) -> Self::Output {
-                FBig::<R, B>::from(self.clone()).$op(rhs)
+                let lhs = rhs.fbig.integer_operand(FBig::<R, B>::from(self.clone()));
+                lhs.$op(rhs)
             }
         }
     };
@@ -256,13 +264,15 @@ macro_rules! impl_cached_binop_assign_with_primitive {
         impl<R: Round, const B: Word> $OpAssign<$target> for CachedFBig<R, B> {
             #[inline]
             fn $op_assign(&mut self, rhs: $target) {
-                self.$op_assign(FBig::<R, B>::from(rhs));
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs));
+                self.$op_assign(rhs);
             }
         }
         impl<R: Round, const B: Word> $OpAssign<&$target> for CachedFBig<R, B> {
             #[inline]
             fn $op_assign(&mut self, rhs: &$target) {
-                self.$op_assign(FBig::<R, B>::from(rhs.clone()));
+                let rhs = self.fbig.integer_operand(FBig::<R, B>::from(rhs.clone()));
+                self.$op_assign(rhs);
             }
         }
     };

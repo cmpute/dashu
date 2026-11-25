@@ -226,6 +226,23 @@ impl<R: Round, const B: Word> FBig<R, B> {
         self.repr
     }
 
+    /// Prepare `integer` — an integer operand converted with [`From`], whose precision is its
+    /// number of digits — as the other operand of a binary operator on `self`.
+    ///
+    /// The result of a binary operator has the larger of the two precisions, and "unlimited"
+    /// (0) yields to any limited one, which is how exact constants adopt the precision of
+    /// the value they are combined with. An integer is exact as well: next to an
+    /// unlimited-precision float its digit count must not become the precision of the
+    /// result (`12.34 + 1` would be rounded to the single digit `10`), so it is made
+    /// unlimited too.
+    #[inline]
+    pub(crate) fn integer_operand(&self, mut integer: Self) -> Self {
+        if !self.context.is_limited() {
+            integer.context = self.context;
+        }
+        integer
+    }
+
     /// Convert raw parts (significand, exponent) into a float number.
     ///
     /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
