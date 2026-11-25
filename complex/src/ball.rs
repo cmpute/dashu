@@ -209,6 +209,63 @@ impl<const B: Word> CBall<B> {
         })
     }
 
+    /// `‖self‖` as a ball, with a lower bound of the true modulus (which drives the folds of
+    /// [`log`](Self::log)).
+    fn modulus<R: ErrorBounds>(
+        &self,
+        fctx: &FloatCtxt<R>,
+        prec: usize,
+    ) -> Result<(Ball<B>, Mag), FpError> {
+        // ‖z‖ with the hypot fold (the Euclidean norm is 1-Lipschitz: |Δ‖z‖| ≤ |δx| + |δy|)
+        let mut r = kernel_ball(fctx.hypot(&self.re.mid, &self.im.mid)?, prec, |mid| {
+            hypot_is_exact(mid, &self.re.mid, &self.im.mid, prec)
+        });
+        r.add_error(self.re.rad.add(&self.im.rad));
+
+        // A lower bound of the true ‖z‖ (drives both folds). The *bracket width* must not be
+        // taken from `Mag::from_repr`/`from_repr_lower`: at base ≠ 2 the `B^e` scaling enters
+        // the Mag only through the fixed-point `log₂B` bracket, so the two bounds of an exact
+        // mid can sit a factor ~2 apart — a value-space `hi − lo` there would inflate the ln
+        // fold to O(1) (retrying forever). The `rad` side is a true Mag (1-word tight), so the
+        // fold keeps the bracket on `rad` alone:
+        // |Δln| ≤ ln((m+rad)/(m−rad)) ≤ 2·rad/(m−rad), with `lo` a lower bound of `m−rad`.
+        let lo = Mag::from_repr_lower(&r.mid).sub_down(&r.rad);
+        Ok((r, lo))
+    }
+
+    /// `ln r` for the modulus ball `r` with the lower bound `lo` (see
+    /// [`modulus`](Self::modulus)).
+    fn ln_of_modulus<R: ErrorBounds>(
+        r: &Ball<B>,
+        lo: &Mag,
+        fctx: &FloatCtxt<R>,
+        prec: usize,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Result<Ball<B>, FpError> {
+        let ln_fold = if lo.is_zero() {
+            Mag::INFINITY
+        } else {
+            r.rad.mul2().div(lo)
+        };
+        // ln r is exact only at r = 1
+        let mut ln_r = kernel_ball(fctx.ln(&r.mid, reborrow_cache(&mut cache))?, prec, |_| {
+            r.mid == Repr::one()
+        });
+        ln_r.add_error(ln_fold);
+        Ok(ln_r)
+    }
+
+    /// `ln‖self‖`, the real part of [`log`](Self::log), for an exact entry.
+    pub(crate) fn ln_abs<R: ErrorBounds>(
+        &self,
+        fctx: &FloatCtxt<R>,
+        prec: usize,
+        cache: Option<&mut ConstCache>,
+    ) -> Result<Ball<B>, FpError> {
+        let (r, lo) = self.modulus(fctx, prec)?;
+        Self::ln_of_modulus(&r, &lo, fctx, prec, cache)
+    }
+
     /// `log(self) = (ln‖self‖, arg self)`: the float `hypot`/`ln`/`atan2` kernels evaluate on
     /// the midpoints; the input radii propagate through the exact inequalities
     /// `|Δln r| ≤ ln(hi/lo) ≤ (hi−lo)/lo` (monotonicity + `ln(1+t) ≤ t`, `[lo, hi]` the input
@@ -239,25 +296,9 @@ impl<const B: Word> CBall<B> {
             });
         }
 
-        // ‖z‖ with the hypot fold (the Euclidean norm is 1-Lipschitz: |Δ‖z‖| ≤ |δx| + |δy|)
-        let mut r = kernel_ball(fctx.hypot(&self.re.mid, &self.im.mid)?, prec, |mid| {
-            hypot_is_exact(mid, &self.re.mid, &self.im.mid, prec)
-        });
-        r.add_error(self.re.rad.add(&self.im.rad));
+        let (r, lo) = self.modulus(fctx, prec)?;
+        let ln_r = Self::ln_of_modulus(&r, &lo, fctx, prec, reborrow_cache(&mut cache))?;
 
-        // A lower bound of the true ‖z‖ (drives both folds). The *bracket width* must not be
-        // taken from `Mag::from_repr`/`from_repr_lower`: at base ≠ 2 the `B^e` scaling enters
-        // the Mag only through the fixed-point `log₂B` bracket, so the two bounds of an exact
-        // mid can sit a factor ~2 apart — a value-space `hi − lo` there would inflate the ln
-        // fold to O(1) (retrying forever). The `rad` side is a true Mag (1-word tight), so the
-        // fold keeps the bracket on `rad` alone:
-        // |Δln| ≤ ln((m+rad)/(m−rad)) ≤ 2·rad/(m−rad), with `lo` a lower bound of `m−rad`.
-        let lo = Mag::from_repr_lower(&r.mid).sub_down(&r.rad);
-        let ln_fold = if lo.is_zero() {
-            Mag::INFINITY
-        } else {
-            r.rad.mul2().div(&lo)
-        };
         // The argument fold is the *componentwise* gradient bound, not the joint 1-Lipschitz
         // `(rad_x + rad_y)/lo`: `∇arg = (−y, x)/‖z‖²`, so along the input segment
         // `|Δarg| ≤ (|y|·rad_x + |x|·rad_y)/lo²` (`lo²` a proven lower bound of `‖z‖²` —
@@ -276,12 +317,6 @@ impl<const B: Word> CBall<B> {
                 .add(&self.re.mag().mul(&self.im.rad))
                 .div(&lo2)
         };
-
-        // ln r is exact only at r = 1
-        let mut ln_r = kernel_ball(fctx.ln(&r.mid, reborrow_cache(&mut cache))?, prec, |_| {
-            r.mid == Repr::one()
-        });
-        ln_r.add_error(ln_fold);
 
         // the angle is exact only on the positive real axis (0); every other axis value is a
         // multiple of π/2

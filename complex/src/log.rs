@@ -1,15 +1,68 @@
 //! Complex natural logarithm `log(z) = ln|z| + i·arg(z)` (principal branch; cut on `]−∞, 0]`).
 
-use crate::ball::CBall;
+use crate::ball::{is_zero, kernel_ball, CBall};
 use crate::cbig::CBig;
-use crate::repr::{combine_parts, exact, reborrow_cache, CfpResult, Context};
+use crate::mul::sum_of_products;
+use crate::repr::{combine_parts, combine_results, exact, reborrow_cache, CfpResult, Context};
+use crate::wide::round_sticky;
 use dashu_base::{Approximation, Sign};
 use dashu_float::round::ErrorBounds;
-use dashu_float::{ConstCache, Context as FloatCtxt, FBig, Repr};
-use dashu_int::Word;
+use dashu_float::{Ball, ConstCache, Context as FloatCtxt, FBig, FpError, FpResult, Repr};
+use dashu_int::{IBig, Word};
 
 /// Guard digits (base-B) for `log`. Composes `hypot` (for `|z|`), `ln`, and `atan2`.
 const LOG_GUARD: usize = 14;
+
+/// The most terms of the series `ln(1 + s) = s − s²/2 + s³/3 − …` that [`ln_1p_ball`] sums
+/// itself.
+const LN_1P_SERIES_TERMS: i128 = 16;
+
+/// `ln(1 + s)` for a nonzero ball `s` with `−1/2 <= s < 1`, at working precision `prec`.
+///
+/// A small `s` is summed through its series, each step a tracked ball operation. The value
+/// is then `s` times a few simple fractions, which in a base where those are not
+/// representable (`1/2` in an odd base) sits next to a rounding tie of every working
+/// precision until the next term shows: a ball follows that at no cost, where a correctly
+/// rounded kernel has to resolve the tie at each working precision first. Otherwise the
+/// float `ln_1p` kernel runs on the midpoint.
+fn ln_1p_ball<R: ErrorBounds, const B: Word>(
+    s: &Ball<B>,
+    fctx: &FloatCtxt<R>,
+    prec: usize,
+    cache: Option<&mut ConstCache>,
+) -> Result<Ball<B>, FpError> {
+    // `|s.mid| < B^top`
+    let top = s.mid.exponent() as i128 + s.mid.digits_ub() as i128;
+    // the terms from `s^(n+1)` on are below the working precision relative to `s`
+    let terms = if top < 0 {
+        (prec as i128 + 1 - top - 1) / -top
+    } else {
+        i128::MAX
+    };
+    if terms <= LN_1P_SERIES_TERMS {
+        let int = |n: i128| Ball::<B>::exact(Repr::new(IBig::from(n), 0));
+        let one = int(1);
+        // Horner: s·(1 − s·(1/2 − s·(1/3 − … s/n)))
+        let mut acc = one.div(&int(terms), prec)?;
+        for j in (1..terms).rev() {
+            acc = one.div(&int(j), prec)?.sub(&s.mul(&acc, prec)?, prec)?;
+        }
+        let mut ln = s.mul(&acc, prec)?;
+        // the tail: |Σ_{j>n} (−s)^j/j| ≤ |s|^(n+1)·(1/(n+1))/(1 − |s|) ≤ |s|^(n+1)
+        let bound = s.mag();
+        let mut tail = bound;
+        for _ in 0..terms {
+            tail = tail.mul(&bound);
+        }
+        ln.add_error(tail);
+        return Ok(ln);
+    }
+    // ln(1 + s) is exact only at s = 0
+    let mut ln = kernel_ball(fctx.ln_1p(&s.mid, cache)?, prec, |_| is_zero(&s.mid));
+    // |Δln(1 + s)| ≤ rad/(1 + s − rad) ≤ 4·rad, as 1 + s ≥ 1/2 and rad is far below 1/4
+    ln.add_error(s.rad.mul2().mul2());
+    Ok(ln)
+}
 
 impl<R: ErrorBounds> Context<R> {
     /// Complex natural logarithm under this context (context layer). `log z = ln|z| + i·arg(z)`,
@@ -51,25 +104,118 @@ impl<R: ErrorBounds> Context<R> {
                 FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
             ));
         }
-        // An infinite input is a terminal value: it is not short-circuited here (the `log(0)`
-        // shortcut above is exact and needs no precision) — it falls through and the float `hypot`
-        // rejects it, panicking at the convenience layer.
+        if z.is_infinite() {
+            // An infinite input is a terminal value and is not accepted (the convenience layer
+            // panics).
+            return Err(FpError::InfiniteInput);
+        }
+        // The `log(0)` shortcut above is exact and needs no precision; the rest is a
+        // limited-precision technique.
+        self.assert_limited();
 
-        // `ln|z| + i·arg(z)` through the ball composition (`CBall::log`): the float
-        // `hypot`/`ln`/`atan2` kernels run on the midpoints, and the input radii propagate
-        // through the exact inequalities `|Δln r| ≤ (hi−lo)/lo` and `|Δarg| ≤ ‖δz‖/lo` — the
-        // old hand-written `B^{1-pw}` term, which priced `hypot`'s propagation near `|z| = 1`
-        // unconditionally, falls out of the fold at the same order there and far tighter
-        // everywhere else. The Ziv driver asserts a limited context.
+        // The two parts are independent real functions of `z`, each rounded once.
+        //
+        // `arg z` is a single real kernel, correctly rounded by the float layer (which knows
+        // the closed forms next to the axes — `atan2(y, 1) = y − …` for a tiny `y` — that a
+        // composition could only certify at a working precision proportional to the exponent).
+        let im = self
+            .float()
+            .atan2(z.im(), z.re(), reborrow_cache(&mut cache));
+        let re = self.ln_abs(z, &mut cache);
+        combine_results(re, im)
+    }
+
+    /// `ln|z|` for a finite nonzero `z`, correctly rounded.
+    fn ln_abs<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> FpResult<FBig<R, B>> {
+        if let Some(re) = self.ln_abs_near_one(z, cache) {
+            return re;
+        }
+        // `ln(hypot(x, y))` through the ball composition: the float `hypot`/`ln` kernels run
+        // on the midpoints and the modulus' rounding propagates through the exact inequality
+        // `|Δln r| ≤ (hi−lo)/lo`.
         let p = self.precision();
-        let [re, im] = self.ziv(LOG_GUARD, |guard| {
+        let [re] = self.ziv::<B, 1>(LOG_GUARD, |guard| {
             let pw = p + guard;
             let gctx = FloatCtxt::<R>::new(pw);
             let out =
-                CBall::from_parts(z.re(), z.im(), pw).log(&gctx, pw, reborrow_cache(&mut cache))?;
-            Ok(out.to_parts_radius(&gctx))
+                CBall::from_parts(z.re(), z.im(), pw).ln_abs(&gctx, pw, reborrow_cache(cache))?;
+            Ok([out.to_value_radius(&gctx)])
         })?;
-        Ok(combine_parts(re, im))
+        Ok(re)
+    }
+
+    /// `ln|z| = ½·ln(1 + s)` with `s = x² + y² − 1`, for a modulus near 1 (`None` otherwise).
+    ///
+    /// Next to the unit circle `ln(hypot(x, y))` loses everything to the rounding of the
+    /// modulus: `hypot(1, 2⁻ᵏ)` is `1` at any working precision below `2k` digits. Here `s` is
+    /// instead formed exactly and rounded once, so it keeps its relative accuracy however
+    /// small it is, and `ln_1p` does the rest.
+    ///
+    /// When `s` is exactly representable and tiny, `½·ln(1 + s) = s/2 − s²/4 + …` is the
+    /// closed form `s/2` (representable in an even base) displaced downwards by an amount
+    /// that the precision cannot show, and is rounded from that directly — no working
+    /// precision short of the exponent of `s²` would certify which side of `s/2` it is on.
+    fn ln_abs_near_one<const B: Word>(
+        &self,
+        z: &CBig<R, B>,
+        cache: &mut Option<&mut ConstCache>,
+    ) -> Option<FpResult<FBig<R, B>>> {
+        let p = self.precision();
+        let fctx = self.float();
+        let (x, y) = (z.re(), z.im());
+        // `|v| < B^top(v)`
+        let top = |v: &Repr<B>| v.exponent() as i128 + v.digits_ub() as i128;
+        if top(x) > 1 || top(y) > 1 {
+            return None; // |z| >= B
+        }
+        let one = Repr::one();
+        let terms = [
+            (x, x, Sign::Positive),
+            (y, y, Sign::Positive),
+            (&one, &one, Sign::Negative),
+        ];
+        let s = match sum_of_products(&FloatCtxt::<R>::new(p + LOG_GUARD), &terms) {
+            Ok(s) => s,
+            // `s`, and with it `ln|z| ≈ s/2`, is below the exponent range
+            Err(e) => return Some(Err(e)),
+        };
+        let exact = matches!(s, Approximation::Exact(_));
+        let s = s.value().into_repr();
+        if s.significand().is_zero() {
+            // |z| = 1 exactly: ln 1 = +0 under every mode
+            return Some(Ok(Approximation::Exact(FBig::from_repr(Repr::zero(), fctx))));
+        }
+        // `1 + s` has to stay away from zero: `s < 1`, and `s > −1/B` when negative
+        let bound = if s.sign() == Sign::Negative { -1 } else { 0 };
+        if top(&s) > bound {
+            return None;
+        }
+
+        if exact && B % 2 == 0 && s.exponent() > isize::MIN + 2 {
+            // v = s/2, and |ln(1 + s)/2 − v| <= s²/2 = 2v² < B^(2·top(v) + 1) has to be
+            // invisible next to `v` padded to `p + 1` digits (see `round_sticky`)
+            let v = Repr::<B>::new(s.significand() * IBig::from(B / 2), s.exponent() - 1);
+            let digits = v.digits() as i128;
+            let pad = (p as i128 + 1 - digits).max(0);
+            if v.exponent() as i128 + 2 * digits + pad + 3 <= 0 {
+                return Some(round_sticky(&fctx, &v, Sign::Negative));
+            }
+        }
+
+        let part = self.ziv::<B, 1>(LOG_GUARD, |guard| {
+            let pw = p + guard;
+            let gctx = FloatCtxt::<R>::new(pw);
+            // `s` rounded once from the exact sum: its flag is that of the exact value
+            let s = kernel_ball(sum_of_products(&gctx, &terms)?, pw, |_| true);
+            let ln = ln_1p_ball(&s, &gctx, pw, reborrow_cache(cache))?;
+            let half = ln.div(&Ball::exact(Repr::new(IBig::from(2u8), 0)), pw)?;
+            Ok([half.to_value_radius(&gctx)])
+        });
+        Some(part.map(|[re]| re))
     }
 }
 

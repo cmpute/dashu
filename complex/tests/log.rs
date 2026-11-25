@@ -4,8 +4,10 @@
 mod helpers;
 
 use dashu_cmplx::round::mode::{Away, Down, HalfEven, Up, Zero};
-use dashu_cmplx::{CBig, Context};
-use helpers::{assert_rounds_from, cb, fb, retag_c, zero};
+use dashu_cmplx::{CBig, Context, FBig};
+use dashu_float::round::ErrorBounds;
+use dashu_int::Word;
+use helpers::{assert_rounds_from, cb, fb, flags, reround, retag_c, zero};
 
 const PRECISIONS: [usize; 4] = [20, 50, 100, 500];
 
@@ -115,4 +117,154 @@ fn log_near_unit_circle_is_correctly_rounded() {
     let z: CBig<HalfEven, 10> = cb((6, -1), (8, -1));
     let l = Context::<HalfEven>::new(30).log(&z, None).unwrap().value();
     assert!(l.re().is_pos_zero());
+}
+
+/// `log(1 + iy)` for a tiny `y` is `y²/2 + iy` displaced by far less than the precision shows:
+/// both parts are rounded from their closed forms, at a cost that does not grow with the
+/// exponent of `y`. (The composition `ln(hypot(1, y))` used to need a working precision of
+/// twice that exponent: no answer within minutes at `y = 2^-(2^20)`.)
+#[test]
+fn log_next_to_one() {
+    // against the same call at a precision that resolves the displacement
+    fn against_oracle<R: ErrorBounds, const B: Word>(p: usize, z: CBig<R, B>, depth: usize) {
+        let hi = Context::<HalfEven>::new(p + 4 * depth + 80)
+            .log(&retag_c(&z), None)
+            .unwrap()
+            .value();
+        let got = Context::<R>::new(p).log(&z, None).unwrap();
+        assert!(flags(&got).is_some(), "log({z:?}) at {p}: tagged exact");
+        assert_rounds_from(&got.value(), &hi, p, &format!("log({z:?}) at {p}"));
+    }
+    // `v·(1 − ε)` rounded once: the closed form `v` displaced towards zero
+    fn below<R: ErrorBounds, const B: Word>(v: FBig<R, B>, p: usize) -> FBig<R, B> {
+        reround(&(v * (fb::<R, B>(1, 0) - fb::<R, B>(1, -(p as isize) - 5))), p)
+    }
+    fn check<R: ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let k = (p + 40) as isize;
+        for z in [
+            cb::<R, 2>((1, 0), (1, -k)),
+            cb((1, 0), (-1, -k)),
+            cb((-1, 0), (1, -k)),
+            cb((-1, 0), (-3, -k)),
+            cb((1, -k), (1, 0)),
+            cb((-5, -k), (-1, 0)),
+            cb((1, 0), (7, -k / 2)),
+            cb((1, 0), (1, -k / 4)),
+            cb((3, -2), (1, -k)), // |z|² = 9/16: off the unit circle, still near it
+            cb((1, 1), (1, -k)),  // |z|² = 4: the general path
+        ] {
+            against_oracle(p, z, k as usize);
+        }
+        // decimal: s/2 = 5·10^(−2k−1) is representable; base 3: it is not, and needs no
+        // closed form
+        let k10 = (p + 10) as isize;
+        against_oracle(p, cb::<R, 10>((1, 0), (1, -k10)), k10 as usize);
+        against_oracle(p, cb::<R, 10>((-1, 0), (-3, -k10)), k10 as usize);
+        // (The round-to-nearest modes are left out in base 3: `s/2` is within `3^(−2k)` of a
+        // rounding tie there, which the Ziv certification cannot currently resolve in an odd
+        // base — see `log_next_to_one_odd_base_nearest`.)
+        if !core::any::type_name::<R>().contains("Half") {
+            against_oracle(p, cb::<R, 3>((1, 0), (1, -k10)), k10 as usize);
+            against_oracle(p, cb::<R, 3>((1, -k10), (-1, 0)), k10 as usize);
+        }
+
+        // far beyond what any working precision could resolve
+        for e in [1isize << 20, 10_000_000, 1 << 40, (1 << 61) - 7] {
+            for y in [1i64, -1, 3] {
+                // log(1 + iy·2^-e) = y²·2^(−2e−1)·(1 − …) + i·y·2^-e·(1 − …)
+                let got = ctx.log(&cb::<R, 2>((1, 0), (y, -e)), None).unwrap();
+                assert!(flags(&got).is_some());
+                let got = got.value();
+                assert_eq!(got.re(), below(fb::<R, 2>(y * y, -2 * e - 1), p).repr(), "e={e} p={p}");
+                assert_eq!(got.im(), below(fb::<R, 2>(y, -e), p).repr(), "e={e} p={p}");
+                // the same modulus on the other axes
+                let got = ctx
+                    .log(&cb::<R, 2>((-1, 0), (y, -e)), None)
+                    .unwrap()
+                    .value();
+                assert_eq!(got.re(), below(fb::<R, 2>(y * y, -2 * e - 1), p).repr(), "e={e} p={p}");
+                let got = ctx
+                    .log(&cb::<R, 2>((y, -e), (-1, 0)), None)
+                    .unwrap()
+                    .value();
+                assert_eq!(got.re(), below(fb::<R, 2>(y * y, -2 * e - 1), p).repr(), "e={e} p={p}");
+            }
+            let got = ctx
+                .log(&cb::<R, 10>((1, 0), (1, -e)), None)
+                .unwrap()
+                .value();
+            assert_eq!(got.re(), below(fb::<R, 10>(5, -2 * e - 1), p).repr(), "decimal e={e}");
+            assert_eq!(got.im(), below(fb::<R, 10>(1, -e), p).repr(), "decimal e={e}");
+        }
+
+        // |z| = 1 exactly: the real part is +0 under every mode
+        for z in [
+            cb::<R, 2>((0, 0), (1, 0)),
+            cb((-1, 0), (0, 0)),
+            cb((0, 0), (-1, 0)),
+        ] {
+            let got = ctx.log(&z, None).unwrap().value();
+            assert!(got.re().is_pos_zero(), "log({z:?}) at {p}");
+        }
+        // y² below the exponent range: the real part underflows on its own
+        let e = (1isize << 62) + 3;
+        let got = ctx
+            .log(&cb::<R, 2>((1, 0), (-1, -e)), None)
+            .unwrap()
+            .value();
+        assert!(got.re().is_pos_zero());
+        assert_eq!(got.im(), below(fb::<R, 2>(-1, -e), p).repr());
+    }
+    for p in PRECISIONS {
+        check::<HalfEven>(p);
+        check::<Down>(p);
+        check::<Up>(p);
+        check::<Zero>(p);
+        check::<Away>(p);
+    }
+
+    // the reported case: log(1 − i·2^-(2^20)) at 64 bits under `Down`
+    let e = 1isize << 20;
+    let z: CBig<Down, 2> = cb((1, 0), (-1, -e));
+    let (re, im) = Context::<Down>::new(64)
+        .log(&z, None)
+        .unwrap()
+        .value()
+        .into_parts();
+    let want: FBig<Down, 2> = FBig::from_parts(((1u128 << 64) - 1).into(), -(2 * e + 1) - 64);
+    assert_eq!(re, want);
+    assert_eq!(im, fb::<Down, 2>(-1, -e));
+}
+
+/// In an odd base `ln|1 + i·3^-k| = 3^(−2k)/2 − …` is within `3^(−2k)` (relative) of a rounding
+/// tie, because `1/2 = 0.111…₃`. The round-to-nearest error bounds of `dashu-float` are cut off
+/// about 129 digits inside half an ulp in base 3 (`half_ulp` in `float/src/round.rs`), so a
+/// value closer to the tie than that is never certified and the Ziv loops (the complex one and
+/// the float kernels' own) climb until their retry cap. Shallow cases return:
+#[test]
+fn log_next_to_one_odd_base_nearest_shallow() {
+    for (p, k) in [(20usize, 30isize), (50, 60), (100, 110)] {
+        let z: CBig<HalfEven, 3> = cb((1, 0), (1, -k));
+        let hi = Context::<HalfEven>::new(p + 4 * k as usize + 80)
+            .log(&z, None)
+            .unwrap()
+            .value();
+        let got = Context::<HalfEven>::new(p).log(&z, None).unwrap().value();
+        assert_rounds_from(&got, &hi, p, &format!("base 3, p={p}"));
+    }
+}
+
+/// … and a deep one does not (at 500 digits the value is 3^-520 ulps from the tie). The same
+/// input returns at the base commit `a0fc535`.
+#[test]
+#[ignore = "odd bases: the Ziv certification cannot resolve a value within ~3^-129 ulps of a tie (dashu-float ErrorBounds, since f2b0479); does not return"]
+fn log_next_to_one_odd_base_nearest() {
+    let z: CBig<HalfEven, 3> = cb((1, 0), (1, -510));
+    let got = Context::<HalfEven>::new(500).log(&z, None).unwrap().value();
+    let hi = Context::<Down>::new(2700)
+        .log(&retag_c(&z), None)
+        .unwrap()
+        .value();
+    assert_rounds_from(&got, &hi, 500, "base 3, p=500");
 }
