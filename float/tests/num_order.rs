@@ -371,3 +371,208 @@ fn test_ord_same_base_large_exponent() {
         assert_eq!(d.num_cmp(&DBig::from_parts(IBig::from(51), exp - 1)), Ordering::Less);
     }
 }
+
+/// The order of two numbers in different bases with large exponents does not need the powers
+/// `B^|e|` themselves: it used to take time and memory proportional to the exponents.
+#[test]
+fn test_ord_cross_base_large_exponent() {
+    use dashu_float::round::mode::{Down, Up, Zero};
+    use dashu_int::IBig;
+    type F<R, const B: dashu_int::Word> = dashu_float::FBig<R, B>;
+
+    // 10^-n lies between 2^-(m + 1) and 2^-m for m = floor(n * log2(10))
+    for n in [1000isize, 1_000_000, 1_000_000_000] {
+        let m = (n as f64 * core::f64::consts::LOG2_10).floor() as isize;
+        let d = DBig::from_parts(IBig::ONE, -n);
+        let above = FBin::from_parts(IBig::ONE, -m);
+        let below = FBin::from_parts(IBig::ONE, -(m + 1));
+        assert_eq!(d.num_cmp(&above), Ordering::Less, "{n}");
+        assert_eq!(above.num_cmp(&d), Ordering::Greater, "{n}");
+        assert_eq!(d.num_cmp(&below), Ordering::Greater, "{n}");
+        assert_eq!(below.num_cmp(&d), Ordering::Less, "{n}");
+        // negative numbers order the other way
+        assert_eq!((-d.clone()).num_cmp(&-above.clone()), Ordering::Greater, "{n}");
+        assert_eq!((-below.clone()).num_cmp(&-d.clone()), Ordering::Greater, "{n}");
+        assert_eq!((-d.clone()).num_cmp(&below), Ordering::Less, "{n}");
+        // and the same far above one
+        let d = DBig::from_parts(IBig::ONE, n);
+        let below = FBin::from_parts(IBig::ONE, m);
+        let above = FBin::from_parts(IBig::ONE, m + 1);
+        assert_eq!(d.num_cmp(&above), Ordering::Less, "{n}");
+        assert_eq!(d.num_cmp(&below), Ordering::Greater, "{n}");
+        assert_eq!(d.repr().num_cmp(below.repr()), Ordering::Greater, "{n}");
+    }
+
+    // The two binary neighbours of a decimal number, at the four standard precisions: they
+    // differ from it by less than one part in 2^precision.
+    for precision in [20usize, 50, 100, 500] {
+        for (signif, exp) in [
+            (3i32, -5000isize),
+            (7, 5000),
+            (3, -1_000_000),
+            (-123456789, 123_456_789),
+            (99, -1_000_000_000),
+            (-1, 4_000_000_000_000),
+        ] {
+            let d = F::<Zero, 10>::from_parts(signif.into(), exp);
+            let lower = d
+                .clone()
+                .with_rounding::<Down>()
+                .with_base_and_precision::<2>(precision)
+                .value();
+            let upper = d
+                .clone()
+                .with_rounding::<Up>()
+                .with_base_and_precision::<2>(precision)
+                .value();
+            assert!(lower < upper.clone().with_rounding::<Down>());
+            assert_eq!(d.num_cmp(&lower), Ordering::Greater, "{signif}e{exp} at {precision}");
+            assert_eq!(lower.num_cmp(&d), Ordering::Less, "{signif}e{exp} at {precision}");
+            assert_eq!(d.num_cmp(&upper), Ordering::Less, "{signif}e{exp} at {precision}");
+            assert_eq!(upper.num_cmp(&d), Ordering::Greater, "{signif}e{exp} at {precision}");
+        }
+    }
+
+    // other pairs of independent bases
+    let a = F::<Zero, 3>::from_parts(IBig::ONE, 1_000_000_000);
+    let m = (1e9 * 3f64.log2()).floor() as isize;
+    assert_eq!(a.num_cmp(&FBin::from_parts(IBig::ONE, m)), Ordering::Greater);
+    assert_eq!(a.num_cmp(&FBin::from_parts(IBig::ONE, m + 1)), Ordering::Less);
+    let b = F::<Zero, 6>::from_parts(5.into(), -1_000_000_000_000);
+    let c = F::<Zero, 12>::from_parts(5.into(), -1_000_000_000_000);
+    assert_eq!(b.num_cmp(&c), Ordering::Greater);
+    assert_eq!(c.num_cmp(&b), Ordering::Less);
+
+    // bases that are powers of one integer are compared exactly, equal numbers included
+    for e in [
+        1000isize,
+        1_000_000_000_000,
+        -1_000_000_000_000,
+        isize::MAX / 4,
+    ] {
+        let two = FBin::from_parts(5.into(), 3 * e);
+        let eight = F::<Zero, 8>::from_parts(5.into(), e);
+        assert_eq!(two.num_cmp(&eight), Ordering::Equal, "{e}");
+        assert_eq!(eight.num_cmp(&two), Ordering::Equal, "{e}");
+        assert_eq!((-two.clone()).num_cmp(&-eight.clone()), Ordering::Equal, "{e}");
+        assert_eq!(FBin::from_parts(5.into(), 3 * e + 1).num_cmp(&eight), Ordering::Greater);
+        assert_eq!(FBin::from_parts(5.into(), 3 * e - 1).num_cmp(&eight), Ordering::Less);
+        assert_eq!(FBin::from_parts(9.into(), 3 * e - 1).num_cmp(&eight), Ordering::Less);
+        assert_eq!(FBin::from_parts(11.into(), 3 * e - 1).num_cmp(&eight), Ordering::Greater);
+        // 5 * 2^(3e - 1) = 20 * 8^(e - 1), and 4^(3e) = 8^(2e)
+        let eight = F::<Zero, 8>::from_parts(20.into(), e - 1);
+        assert_eq!(FBin::from_parts(5.into(), 3 * e - 1).num_cmp(&eight), Ordering::Equal);
+        let four = F::<Zero, 4>::from_parts(7.into(), 3 * (e / 2));
+        let eight = F::<Zero, 8>::from_parts(7.into(), 2 * (e / 2));
+        assert_eq!(four.num_cmp(&eight), Ordering::Equal, "{e}");
+        assert_eq!((four.clone() + four.ulp()).num_cmp(&eight), Ordering::Greater, "{e}");
+    }
+}
+
+/// Numbers in independent bases can be equal only while their exponents are small next to
+/// their significands; those are still recognized, however the comparison gets there.
+#[test]
+fn test_ord_cross_base_equal_values() {
+    use dashu_float::round::mode::Zero;
+    use dashu_int::{IBig, UBig};
+    type F<const B: dashu_int::Word> = dashu_float::FBig<Zero, B>;
+
+    for e in [1usize, 40, 300, 3000, 20000] {
+        // s * 10^e = (s * 5^e) * 2^e
+        for s in [1i32, 3, -7, 12345] {
+            let d = F::<10>::from_parts(s.into(), e as isize);
+            let binary_signif = IBig::from(s) * IBig::from(UBig::from(5u8).pow(e));
+            let b = F::<2>::from_parts(binary_signif.clone(), e as isize);
+            assert_eq!(d.num_cmp(&b), Ordering::Equal, "{s}e{e}");
+            assert_eq!(b.num_cmp(&d), Ordering::Equal, "{s}e{e}");
+            // one unit in the last place of the long significand apart
+            let next = F::<2>::from_parts(binary_signif.clone() + IBig::ONE, e as isize);
+            let prev = F::<2>::from_parts(binary_signif - IBig::ONE, e as isize);
+            assert_eq!(d.num_cmp(&next), Ordering::Less, "{s}e{e}");
+            assert_eq!(d.num_cmp(&prev), Ordering::Greater, "{s}e{e}");
+            assert_eq!(next.num_cmp(&d), Ordering::Greater, "{s}e{e}");
+        }
+        // s * 2^-e = (s * 5^e) * 10^-e
+        let b = F::<2>::from_parts(3.into(), -(e as isize));
+        let decimal_signif = IBig::from(3) * IBig::from(UBig::from(5u8).pow(e));
+        let d = F::<10>::from_parts(decimal_signif.clone(), -(e as isize));
+        assert_eq!(b.num_cmp(&d), Ordering::Equal, "3b-{e}");
+        let next = F::<10>::from_parts(decimal_signif + IBig::ONE, -(e as isize));
+        assert_eq!(b.num_cmp(&next), Ordering::Less, "3b-{e}");
+    }
+}
+
+/// The comparison agrees with the one made by scaling both numbers to integers, over a sweep
+/// of bases, significand sizes and exponents on both sides of the switch between the methods.
+#[test]
+fn test_ord_cross_base_matches_scaled_integers() {
+    use dashu_float::round::mode::Zero;
+    use dashu_int::{IBig, UBig};
+    type F<const B: dashu_int::Word> = dashu_float::FBig<Zero, B>;
+
+    fn oracle<const B1: dashu_int::Word, const B2: dashu_int::Word>(
+        a: &F<B1>,
+        b: &F<B2>,
+    ) -> Ordering {
+        let power = |base: dashu_int::Word, e: isize| {
+            IBig::from(UBig::from_word(base).pow(e.unsigned_abs()))
+        };
+        let (mut left, mut right) =
+            (a.repr().significand().clone(), b.repr().significand().clone());
+        match a.repr().exponent() {
+            e if e < 0 => right *= power(B1, e),
+            e => left *= power(B1, e),
+        }
+        match b.repr().exponent() {
+            e if e < 0 => left *= power(B2, e),
+            e => right *= power(B2, e),
+        }
+        left.cmp(&right)
+    }
+
+    fn check<const B1: dashu_int::Word, const B2: dashu_int::Word>(state: &mut u64) {
+        let mut next = || {
+            // a 64-bit linear congruential generator is plenty for a sweep
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state >> 16
+        };
+        let log_ratio = (B1 as f64).log2() / (B2 as f64).log2();
+        for round in 0..60 {
+            let bits = [3u32, 20, 50, 100, 500][round % 5];
+            let e1 = (next() % 4001) as isize - 2000;
+            let mut s1 = IBig::ONE;
+            for _ in 0..(bits + 47) / 48 {
+                s1 = (s1 << 48) + IBig::from(next());
+            }
+            let s1 = (s1 >> ((bits + 47) / 48 * 48 + 1 - bits) as usize) + IBig::ONE;
+            let a = F::<B1>::from_parts(if round % 3 == 0 { -s1 } else { s1 }, e1);
+            // a number of about the same magnitude in the other base
+            let e2 = (e1 as f64 * log_ratio) as isize + (next() % 5) as isize - 2;
+            for s2 in [
+                1i64,
+                3,
+                (next() % 1000) as i64 + 1,
+                (next() >> 1) as i64 | 1,
+            ] {
+                let s2 = if round % 3 == 0 { -s2 } else { s2 };
+                let b = F::<B2>::from_parts(s2.into(), e2);
+                let expected = oracle(&a, &b);
+                assert_eq!(a.num_cmp(&b), expected, "{:?} vs {:?}", a, b);
+                assert_eq!(b.num_cmp(&a), expected.reverse(), "{:?} vs {:?}", b, a);
+                assert_eq!(a.repr().num_cmp(b.repr()), expected);
+            }
+        }
+    }
+
+    let mut state = 0x9E37_79B9_7F4A_7C15;
+    check::<10, 2>(&mut state);
+    check::<2, 10>(&mut state);
+    check::<3, 10>(&mut state);
+    check::<6, 12>(&mut state);
+    check::<2, 8>(&mut state);
+    check::<8, 4>(&mut state);
+    check::<16, 10>(&mut state);
+    check::<36, 7>(&mut state);
+}
