@@ -61,15 +61,17 @@ zero shortcut above the precision assertion but left it below the domain check a
 "an even root of -0 already errored above").
 
 Test: `float/tests/root.rs::test_nth_root_of_negative_zero` — `nth_root(n, ±0)` for `n = 1..=6`,
-bases 2 and 10, precision 0/20/50/100/500, agreement with `sqrt`, the reported calls, and a
+bases 2 and 10, precision 0/20/50/100/500, `sqrt(-0)`, the reported calls, and a
 negative nonzero operand still being out of domain. Fails on the unfixed source.
 
-Fix: `float/src/root.rs` — the zero shortcut runs first, returning the zero with its sign.
+Fix: `float/src/root.rs` — the zero shortcut runs first. An odd root keeps the sign of the zero;
+an even root is `+0`.
 
-Note: the result is `-0`, matching `sqrt(-0) = -0` in this crate (and the existing
-`test_nth_root_equals_sqrt` property that `nth_root(2, x)` equals `sqrt(x)`), which is also what
-the report asks for. IEEE 754 `rootn(-0, n)` for even `n > 0` is `+0` (while its `sqrt(-0)` is
-`-0`); if the maintainer prefers that convention the one-line change is in the shortcut.
+Note: the first version of this fix returned `-0` for an even root of `-0` (what the report asks
+for, by analogy with `sqrt(-0) = -0`). That was changed after review: IEEE 754 defines
+`rootn(±0, n) = +0` for even `n > 0`, and `squareRoot(-0) = -0`, so `sqrt` is left alone and
+`nth_root(2, -0)` (`+0`) differs from `sqrt(-0)` (`-0`) in the sign of the zero only. The existing
+`test_nth_root_equals_sqrt` property does not cover zeros and still holds.
 
 ### powi-huge-exponent-negative-base — directed rounding mirrored for an odd exponent above 2^64
 
@@ -245,7 +247,7 @@ different: each pair is two independent fixes in the same function.
 
 ### Fix
 - Fix `cbrt`/`nth_root` of a value with an exponent next to `isize::MIN`/`isize::MAX` (debug overflow panic, wrong exponent or significand in release builds).
-- Fix an even `nth_root` of `-0` reporting an out-of-domain error (a panic through `FBig::nth_root`); it is `-0`, as for `sqrt`.
+- Fix an even `nth_root` of `-0` reporting an out-of-domain error (a panic through `FBig::nth_root`); it is `+0`, as IEEE 754 defines rootn (`sqrt(-0)` remains `-0`).
 - Fix the rounding direction and flag of `powi` under `Up`/`Down` for a negative base with an odd exponent above `2^64`.
 - Fix `powf` panicking with "precision cannot be 0" for a trivially exact power (zero or unit exponent, zero or unit base) of unlimited-precision operands such as `FBig::try_from(0.0)`.
 - Fix `log10` not terminating under directed rounding for a power of ten whose logarithm exceeds `isize` (`log10(100^e)` with `|e| > isize::MAX / 2`).

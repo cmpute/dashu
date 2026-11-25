@@ -114,11 +114,14 @@ impl<R: Round> Context<R> {
         }
         debug_assert!(n < isize::MAX as usize);
         if x.significand.is_zero() {
-            // The root of ±0 is ±0, exactly, for every `n` — the sign is preserved as it is by
-            // `sqrt` (which `nth_root(2, ·)` must agree with). `-0` is a zero, not a negative
-            // number, so it is resolved before the domain check below. (It also must not reach
-            // the integer root: UBig::ZERO.nth_root(n) erroneously returns ONE.)
-            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
+            // The root of a zero is an exact zero for every `n`, resolved before the domain
+            // check below (`-0` is a zero, not a negative number). An odd root keeps the sign
+            // of the zero; an even root is `+0`, as IEEE 754 defines rootn(±0, n) for even
+            // `n > 0`. (`sqrt(-0)` is `-0`, also as IEEE 754 defines it, so `nth_root(2, -0)`
+            // and `sqrt(-0)` differ in the sign of the zero.) The zero also must not reach the
+            // integer root: UBig::ZERO.nth_root(n) erroneously returns ONE.
+            let zero = if n % 2 == 0 { Repr::zero() } else { x.clone() };
+            return Ok(Approximation::Exact(FBig::new(zero, *self)));
         }
         let sign = x.sign();
         if sign == Sign::Negative && n % 2 == 0 {

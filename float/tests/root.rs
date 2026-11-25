@@ -945,21 +945,27 @@ fn test_nth_root_extreme_exponents() {
     }
 }
 
-/// The root of a zero is that zero for every `n`: `-0` is a zero, not a negative number.
+/// The root of a zero is an exact zero for every `n`: `-0` is a zero, not a negative number.
+/// An odd root keeps the sign of the zero and an even root is `+0` (IEEE 754 rootn), while
+/// `sqrt(-0)` is `-0` (IEEE 754 squareRoot).
 /// Regression: an even root of `-0` was reported as out of domain (a panic through
-/// `FBig::nth_root`), while `sqrt(-0)` and the odd roots returned `-0`.
+/// `FBig::nth_root`).
 #[test]
 fn test_nth_root_of_negative_zero() {
     fn check<const B: Word>(p: usize) {
         let ctx = Context::<mode::HalfEven>::new(p);
         for n in 1..=6 {
             let got = ctx.nth_root(n, &Repr::<B>::neg_zero()).unwrap();
-            assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "nth_root({n}, -0)");
+            if n % 2 == 0 {
+                assert!(matches!(&got, Exact(v) if v.repr().is_pos_zero()), "nth_root({n}, -0)");
+            } else {
+                assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "nth_root({n}, -0)");
+            }
             let got = ctx.nth_root(n, &Repr::<B>::zero()).unwrap();
             assert!(matches!(&got, Exact(v) if v.repr().is_pos_zero()), "nth_root({n}, +0)");
         }
-        // the square root agrees
-        assert_eq!(ctx.nth_root(2, &Repr::<B>::neg_zero()), ctx.sqrt(&Repr::<B>::neg_zero()));
+        let got = ctx.sqrt(&Repr::<B>::neg_zero()).unwrap();
+        assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "sqrt(-0)");
     }
     for p in [0, 20, 50, 100, 500] {
         check::<2>(p);
@@ -970,9 +976,9 @@ fn test_nth_root_of_negative_zero() {
     let z: FBig = FBig::try_from(-0.0f64).unwrap();
     assert!(z.repr().is_neg_zero());
     assert!(z.sqrt().repr().is_neg_zero());
-    assert!(z.nth_root(2).repr().is_neg_zero());
+    assert!(z.nth_root(2).repr().is_pos_zero());
     assert!(z.nth_root(3).repr().is_neg_zero());
-    assert!((-DBig::ZERO).nth_root(4).repr().is_neg_zero());
+    assert!((-DBig::ZERO).nth_root(4).repr().is_pos_zero());
     assert!(DBig::ZERO.nth_root(4).repr().is_pos_zero());
     // a negative number still has no even root
     let got = Context::<mode::HalfEven>::new(5).nth_root(2, &Repr::<2>::new((-1).into(), -100));
