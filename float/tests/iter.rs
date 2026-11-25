@@ -106,6 +106,87 @@ mod triage {
             .value()
     }
 
+    /// A sum beyond the exponent range saturates exactly like `+` does (to an infinity, or to
+    /// the largest finite value under an inward mode). `Sum` used to return the unchecked
+    /// rounded value — a nonzero significand at the sentinel exponent `isize::MAX` where `+`
+    /// gives `inf`, and vice versa (F75). The range is judged on the rounded sum: partial
+    /// sums may leave it.
+    #[test]
+    fn test_sum_exponent_overflow_matches_add() {
+        const MAX: isize = isize::MAX;
+
+        #[track_caller]
+        fn same<R: Round, const B: Word>(got: &FBig<R, B>, want: &FBig<R, B>) {
+            assert_eq!(got.repr(), want.repr());
+            assert_eq!(got.precision(), want.precision());
+        }
+
+        fn check<R: Round, const B: Word>() {
+            let base = B as i64;
+            for precision in [1usize, 2, 20, 50, 100, 500] {
+                for sig in [1, base - 1, base + 1, base * base - 1, (base + 1) / 2] {
+                    if Repr::<B>::new(sig.into(), 0).digits() > precision {
+                        continue; // not a value of this precision
+                    }
+                    for sig in [sig, -sig] {
+                        let a = fbig::<R, B>(sig, MAX - 1, precision);
+                        // two addends: one `+`
+                        let sum: FBig<R, B> = [a.clone(), a.clone()].iter().sum();
+                        same(&sum, &(&a + &a));
+                        let value = sum.repr();
+                        // an infinity, the largest finite value, or a value in range
+                        let endpoint = (IBig::from(B).pow(precision) - IBig::ONE) * sig.signum();
+                        assert!(
+                            value.is_infinite()
+                                || value.exponent() < MAX
+                                || value == &Repr::new(endpoint, MAX),
+                            "{sum:?}"
+                        );
+                        // one exponent lower the sum is in range
+                        let b = fbig::<R, B>(sig, MAX - 3, precision);
+                        let sum: FBig<R, B> = [b.clone(), b.clone()].into_iter().sum();
+                        same(&sum, &(&b + &b));
+                        assert!(sum.repr().exponent() < MAX);
+
+                        // partial sums beyond the range that cancel again: the sum is exact
+                        let mut terms = vec![a.clone(); 2 * B as usize + 3];
+                        terms.extend(vec![-a.clone(); 2 * B as usize + 2]);
+                        let sum: FBig<R, B> = terms.iter().sum();
+                        same(&sum, &a);
+                    }
+                }
+
+                // overflow by the rounding of a far smaller addend (the sticky path)
+                let ones = IBig::from(B).pow(precision) - IBig::ONE;
+                for sign in [1, -1] {
+                    let big = Repr::new(ones.clone() * sign, MAX - precision as isize);
+                    let big = FBig::<R, B>::from_repr(big, Context::new(precision));
+                    let tiny = fbig::<R, B>(sign, -7, precision);
+                    let sum: FBig<R, B> = [tiny.clone(), big.clone()].into_iter().sum();
+                    same(&sum, &(&big + &tiny));
+                }
+            }
+        }
+        check::<mode::HalfAway, 10>();
+        check::<mode::HalfEven, 2>();
+        check::<mode::Zero, 10>();
+        check::<mode::Zero, 2>();
+        check::<mode::Up, 3>();
+        check::<mode::Down, 10>();
+        check::<mode::Away, 2>();
+
+        // the reported cases
+        let a = FBig::<mode::HalfAway, 10>::from_parts(5.into(), MAX - 1);
+        let sum: FBig<mode::HalfAway, 10> = [a.clone(), a.clone()].iter().sum();
+        assert!(sum.repr().is_infinite());
+        let a = FBig::<mode::Zero, 10>::from_parts(99.into(), MAX - 1);
+        let sum: FBig<mode::Zero, 10> = [a.clone(), a.clone()].iter().sum();
+        assert_eq!(sum.repr(), &Repr::new(99.into(), MAX));
+        let a = FBig::<mode::HalfAway, 2>::from_parts(1.into(), MAX - 1);
+        let sum: FBig<mode::HalfAway, 2> = [a.clone(), a.clone()].iter().sum();
+        assert!(sum.repr().is_infinite());
+    }
+
     /// The sign of a zero sum is the left fold of IEEE 754 §6.3, i.e. what chained `+` gives:
     /// like-signed zeros keep their sign in every rounding mode — `+0` addends used to sum to
     /// `-0` under `mode::Down` — and anything else is `-0` under roundTowardNegative, `+0`

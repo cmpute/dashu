@@ -5,10 +5,12 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr, Word},
     round::Round,
+    utils::{digit_len, shl_digits},
 };
 use alloc::vec::Vec;
 use core::iter::{Product, Sum};
 use dashu_base::Sign;
+use dashu_int::{IBig, UBig};
 
 /// An upper bound on the position just above the top digit of a nonzero `repr`:
 /// `|repr| < B^top_bound(repr)`.
@@ -50,8 +52,9 @@ fn tail_sign<const B: Word>(addends: &[Repr<B>]) -> Option<Sign> {
 ///
 /// The result is the mathematically exact sum rounded a single time to the target context
 /// (MPFR `mpfr_sum` semantics): there is no per-step rounding. The target context is
-/// `Context::max` over all addend contexts (matching chained `+`), and the final round reuses
-/// [`Context::repr_round`].
+/// `Context::max` over all addend contexts (matching chained `+`). A sum beyond the exponent
+/// range saturates like `+` does (see [`Context::unwrap_fp`]); the range is judged on the
+/// rounded sum, so partial sums may leave it.
 ///
 /// The addends are accumulated exactly at the [`Repr`] level from the largest magnitude down.
 /// Once the partial sum is settled far enough above everything that is left — the rest lies
@@ -83,34 +86,57 @@ fn precise_sum<R: Round, const B: Word>(
     };
 
     addends.sort_unstable_by_key(|repr| core::cmp::Reverse(top_bound(repr)));
-    let mut acc = Repr::<B>::zero();
+
+    // The partial sum is `signif · B^exponent`, with the exponent kept wide: a partial sum
+    // can leave the exponent range although the whole sum does not (addends at the largest
+    // exponent that cancel later), and the range is judged on the rounded result only.
+    let (mut signif, mut exponent) = (IBig::ZERO, 0i128);
     for (i, addend) in addends.iter().enumerate() {
-        if !acc.significand.is_zero() {
-            if let Some(threshold) = context.sticky_threshold(&acc) {
-                if tail_bound(&addends[i..]) <= threshold as i128 {
-                    match tail_sign(&addends[i..]) {
-                        // the rest is a nonzero amount below the sticky threshold
-                        Some(sign) => {
-                            let rounded = context.repr_round_sticky(&acc, threshold, sign);
-                            return FBig::new(rounded.value(), context);
-                        }
-                        // the rest cancels exactly: `acc` is the exact sum
-                        None => break,
-                    }
+        if !signif.is_zero() && context.is_limited() {
+            // the sticky threshold of the partial sum, see `Context::sticky_threshold`
+            let top = exponent + digit_len::<B>(&signif) as i128;
+            let threshold = exponent.min(top - context.precision as i128 - 2) - 1;
+            if tail_bound(&addends[i..]) <= threshold {
+                // The rest is either a nonzero amount below the sticky threshold, which
+                // rounds like one unit of its sign at the threshold, or it cancels exactly
+                // and the partial sum is the exact sum.
+                if let Some(sign) = tail_sign(&addends[i..]) {
+                    signif = shl_digits::<B>(&signif, (exponent - threshold) as usize)
+                        + IBig::from_parts(sign, UBig::ONE);
+                    exponent = threshold;
                 }
+                break;
             }
         }
-        acc = &acc + addend;
+
+        let addend_exponent = addend.exponent as i128;
+        if signif.is_zero() {
+            signif = addend.significand.clone();
+            exponent = addend_exponent;
+        } else if addend_exponent >= exponent {
+            let shift = (addend_exponent - exponent) as usize;
+            signif += shl_digits::<B>(&addend.significand, shift);
+        } else {
+            let shift = (exponent - addend_exponent) as usize;
+            signif = shl_digits::<B>(&signif, shift) + &addend.significand;
+            exponent = addend_exponent;
+        }
+        // keep the partial sum normalized (and a cancelled one at `+0`)
+        let normalized = Repr::<B>::new(signif, 0);
+        exponent += normalized.exponent as i128;
+        signif = normalized.significand;
     }
 
     // The sign of an exact zero sum follows IEEE 754 §6.3 folded left, as the chained `+`
     // does: a sum of like-signed zeros keeps their sign, while mixed-sign zeros and an exact
     // cancellation of nonzero addends give `-0` under roundTowardNegative and `+0` otherwise.
-    if acc.significand.is_zero() {
+    if signif.is_zero() {
         let negative = all_neg_zero || (R::IS_ROUND_TOWARD_NEGATIVE && !all_pos_zero);
-        acc = Repr::zero_with_sign(Sign::from(negative));
+        return FBig::new(Repr::zero_with_sign(Sign::from(negative)), context);
     }
-    FBig::new(context.repr_round(acc).value(), context)
+    // A sum beyond the exponent range saturates like the chained `+` does.
+    let rounded = context.repr_round_wide(signif, exponent);
+    context.unwrap_fp(rounded.map(|r| r.map(|v| FBig::new(v, context))))
 }
 
 impl<R: Round, const B: Word> Sum for FBig<R, B> {
