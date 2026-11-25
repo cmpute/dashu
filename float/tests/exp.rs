@@ -1336,4 +1336,30 @@ mod pow_range {
         assert_eq!(neg_zero.powf(&-three), FBig::<mode::HalfEven>::NEG_INFINITY);
         assert!(neg_zero.powf(&FBig::from(2u8)).repr().is_pos_zero());
     }
+
+    /// Powers are monotone in the base, also at the top of the exponent range. `2^isize::MAX`
+    /// normalizes to the significand 1 at the reserved exponent `isize::MAX`, so it is reported
+    /// as an overflow (`inf` under the nearest modes, the saturation endpoint
+    /// `(2^p − 1)·2^isize::MAX` — above the exact value — under `Down`), while the larger
+    /// `(2 + 2^-61)^isize::MAX ≈ 7.39·2^isize::MAX` has a full-width significand, hence an
+    /// exponent below the reserved one, and is returned.
+    #[test]
+    #[ignore = "the reserved exponent isize::MAX makes the representable set depend on the \
+                significand's trailing zeros; needs a crate-wide exponent-range model (see E145)"]
+    fn test_powi_monotone_at_exponent_ceiling() {
+        let n = IBig::from(isize::MAX);
+        let a = FBig::<mode::HalfEven, 2>::from_parts(IBig::from(2), 0)
+            .with_precision(64)
+            .value();
+        let b = FBig::<mode::HalfEven, 2>::from_parts(IBig::from((1u64 << 62) + 1), -61)
+            .with_precision(64)
+            .value();
+        assert!(a < b);
+        let (pa, pb) = (a.powi(n.clone()), b.powi(n.clone()));
+        assert!(pa <= pb, "HalfEven: {pa:?} > {pb:?}");
+
+        let (ad, bd) = (a.with_rounding::<mode::Down>(), b.with_rounding::<mode::Down>());
+        let (pad, pbd) = (ad.powi(n.clone()), bd.powi(n));
+        assert!(pad <= pbd, "Down: {pad:?} > {pbd:?}");
+    }
 }
