@@ -158,7 +158,7 @@ pub trait CubicRootRem {
     type Output;
 
     /// Compute the floored cubic root together with the remainder, so that
-    /// `root*root*root + rem == *self` and `0 <= rem < 3*root*root + 3*root`.
+    /// `root*root*root + rem == *self` and `0 <= rem <= 3*root*root + 3*root`.
     fn cbrt_rem(&self) -> (Self::Output, Self);
 }
 

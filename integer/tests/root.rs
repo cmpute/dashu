@@ -259,3 +259,23 @@ fn test_nth_root_tight() {
         }
     }
 }
+
+#[test]
+fn test_cbrt_rem_largest_remainder() {
+    // The remainder of a floored cubic root is at most 3*root^2 + 3*root, and reaches
+    // that bound right below every cube (the bound is not strict).
+    assert_eq!(7u8.cbrt_rem(), (1, 6));
+    assert_eq!(26u16.cbrt_rem(), (2, 18));
+    assert_eq!(63u32.cbrt_rem(), (3, 36));
+    assert_eq!(ubig!(7).cbrt_rem(), (ubig!(1), ubig!(6)));
+    for r in (1u64..=40).chain([1 << 20, (1 << 21) - 1]) {
+        let bound = 3 * r * r + 3 * r;
+        let n = r.pow(3) + bound; // (r + 1)^3 - 1
+        assert_eq!(n.cbrt_rem(), (r as u32, bound));
+        assert_eq!((n + 1).cbrt_rem(), (r as u32 + 1, 0));
+        assert_eq!(dashu_int::UBig::from(n).cbrt_rem(), (r.into(), bound.into()));
+    }
+    let r = ubig!(3).pow(100);
+    let bound = ubig!(3) * &r * (&r + ubig!(1));
+    assert_eq!((r.pow(3) + &bound).cbrt_rem(), (r, bound));
+}
