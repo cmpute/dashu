@@ -56,11 +56,11 @@ Division and modulo by zero follow Python: an integer or rational zero divisor r
 `math.floor` / `math.ceil` / `math.trunc` / `round()` are exact for `FBig`, `DBig` and `RBig`
 (`round()` rounds ties away from zero).
 
-In-place operators on integers (`+=`, `*=`, `&=`, ...) give the same value as the binary
-operator: where the result cannot stay in place (a negative operand or result for a `UBig`, a
-non-integer operand), the name is rebound to the new value, as for Python's `int`.
+The integers are values, like Python's `int`: an augmented assignment (`n += 1`, `n <<= 3`,
+`n &= m`, ...) is `n = n + 1` and binds the name to a new object, so other references to the
+old object (an alias, a `set` member, a `dict` key) keep their value.
 
-- **Integers**: `+ - * / // % **`, comparisons, in-place ops, bit operations
+- **Integers**: `+ - * / // % **`, comparisons, augmented assignments, bit operations
   (`& | ^ << >>`), roots (`sqrt`/`cbrt`/`nth_root`), `gcd`/`gcd_ext`, `ilog`, bit
   predicates, and `to_words`/`to_sign_words`/`to_chunks`/`to_bytes`.
 - **Floats / Decimal**: arithmetic, comparisons, rounding (`trunc`/`floor`/`ceil`/

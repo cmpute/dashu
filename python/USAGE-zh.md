@@ -53,11 +53,11 @@ UBig(3) - 5 == IBig(-2)   # UBig 相减得到负数时结果为 IBig
 `ValueError`。`int(x)` 对所有类型都向零截断，`math.floor` / `math.ceil` / `math.trunc` /
 `round()` 对 `FBig`、`DBig` 和 `RBig` 都是精确的（`round()` 在恰好一半时远离零舍入）。
 
-整数的原地运算符（`+=`、`*=`、`&=`……）与对应的二元运算符给出相同的值：当结果无法原地保存时
-（`UBig` 遇到负的操作数或负的结果，或操作数不是整数），名字会被重新绑定到新值，与 Python 的
-`int` 一样。
+整数是值，与 Python 的 `int` 一样：增量赋值（`n += 1`、`n <<= 3`、`n &= m`……）等价于
+`n = n + 1`，会把名字绑定到一个新对象，因此指向旧对象的其他引用（别名、`set` 的成员、`dict`
+的键）保持原值不变。
 
-- **整数**：`+ - * / // % **`、比较、原地运算、位操作
+- **整数**：`+ - * / // % **`、比较、增量赋值、位操作
   （`& | ^ << >>`）、求根（`sqrt`/`cbrt`/`nth_root`）、`gcd`/`gcd_ext`、`ilog`、
   位谓词，以及 `to_words`/`to_sign_words`/`to_chunks`/`to_bytes`。
 - **浮点数 / Decimal**：算术、比较、舍入（`trunc`/`floor`/`ceil`/

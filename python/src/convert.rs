@@ -230,31 +230,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'py> {
     }
 }
 
-/// The right-hand operand of the in-place operators of `UBig`: an unsigned integer.
-///
-/// The extraction fails for any other operand, which makes the in-place operator return
-/// `NotImplemented`, so that Python falls back to the binary operator (`a += b` becomes
-/// `a = a + b`) and the result is the same as that of the binary form.
-pub struct UnsignedOperand(pub UBig);
-
-impl<'a, 'py> FromPyObject<'a, 'py> for UnsignedOperand {
-    type Error = PyErr;
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        UniInput::extract(ob)?.into_ubig().map(Self)
-    }
-}
-
-/// The right-hand operand of the in-place operators of `IBig`: an integer.
-/// See [`UnsignedOperand`] for what happens with other operands.
-pub struct SignedOperand(pub IBig);
-
-impl<'a, 'py> FromPyObject<'a, 'py> for SignedOperand {
-    type Error = PyErr;
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        UniInput::extract(ob)?.into_ibig().map(Self)
-    }
-}
-
 impl<'a> UniInput<'a> {
     /// Whether the input is an exact number (an integer or a rational), as opposed to a float.
     pub fn is_exact(&self) -> bool {

@@ -240,6 +240,37 @@ def test_number_theory_zero_arguments():
             n.ilog(2)
 
 
+def test_augmented_assignment_leaves_other_references_alone():
+    # `n op= m` binds `n` to a new object, as for Python's int: it used to update the object
+    # in place, which changed every alias of it and members of sets under the set
+    import operator
+    ops = [
+        ("+", operator.add), ("-", operator.sub), ("*", operator.mul), ("&", operator.and_),
+        ("|", operator.or_), ("^", operator.xor), ("<<", operator.lshift),
+        (">>", operator.rshift),
+    ]
+    for cls in (UBig, IBig):
+        for symbol, op in ops:
+            # (a shift count is a plain int)
+            for b in (1, 3) if symbol in ("<<", ">>") else (1, 3, cls(2)):
+                scope = {"n": cls(5), "b": b}
+                scope["alias"] = scope["n"]
+                exec(f"n {symbol}= b", {}, scope)
+                assert scope["n"] == op(5, int(b)), (cls.__name__, symbol, b)
+                assert scope["alias"] == 5, (cls.__name__, symbol, b)
+                assert scope["alias"] is not scope["n"]
+
+    k = IBig(1)
+    s = {k}
+    k += 1
+    assert k == 2
+    assert IBig(1) in s and 1 in s and 2 not in s
+    d = {UBig(7): "x"}
+    for key in d:
+        key *= 2
+    assert d[7] == "x" and list(d) == [7]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

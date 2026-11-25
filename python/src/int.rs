@@ -13,9 +13,9 @@ use pyo3::{
 
 use crate::{
     convert::{
-        SignedOperand, UnsignedOperand, conversion_error_to_py, convert_from_ibig,
-        convert_from_ubig, extract_index, parse_error_to_py, parse_signed_index, parse_to_ibig,
-        parse_to_long, parse_to_ubig, zero_division_error,
+        conversion_error_to_py, convert_from_ibig, convert_from_ubig, extract_index,
+        parse_error_to_py, parse_signed_index, parse_to_ibig, parse_to_long, parse_to_ubig,
+        zero_division_error,
     },
     float::{dpy_mod, fpy_mod},
     math::{ubig_gcd, ubig_gcd_ext},
@@ -941,38 +941,10 @@ impl UPy {
         int_rpow(other, UniInput::BUint(slf), modulus, py)
     }
 
-    // The in-place operators work in place only when the operand is an unsigned integer;
-    // with any other operand they return `NotImplemented` (see `UnsignedOperand`), and Python
-    // falls back to the binary operator. There is no `__isub__`, because the type of a
-    // difference depends on its sign: `n -= m` is always `n = n - m`.
-    #[inline]
-    fn __iadd__(&mut self, other: UnsignedOperand) {
-        self.0 += other.0;
-    }
-    #[inline]
-    fn __imul__(&mut self, other: UnsignedOperand) {
-        self.0 *= other.0;
-    }
-    #[inline]
-    fn __iand__(&mut self, other: UnsignedOperand) {
-        self.0 &= other.0;
-    }
-    #[inline]
-    fn __ior__(&mut self, other: UnsignedOperand) {
-        self.0 |= other.0;
-    }
-    #[inline]
-    fn __ixor__(&mut self, other: UnsignedOperand) {
-        self.0 ^= other.0;
-    }
-    #[inline]
-    fn __ilshift__(&mut self, other: usize) {
-        self.0 <<= other;
-    }
-    #[inline]
-    fn __irshift__(&mut self, other: usize) {
-        self.0 >>= other;
-    }
+    // There are no in-place operators (`__iadd__` and so on): a `UBig` is a value, like
+    // Python's `int`, so `n += m` is `n = n + m` and binds the name to a new object. Updating
+    // the object itself would change every other reference to it, and a member of a `set`
+    // or a key of a `dict` under the container.
 
     #[inline]
     fn __pos__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -1377,41 +1349,7 @@ impl IPy {
         int_rpow(other, UniInput::BInt(slf), modulus, py)
     }
 
-    // The in-place operators work in place when the operand is an integer; with any other
-    // operand they return `NotImplemented` (see `SignedOperand`), and Python falls back to
-    // the binary operator.
-    #[inline]
-    fn __iadd__(&mut self, other: SignedOperand) {
-        self.0 += other.0;
-    }
-    #[inline]
-    fn __isub__(&mut self, other: SignedOperand) {
-        self.0 -= other.0;
-    }
-    #[inline]
-    fn __imul__(&mut self, other: SignedOperand) {
-        self.0 *= other.0;
-    }
-    #[inline]
-    fn __iand__(&mut self, other: SignedOperand) {
-        self.0 &= other.0;
-    }
-    #[inline]
-    fn __ior__(&mut self, other: SignedOperand) {
-        self.0 |= other.0;
-    }
-    #[inline]
-    fn __ixor__(&mut self, other: SignedOperand) {
-        self.0 ^= other.0;
-    }
-    #[inline]
-    fn __ilshift__(&mut self, other: usize) {
-        self.0 <<= other;
-    }
-    #[inline]
-    fn __irshift__(&mut self, other: usize) {
-        self.0 >>= other;
-    }
+    // (no in-place operators, see `UBig`)
 
     #[inline]
     fn __pos__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
