@@ -19,11 +19,17 @@ impl num_integer::Integer for UBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        Self::is_multiple_of(self, other)
+        num_integer::Integer::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        UBig::is_multiple_of(self, other)
+        // This trait defines zero as the only multiple of zero, whereas the
+        // inherent method panics for a zero divisor.
+        if other.is_zero() {
+            self.is_zero()
+        } else {
+            UBig::is_multiple_of(self, other)
+        }
     }
     #[inline]
     fn is_even(&self) -> bool {
@@ -50,6 +56,15 @@ impl num_integer::Integer for UBig {
             self / Gcd::gcd(self, other) * other
         }
     }
+    /// Greatest common divisor and Bézout coefficients.
+    ///
+    /// # Panics
+    ///
+    /// The coefficients have the type [UBig] here, and `x * self + y * other == gcd`
+    /// has a solution without a negative coefficient only when the gcd is one of
+    /// the operands. This method panics for any other input (as the trait's
+    /// implementations for the primitive unsigned integers overflow); use
+    /// [ExtendedGcd::gcd_ext], which returns [IBig] coefficients, instead.
     #[inline]
     fn extended_gcd(&self, other: &Self) -> num_integer::ExtendedGcd<Self> {
         if self.is_zero() && other.is_zero() {
@@ -60,10 +75,12 @@ impl num_integer::Integer for UBig {
             };
         }
         let (g, x, y) = ExtendedGcd::gcd_ext(self, other);
+        const NEGATIVE: &str = "the Bézout coefficients of these operands are not representable \
+            as UBig, use dashu_base::ExtendedGcd::gcd_ext instead";
         num_integer::ExtendedGcd {
             gcd: g,
-            x: x.try_into().unwrap(),
-            y: y.try_into().unwrap(),
+            x: x.try_into().expect(NEGATIVE),
+            y: y.try_into().expect(NEGATIVE),
         }
     }
 }
@@ -110,11 +127,17 @@ impl num_integer::Integer for IBig {
     }
     #[inline]
     fn divides(&self, other: &Self) -> bool {
-        Self::is_multiple_of(self, other)
+        num_integer::Integer::is_multiple_of(self, other)
     }
     #[inline]
     fn is_multiple_of(&self, other: &Self) -> bool {
-        IBig::is_multiple_of(self, other)
+        // This trait defines zero as the only multiple of zero, whereas the
+        // inherent method panics for a zero divisor.
+        if other.is_zero() {
+            self.is_zero()
+        } else {
+            IBig::is_multiple_of(self, other)
+        }
     }
     #[inline]
     fn is_even(&self) -> bool {

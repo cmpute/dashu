@@ -100,3 +100,49 @@ fn gcd_of_two_zeros_is_zero() {
         .fold(IBig::ZERO, |g, &x| Integer::gcd(&g, &IBig::from(x)));
     assert_eq!(folded, IBig::from(6));
 }
+
+#[test]
+#[allow(deprecated)]
+fn is_multiple_of_zero_divisor() {
+    // The inherent is_multiple_of of dashu rejects a zero divisor, but the trait from
+    // num-integer defines zero as the only multiple of zero (see its primitive impls).
+    for n in [0i64, 5, -5] {
+        let expected = Integer::is_multiple_of(&n, &0);
+        assert_eq!(expected, n == 0);
+        let i = IBig::from(n);
+        assert_eq!(Integer::is_multiple_of(&i, &IBig::ZERO), expected);
+        assert_eq!(Integer::divides(&i, &IBig::ZERO), expected);
+        let u = UBig::from(n.unsigned_abs());
+        assert_eq!(Integer::is_multiple_of(&u, &UBig::ZERO), expected);
+        assert_eq!(Integer::divides(&u, &UBig::ZERO), expected);
+    }
+    let big = UBig::ONE << 200;
+    assert!(!Integer::is_multiple_of(&big, &UBig::ZERO));
+    assert!(!Integer::is_multiple_of(&-IBig::from(big.clone()), &IBig::ZERO));
+    // nonzero divisors are unaffected
+    assert!(Integer::is_multiple_of(&big, &(UBig::ONE << 100)));
+    assert!(!Integer::is_multiple_of(&(big + 1u8), &(UBig::ONE << 100)));
+}
+
+#[test]
+fn ubig_extended_gcd_with_representable_coefficients() {
+    // gcd = x * a + y * b has non-negative coefficients when the gcd is an operand
+    for (a, b) in [(3u32, 6u32), (6, 3), (5, 5), (0, 7), (7, 0), (1, 9)] {
+        let (ua, ub) = (UBig::from(a), UBig::from(b));
+        let ext = Integer::extended_gcd(&ua, &ub);
+        assert_eq!(ext.gcd, UBig::from(Integer::gcd(&a, &b)), "({}, {})", a, b);
+        assert_eq!(&ext.x * &ua + &ext.y * &ub, ext.gcd, "({}, {})", a, b);
+    }
+    // the signed type represents every pair of coefficients
+    let ext = Integer::extended_gcd(&IBig::from(3), &IBig::from(5));
+    assert_eq!(ext.gcd, IBig::ONE);
+    assert_eq!(ext.x * 3 + ext.y * 5, IBig::ONE);
+}
+
+#[test]
+#[should_panic(expected = "not representable as UBig")]
+fn ubig_extended_gcd_with_negative_coefficient() {
+    // 1 = x * 3 + y * 5 needs a negative coefficient, which the unsigned
+    // coefficient type of this trait can't hold
+    let _ = Integer::extended_gcd(&UBig::from(3u8), &UBig::from(5u8));
+}
