@@ -119,7 +119,12 @@ pub fn memory_requirement_exact(len: usize) -> Layout {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            crate::mul::ntt::memory_requirement_up_to(2 * len, len)
+            if crate::mul::ntt::fits(len, len) {
+                crate::mul::ntt::memory_requirement_up_to(2 * len, len)
+            } else {
+                // beyond the largest transform: multiplied piecewise
+                crate::mul::memory_requirement_exact(2 * len, len)
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {
@@ -161,7 +166,18 @@ pub fn sqr(b: &mut [Word], a: &[Word], memory: &mut Memory) {
     } else {
         #[cfg(not(any(force_bits = "16", target_pointer_width = "16")))]
         {
-            debug_assert_zero!(ntt::add_signed_sqr_same_len(b, Sign::Positive, a, memory));
+            if crate::mul::ntt::fits(a.len(), a.len()) {
+                debug_assert_zero!(ntt::add_signed_sqr_same_len(b, Sign::Positive, a, memory));
+            } else {
+                // beyond the largest transform: multiplied piecewise
+                debug_assert_zero!(crate::mul::add_signed_mul_same_len(
+                    b,
+                    Sign::Positive,
+                    a,
+                    a,
+                    memory
+                ));
+            }
         }
         #[cfg(any(force_bits = "16", target_pointer_width = "16"))]
         {

@@ -28,7 +28,43 @@ use num_modular::Reducer;
 /// NTT is a clear 30%+ faster.
 pub const THRESHOLD_NTT: usize = 4_000;
 
+/// Largest operand length (in words) such that any two operands within it can be
+/// multiplied by a single convolution.
+///
+/// The transform length is a power of two bounded by the 2-adic order of the primes
+/// (`2^MAX_LOG_N` points). With one word per coefficient (the widest packing, which
+/// yields the fewest coefficients) the product of operands of `la` and `lb` words has
+/// `la + lb - 1` coefficients, so a convolution exists if and only if
+/// `la + lb - 1 <= 2^MAX_LOG_N` (see [`fits`]). Larger products are split into pieces
+/// of this length by the dispatcher.
+///
+/// With 64-bit words the bound is far beyond any addressable operand; with 32-bit words
+/// it is `2^25` words (1 Gibit) per operand.
+pub const MAX_OPERAND_LEN: usize = {
+    let len = 1u64 << (MAX_LOG_N - 1);
+    if len > (usize::MAX / 2) as u64 {
+        usize::MAX / 2
+    } else {
+        len as usize
+    }
+};
+
+/// Whether [`add_signed_mul`] can multiply operands of `a_len >= b_len` words: the
+/// convolution it would run (of one chunk of the long operand when [`is_chunked`], of the
+/// whole operands otherwise) must fit the largest transform, see [`MAX_OPERAND_LEN`].
+#[inline]
+pub fn fits(a_len: usize, b_len: usize) -> bool {
+    let conv_a_len = if is_chunked(a_len, b_len) {
+        2 * b_len as u64
+    } else {
+        a_len as u64
+    };
+    (conv_a_len + b_len as u64).saturating_sub(1) <= 1u64 << MAX_LOG_N
+}
+
 /// Select NTT parameters for operands with the given word lengths.
+///
+/// The operands must satisfy [`fits`].
 ///
 /// Candidates are scored by estimated transform + pointwise + CRT work
 /// (`k·n·log n` plus `k²·coeffs`), and the cheapest wins — except that a
@@ -95,8 +131,9 @@ pub fn select_params(la_words: usize, lb_words: usize) -> (u32, usize, usize) {
 
     let (b_pack, n, k_eff, _) = best.unwrap_or_else(|| {
         unreachable!(
-            "b_pack = {} always passes the headroom check",
-            B_PACK_CANDIDATES.last().unwrap()
+            "operands of {} and {} words exceed the largest transform, \
+            the dispatcher splits them into pieces",
+            la_words, lb_words
         )
     });
     (b_pack, n, k_eff)
