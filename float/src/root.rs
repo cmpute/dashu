@@ -143,10 +143,14 @@ impl<R: Round> Context<R> {
         // second step — and the two roundings disagree exactly at midpoints of the coarse
         // grid (round-to-integer-then-re-round is a double rounding). The truncating choice
         // keeps the root at exactly `precision` digits, so a single rounding decides.
-        let digits = x.digits() as isize;
-        let r = (x.exponent + digits).rem_euclid(n as isize);
-        let shift =
-            n as isize * self.precision as isize - digits + r - n as isize * (r > 0) as isize;
+        //
+        // The exponent arithmetic is done in `i128`: the exponent can sit anywhere in the `isize`
+        // range, and neither `exponent + digits` nor `exponent − shift` need fit it (the result
+        // exponent, about `exponent / n`, always does).
+        let wide_n = n as i128;
+        let digits = x.digits() as i128;
+        let r = (x.exponent as i128 + digits).rem_euclid(wide_n);
+        let shift = wide_n * self.precision as i128 - digits + r - wide_n * (r > 0) as i128;
         let (signif, low, low_digits) = if shift > 0 {
             (shl_digits::<B>(&xmag, shift as usize), IBig::ZERO, 0)
         } else {
@@ -158,7 +162,7 @@ impl<R: Round> Context<R> {
         let mag: UBig = signif.unsigned_abs();
         let root: UBig = mag.nth_root(n);
         let rem: UBig = &mag - root.clone().pow(n);
-        let exp = (x.exponent - shift) / n as isize;
+        let exp = ((x.exponent as i128 - shift) / wide_n) as isize;
 
         let signed_root: IBig = sign * root.clone();
         debug_assert!(digit_len::<B>(root.as_ibig()) <= self.precision);

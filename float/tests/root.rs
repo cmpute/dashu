@@ -892,3 +892,55 @@ fn test_hypot_negligible_operand() {
         }
     }
 }
+
+/// `nth_root` does not depend on where the operand sits in the exponent range: moving the
+/// exponent by a multiple of `n` moves the root's exponent by that multiple. Regression: for an
+/// exponent next to `isize::MIN`/`isize::MAX` the alignment arithmetic left the `isize` range —
+/// an overflow panic in debug builds, and in release builds a root with the wrong exponent
+/// (`cbrt(8·10^(isize::MIN+2))` came back as `2·10^3074457345618258603`) or the wrong
+/// significand (`cbrt(27·10^(isize::MAX−1))`).
+#[test]
+fn test_nth_root_extreme_exponents() {
+    // the reported calls: both cube roots are exact
+    let ctx = Context::<mode::HalfEven>::new(10);
+    let e = isize::MIN + 2;
+    let got = ctx.cbrt(&Repr::<10>::new(8.into(), e)).unwrap();
+    assert_eq!(got, Exact(FBig::from_parts(2.into(), e / 3)), "cbrt(8e{e})");
+    let e = isize::MAX - 1;
+    let got = ctx.cbrt(&Repr::<10>::new(27.into(), e)).unwrap();
+    assert_eq!(got, Exact(FBig::from_parts(3.into(), e / 3)), "cbrt(27e{e})");
+
+    fn check<R: Round, const B: Word>(p: usize, n: usize, sig: i32, e: isize) {
+        let ctx = Context::<R>::new(p);
+        // the same significand with the exponent reduced into `0..n`
+        let near = e.rem_euclid(n as isize);
+        let moved = (e as i128 - near as i128) / n as i128;
+        let got = ctx.nth_root(n, &Repr::<B>::new(sig.into(), e)).unwrap();
+        let want = ctx.nth_root(n, &Repr::<B>::new(sig.into(), near)).unwrap();
+        let want = want.map(|v| {
+            let (signif, exp) = v.into_repr().into_parts();
+            FBig::from_parts(signif, (exp as i128 + moved) as isize)
+        });
+        assert_eq!(got, want, "nth_root({n}, {sig}·{B}^{e}) at precision {p}");
+    }
+    for n in [3usize, 4, 5, 7] {
+        for d in 1..=(2 * n as isize + 1) {
+            for e in [isize::MIN + d, isize::MAX - d] {
+                for p in [20, 50, 100, 500] {
+                    // 3^n has an exact root at an aligned exponent, 7 never has one
+                    check::<mode::HalfEven, 2>(p, n, 3i32.pow(n as u32), e);
+                    check::<mode::Down, 2>(p, n, 7, e);
+                    check::<mode::Up, 2>(p, n, 7, e);
+                }
+                check::<mode::HalfAway, 10>(10, n, 3i32.pow(n as u32), e);
+                check::<mode::Zero, 10>(10, n, 7, e);
+                check::<mode::Away, 3>(10, n, 7, e);
+                // a negative operand has an odd root
+                if n % 2 == 1 {
+                    check::<mode::Down, 10>(10, n, -7, e);
+                    check::<mode::HalfEven, 2>(50, n, -(3i32.pow(n as u32)), e);
+                }
+            }
+        }
+    }
+}
