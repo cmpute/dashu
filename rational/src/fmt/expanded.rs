@@ -5,6 +5,7 @@
 //! notation, and repetend display.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter, LowerExp, UpperExp, Write};
 use dashu_base::{DivRem, Gcd, Sign, UnsignedAbs};
@@ -31,6 +32,10 @@ use crate::rbig::{RBig, Relaxed};
 /// - `{:.Ne}` / `{:.NE}` — scientific notation with N digits of precision.
 ///
 /// Rounded output is rounded to the nearest value, with ties away from zero.
+///
+/// The `+` flag, the width, the fill, the alignment and the `0` flag apply to the number as a
+/// whole, as they do for the primitive numbers (`{:>8.2}` of 1/2 is `"    0.50"` and
+/// `{:08.2}` of -1/2 is `"-0000.50"`).
 pub struct InExpanded<'a> {
     sign: Sign,
     num_abs: UBig,
@@ -186,12 +191,57 @@ fn rounds_up(rem: &UBig, den: &UBig) -> bool {
 
 impl Display for InExpanded<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.sign.as_sign_str(f.sign_plus()))?;
+        let (precision, alternate) = (f.precision(), f.alternate());
+        self.fmt_padded(f, |this, w| this.write_fixed(w, precision, alternate))
+    }
+}
 
+impl LowerExp for InExpanded<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let precision = f.precision();
+        self.fmt_padded(f, |this, w| this.write_scientific(w, precision, 'e'))
+    }
+}
+
+impl UpperExp for InExpanded<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let precision = f.precision();
+        self.fmt_padded(f, |this, w| this.write_scientific(w, precision, 'E'))
+    }
+}
+
+impl InExpanded<'_> {
+    /// Write the sign followed by the magnitude produced by `write_magnitude`, applying the
+    /// `+` flag, the width, the fill, the alignment and the `0` flag of the formatter to the
+    /// number as a whole.
+    fn fmt_padded(
+        &self,
+        f: &mut Formatter<'_>,
+        write_magnitude: impl Fn(&Self, &mut dyn Write) -> fmt::Result,
+    ) -> fmt::Result {
+        if f.width().is_none() {
+            // no padding: write the parts directly, without an intermediate buffer
+            f.write_str(self.sign.as_sign_str(f.sign_plus()))?;
+            write_magnitude(self, f)
+        } else {
+            let mut magnitude = String::new();
+            write_magnitude(self, &mut magnitude)?;
+            f.pad_integral(self.sign == Sign::Positive, "", &magnitude)
+        }
+    }
+
+    /// Write the magnitude in the positional notation, with the given precision and
+    /// alternate flag of the format specification.
+    fn write_fixed(
+        &self,
+        f: &mut dyn Write,
+        precision: Option<usize>,
+        alternate: bool,
+    ) -> fmt::Result {
         // Zero shortcut
         if self.num_abs.is_zero() {
             f.write_char('0')?;
-            if let Some(prec) = f.precision() {
+            if let Some(prec) = precision {
                 if prec > 0 {
                     f.write_char('.')?;
                     for _ in 0..prec {
@@ -202,15 +252,13 @@ impl Display for InExpanded<'_> {
             return Ok(());
         }
 
-        let prec = f
-            .precision()
-            .unwrap_or_else(|| default_precision(self.radix));
+        let prec = precision.unwrap_or_else(|| default_precision(self.radix));
         let (int_part, rem) = (&self.num_abs).div_rem(self.denominator);
         let mut int_digits = to_radix_digits(&int_part, self.radix);
 
         // With the alternate flag the value is displayed exactly whenever its expansion can
         // be resolved: either it is finite, or the repetend is found within the budget.
-        if f.alternate() {
+        if alternate {
             // When detecting repetends we need extra digits to find the cycle.
             let budget = (prec + 1).max(128);
             let exact = match expand_exact(&rem, self.denominator, self.radix, budget) {
@@ -271,21 +319,7 @@ impl Display for InExpanded<'_> {
 
         Ok(())
     }
-}
 
-impl LowerExp for InExpanded<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.fmt_scientific(f, 'e')
-    }
-}
-
-impl UpperExp for InExpanded<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.fmt_scientific(f, 'E')
-    }
-}
-
-impl InExpanded<'_> {
     /// `floor(log_radix(num_abs / denominator))` for a nonzero value.
     fn floor_log(&self) -> isize {
         let base = UBig::from(self.radix);
@@ -310,14 +344,20 @@ impl InExpanded<'_> {
         exp
     }
 
-    fn fmt_scientific(&self, f: &mut Formatter<'_>, exp_char: char) -> fmt::Result {
-        f.write_str(self.sign.as_sign_str(f.sign_plus()))?;
+    /// Write the magnitude in the scientific notation, with the given precision of the
+    /// format specification.
+    fn write_scientific(
+        &self,
+        f: &mut dyn Write,
+        precision: Option<usize>,
+        exp_char: char,
+    ) -> fmt::Result {
         // `e`/`E` are digits in large radices, so the marker is `@` except in decimal
         let exp_marker = if self.radix == 10 { exp_char } else { '@' };
 
         if self.num_abs.is_zero() {
             f.write_char('0')?;
-            let prec = f.precision().unwrap_or(0);
+            let prec = precision.unwrap_or(0);
             if prec > 0 {
                 f.write_char('.')?;
                 for _ in 0..prec {
@@ -327,9 +367,7 @@ impl InExpanded<'_> {
             return write!(f, "{}0", exp_marker);
         }
 
-        let prec = f
-            .precision()
-            .unwrap_or_else(|| default_precision(self.radix));
+        let prec = precision.unwrap_or_else(|| default_precision(self.radix));
 
         // Scale the value by a power of the radix so that its integer part holds exactly
         // the `prec + 1` significant digits, then round on the exact remainder.
@@ -365,7 +403,7 @@ impl InExpanded<'_> {
 }
 
 /// Write a slice of digit values in the given radix to the formatter.
-fn write_digits(f: &mut Formatter<'_>, digits: &[u8], radix: u8, upper: bool) -> fmt::Result {
+fn write_digits(f: &mut dyn Write, digits: &[u8], radix: u8, upper: bool) -> fmt::Result {
     for &d in digits {
         write_digit_char(f, d, radix, upper)?;
     }
@@ -373,7 +411,7 @@ fn write_digits(f: &mut Formatter<'_>, digits: &[u8], radix: u8, upper: bool) ->
 }
 
 /// Write a single digit value (0..radix-1) as a character.
-fn write_digit_char(f: &mut Formatter<'_>, digit: u8, _radix: u8, upper: bool) -> fmt::Result {
+fn write_digit_char(f: &mut dyn Write, digit: u8, _radix: u8, upper: bool) -> fmt::Result {
     let ch = if digit < 10 {
         (b'0' + digit) as char
     } else if upper {

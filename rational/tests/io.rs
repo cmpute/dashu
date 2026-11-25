@@ -297,6 +297,40 @@ fn test_format_flags_apply_to_whole_fraction() {
 }
 
 #[test]
+fn test_rbig_in_expanded_width_fill_alignment() {
+    let half = rbig!(1 / 2);
+    // the flags apply to the whole number, as for the primitive floats
+    assert_eq!(format!("{:>10.2}", half.in_expanded(10)), "      0.50");
+    assert_eq!(format!("{:>10.2}", half.in_expanded(10)), format!("{:>10.2}", 0.5f64));
+    assert_eq!(format!("{:10.2}", half.in_expanded(10)), "      0.50"); // right-aligned by default
+    assert_eq!(format!("{:*<10.2}", half.in_expanded(10)), "0.50******");
+    assert_eq!(format!("{:^10.2}", half.in_expanded(10)), "   0.50   ");
+    assert_eq!(format!("{:>10.2e}", half.in_expanded(10)), "   5.00e-1");
+    assert_eq!(format!("{:_<10.2E}", half.in_expanded(10)), "5.00E-1___");
+    assert_eq!(format!("{:>8.3}", rbig!(-1 / 8).in_expanded(10)), "  -0.125");
+    assert_eq!(format!("{:>+8.1}", half.in_expanded(10)), "    +0.5");
+    assert_eq!(format!("{:>8}", rbig!(0).in_expanded(10)), "       0");
+    assert_eq!(format!("{:>8.1e}", rbig!(0).in_expanded(16)), "   0.0@0");
+    assert_eq!(format!("{:>8.3}", rbig!(~5/16).in_expanded(2)), "   0.011");
+
+    // the exact (`#`) form is padded as well
+    assert_eq!(format!("{:>#8}", rbig!(1 / 3).in_expanded(10)), "   0.(3)");
+    assert_eq!(format!("{:<#8}|", rbig!(-1 / 6).in_expanded(10)), "-0.1(6) |");
+    assert_eq!(format!("{:>#8.1}", rbig!(1 / 8).in_expanded(10)), "   0.125");
+
+    // sign-aware zero padding
+    assert_eq!(format!("{:010.2}", half.in_expanded(10)), "0000000.50");
+    assert_eq!(format!("{:010.2}", half.in_expanded(10)), format!("{:010.2}", 0.5f64));
+    assert_eq!(format!("{:08.2}", rbig!(-1 / 2).in_expanded(10)), "-0000.50");
+    assert_eq!(format!("{:+08.2}", half.in_expanded(10)), "+0000.50");
+    assert_eq!(format!("{:010.2e}", half.in_expanded(10)), "0005.00e-1");
+
+    // a width that the text already fills changes nothing
+    assert_eq!(format!("{:>3.2}", half.in_expanded(10)), "0.50");
+    assert_eq!(format!("{:1.0}", rbig!(-7).in_expanded(10)), "-7");
+}
+
+#[test]
 fn test_rbig_in_expanded_rounding_odd_radix() {
     // In an odd radix the half-way point has no finite expansion, so a single guard digit
     // cannot decide the rounding: (radix-1)/2 followed by anything larger is above half.
