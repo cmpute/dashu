@@ -271,6 +271,33 @@ def test_augmented_assignment_leaves_other_references_alone():
     assert d[7] == "x" and list(d) == [7]
 
 
+def test_integer_true_division_is_exact():
+    # `/` between integers is the exact quotient (an RBig), not the quotient truncated toward
+    # zero (UBig(7) / 2 was 3, and IBig(-7) / 2 was -3 while IBig(-7) // 2 is -4)
+    import math
+    values = [-(2**70) - 1, -7, -2, -1, 0, 1, 2, 3, 6, 7, 2**64, 2**70 + 1]
+    for a in values:
+        for b in values:
+            if b == 0:
+                continue
+            want = Fraction(a, b)
+            lefts = [IBig(a)] + ([UBig(a)] if a >= 0 else [])
+            rights = [IBig(b)] + ([UBig(b)] if b >= 0 else [])
+            results = [x / b for x in lefts] + [a / y for y in rights]
+            results += [x / y for x in lefts for y in rights]
+            for r in results:
+                assert isinstance(r, RBig) and r == want, (a, b)
+                # `/` and `//` agree on the direction of rounding
+                assert math.floor(r) == a // b
+    assert UBig(7) / 2 == 3.5 and IBig(-7) / 2 == -3.5 and -7 / IBig(2) == -3.5
+    assert 1 / UBig(3) == Fraction(1, 3) and math.isclose(float(1 / UBig(3)), 1 / 3)
+    assert UBig(6) / 2 == 3 and isinstance(UBig(6) / 2, RBig)
+    # other operand types are unaffected
+    assert isinstance(UBig(7) / 2.0, FBig) and UBig(7) / 2.0 == 3.5
+    assert isinstance(IBig(7) / DBig(2), DBig) and isinstance(UBig(7) / RBig(2), RBig)
+    assert isinstance(7.0 / UBig(2), FBig) and 7.0 / UBig(2) == 3.5
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

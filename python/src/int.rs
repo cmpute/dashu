@@ -122,7 +122,6 @@ macro_rules! impl_binops {
 impl_binops!(UPy, upy_add, add, fpy_add, dpy_add);
 impl_binops!(UPy, upy_sub, upy_rsub, sub, fpy_sub, dpy_sub, fpy_rsub, dpy_rsub);
 impl_binops!(UPy, upy_mul, mul, fpy_mul, dpy_mul);
-impl_binops!(UPy, upy_div, upy_rdiv, div, fpy_div, dpy_div, fpy_rdiv, dpy_rdiv);
 impl_binops!(IPy, ipy_add, add, fpy_add, dpy_add);
 impl_binops!(IPy, ipy_sub, ipy_rsub, sub, fpy_sub, dpy_sub, fpy_rsub, dpy_rsub);
 impl_binops!(IPy, ipy_mul, mul, fpy_mul, dpy_mul);
@@ -316,6 +315,29 @@ fn int_divisor(rhs: &UniInput<'_>) -> Option<IBig> {
         UniInput::BInt(x) => Some(x.0.clone()),
         UniInput::OBInt(x) => Some(x.clone()),
         _ => None,
+    }
+}
+
+/// True division `a / rhs` of an integer. Between two integers the quotient is exact, a
+/// rational (`UBig(7) / 2` is `7/2`, where Python's `int` gives the float `3.5`): the `/` of the
+/// Rust integers is the truncating division, which is not what `/` means in Python (and does
+/// not even agree with `//` for negative operands). With any other number the integer is
+/// promoted to the type of that number.
+///
+/// Division by an exact zero raises `ZeroDivisionError` (a float zero gives an infinity).
+fn int_truediv(a: &IBig, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    check_divisor(&rhs)?;
+    match int_divisor(&rhs) {
+        Some(b) => RPy(RBig::from(a.clone()) / RBig::from(b)).into_py_any(py),
+        None => ipy_div(&IPy(a.clone()), rhs, py),
+    }
+}
+/// The reflected true division `lhs / b` for an integer `b` (see [`int_truediv`]).
+fn int_rtruediv(lhs: UniInput<'_>, b: &IBig, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    check_reflected_divisor(&lhs, b.is_zero())?;
+    match int_divisor(&lhs) {
+        Some(a) => RPy(RBig::from(a) / RBig::from(b.clone())).into_py_any(py),
+        None => ipy_rdiv(lhs, &IPy(b.clone()), py),
     }
 }
 
@@ -893,13 +915,11 @@ impl UPy {
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        check_divisor(&other)?;
-        upy_div(self, other, py)
+        int_truediv(self.0.as_ibig(), other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        check_reflected_divisor(&other, self.0.is_zero())?;
-        upy_rdiv(other, self, py)
+        int_rtruediv(other, self.0.as_ibig(), py)
     }
     #[inline]
     fn __floordiv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -1299,13 +1319,11 @@ impl IPy {
     }
     #[inline]
     fn __truediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        check_divisor(&other)?;
-        ipy_div(self, other, py)
+        int_truediv(&self.0, other, py)
     }
     #[inline]
     fn __rtruediv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        check_reflected_divisor(&other, self.0.is_zero())?;
-        ipy_rdiv(other, self, py)
+        int_rtruediv(other, &self.0, py)
     }
     #[inline]
     fn __floordiv__(&self, other: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {

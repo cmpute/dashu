@@ -39,6 +39,7 @@ CBig(3.0, 4.0)         # (实部, 虚部)
 UBig(2) + 3 == 5
 FBig(1.5) * 2 == FBig(3.0)
 UBig(17) // 5 == 3
+UBig(7) / 2 == RBig.from_parts(7, 2)   # 整数之间的 `/` 是精确的（得到有理数）
 divmod(UBig(17), 5) == (UBig(3), UBig(2))
 7 % UBig(3) == 1          # Python 数值可以位于运算符的任意一侧
 UBig(3) - 5 == IBig(-2)   # UBig 相减得到负数时结果为 IBig

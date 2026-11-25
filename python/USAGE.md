@@ -41,6 +41,7 @@ so mixed operands just work:
 UBig(2) + 3 == 5
 FBig(1.5) * 2 == FBig(3.0)
 UBig(17) // 5 == 3
+UBig(7) / 2 == RBig.from_parts(7, 2)   # `/` between integers is exact (a rational)
 divmod(UBig(17), 5) == (UBig(3), UBig(2))
 7 % UBig(3) == 1          # a Python number can be on either side
 UBig(3) - 5 == IBig(-2)   # a negative difference of UBig is an IBig
