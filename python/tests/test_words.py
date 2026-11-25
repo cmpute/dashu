@@ -111,6 +111,36 @@ def test_index_out_of_index_range():
     assert Words([1, 2])[-1] == 2
 
 
+def test_words_repeat():
+    assert list(Words([1, 2]) * 2) == [1, 2, 1, 2]
+    assert list(Words([1, 2]) * 0) == list(Words([1, 2]) * -3) == []
+    assert list(Words([]) * 2**62) == []
+
+
+def test_words_repeat_too_large():
+    # a repetition that cannot be allocated raises MemoryError, as for a list: it panicked
+    # ("capacity overflow") or aborted the interpreter on the failed allocation. Each case runs
+    # in its own interpreter, since an abort cannot be caught.
+    import subprocess
+    import sys
+    code = (
+        "from dashu import Words\n"
+        "try:\n"
+        "    {}\n"
+        "    print('returned')\n"
+        "except MemoryError:\n"
+        "    print('MemoryError')\n"
+    )
+    # (2**58 words do not fit in any address space, and the byte length of the others
+    # overflows; a count that the system might try to serve is deliberately not tested)
+    for expr in ("Words([1]) * 2**58", "Words([1]) * 2**62", "Words([1, 2, 3]) * (2**63 - 1)"):
+        run = subprocess.run(
+            [sys.executable, "-c", code.format(expr)], capture_output=True, text=True, timeout=60
+        )
+        assert run.returncode == 0, (expr, run.returncode, run.stderr)
+        assert run.stdout.strip() == "MemoryError", (expr, run.stdout, run.stderr)
+
+
 if __name__ == "__main__":
     test_words_get()
     test_words_set()
