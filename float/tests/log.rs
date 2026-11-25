@@ -719,4 +719,27 @@ fn test_log_exact_integer_past_isize() {
     let up = Context::<mode::Up>::new(3).log10(&x, None).unwrap();
     assert!(matches!(down, Inexact(_, NoOp)) && matches!(up, Inexact(_, AddOne)));
     assert!(down.value() < up.value());
+
+// The logarithm of an infinity (taken on the magnitude) is +inf. It shares the zero
+// significand of a zero, whose logarithm is -inf, and used to get that answer.
+#[test]
+fn test_log2_of_infinity() {
+    type FBin = FBig;
+    for inf in [FBin::INFINITY, FBin::NEG_INFINITY] {
+        assert_eq!(inf.log2_bounds(), (f32::INFINITY, f32::INFINITY));
+        assert_eq!(inf.log2_est(), f32::INFINITY);
+        assert_eq!(inf.repr().log2_bounds(), (f32::INFINITY, f32::INFINITY));
+        assert_eq!(inf.repr().log2_est(), f32::INFINITY);
+    }
+    for inf in [DBig::INFINITY, DBig::NEG_INFINITY] {
+        assert_eq!(inf.log2_bounds(), (f32::INFINITY, f32::INFINITY));
+        assert_eq!(inf.log2_est(), f32::INFINITY);
+    }
+    // every finite value stays below it, and the zeros keep -inf
+    let big = FBin::from_parts(1.into(), 1 << 40);
+    assert!(big.log2_bounds().1 < f32::INFINITY);
+    for zero in [FBin::ZERO, -FBin::ZERO] {
+        assert_eq!(zero.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+        assert_eq!(zero.log2_est(), f32::NEG_INFINITY);
+    }
 }
