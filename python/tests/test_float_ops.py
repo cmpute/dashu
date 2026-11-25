@@ -136,6 +136,23 @@ def test_float_modulo_by_zero():
         FBig(float("inf")) % 2
 
 
+def test_mod_is_floored():
+    # % is Python's floored modulo for the floats too, whatever the rounding mode of the type
+    # (FBig(-5.0) % 3 was -2 and DBig(5) % 3 was -1)
+    values = [-7.5, -5.0, -4.0, -0.75, 0.0, 0.75, 4.0, 5.0, 7.5]
+    for a in values:
+        for b in values:
+            if b == 0:
+                continue
+            assert FBig(a) % FBig(b) == a % b, (a, b)
+            assert FBig(a) % b == a % b, (a, b)
+            assert a % FBig(b) == a % b, (a, b)
+            assert DBig(a) % DBig(b) == a % b, (a, b)
+    assert DBig(5) % 3 == UBig(5) % DBig(3) == 5 % DBig(3) == 2
+    assert IBig(-5) % FBig(3.0) == 1 and UBig(5) % FBig(-3.0) == -1
+    assert DBig("7.5") % 2 == Decimal("1.5")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

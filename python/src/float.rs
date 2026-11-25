@@ -38,9 +38,16 @@ macro_rules! impl_float_binops {
     };
 }
 
-/// The remainder, with Python exceptions for the operands that the `%` operator of the float
-/// panics on: a zero divisor raises `ZeroDivisionError` (as `float` does), and an infinite
-/// operand raises `ValueError`.
+/// The floored modulo of Python (`a - b * floor(a / b)`, which has the sign of `b`), with
+/// Python exceptions for the operands that the `%` operator of the float panics on: a zero
+/// divisor raises `ZeroDivisionError` (as `float` does), and an infinite operand raises
+/// `ValueError`.
+///
+/// The `%` operator of the float gives a remainder whose sign depends on the rounding mode of
+/// the type (the sign of the dividend for `FBig`, the remainder of the least magnitude for
+/// `DBig`); it is exact and smaller than the divisor in magnitude, so adding the divisor to a
+/// remainder of the other sign gives the floored one (rounded to the precision of the operands
+/// if it has more digits, as for `float`).
 fn float_rem<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyResult<FBig<R, B>> {
     if rhs.repr().significand().is_zero() && rhs.repr().is_finite() {
         return Err(PyZeroDivisionError::new_err("float modulo by zero"));
@@ -48,7 +55,12 @@ fn float_rem<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyR
     if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
         return Err(PyValueError::new_err("arithmetic with infinity"));
     }
-    Ok(lhs.rem(rhs))
+    let rem = lhs.rem(rhs);
+    if !rem.repr().significand().is_zero() && rem.repr().sign() != rhs.repr().sign() {
+        Ok(rem + rhs)
+    } else {
+        Ok(rem)
+    }
 }
 
 /// Generate the forward and reverse modulo dispatchers (see [`float_rem`]).

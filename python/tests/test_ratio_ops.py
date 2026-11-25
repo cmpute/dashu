@@ -95,6 +95,23 @@ def test_zero_division():
     assert RBig(0).pow(2) == 0 and RBig.from_parts(1, 2).pow(-2) == 4
 
 
+def test_mod_is_floored():
+    # % is Python's floored modulo (the result has the sign of the divisor), as for Fraction
+    # and for the integers; the remainder of the least magnitude came out before (5 % 3 == -1)
+    values = [Fraction(n, d) for n in (-7, -5, -1, 0, 1, 4, 5, 7) for d in (1, 2, 3)]
+    for a in values:
+        for b in values:
+            if b == 0:
+                continue
+            assert RBig(a) % RBig(b) == a % b, (a, b)
+            assert RBig(a) % b == a % b, (a, b)
+            assert a % RBig(b) == a % b, (a, b)
+    assert RBig(5) % 3 == 5 % RBig(3) == UBig(5) % RBig(3) == UBig(5) % 3 == 2
+    assert RBig.from_parts(7, 2) % 1 == Fraction(1, 2)
+    assert RBig(-5) % 3 == 1 and RBig(5) % -3 == -1
+    assert IBig(-5) % RBig(3) == 1
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -1,4 +1,4 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 use dashu::base::{Abs, UnsignedAbs};
 use dashu::float::round::mode;
@@ -34,28 +34,42 @@ impl_rpy_binops!(rpy_add, add);
 impl_rpy_binops!(rpy_sub, rpy_rsub, sub);
 impl_rpy_binops!(rpy_mul, mul);
 
-/// Division and modulo, where a zero divisor raises `ZeroDivisionError` (as for
-/// `fractions.Fraction`).
-macro_rules! impl_rpy_divops {
-    ($method:ident, $rev_method:ident, $rs_method:ident) => {
-        pub(crate) fn $method(lhs: &RPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
-            let rhs = rhs.into_rpy()?;
-            if rhs.0.is_zero() {
-                return Err(zero_division_error());
-            }
-            RPy((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
-        }
-        fn $rev_method(lhs: UniInput<'_>, rhs: &RPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
-            let lhs = lhs.into_rpy()?;
-            if rhs.0.is_zero() {
-                return Err(zero_division_error());
-            }
-            RPy((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
-        }
-    };
+/// Division, where a zero divisor raises `ZeroDivisionError` (as for `fractions.Fraction`).
+fn rpy_div(lhs: &RPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    let rhs = rhs.into_rpy()?;
+    if rhs.0.is_zero() {
+        return Err(zero_division_error());
+    }
+    RPy((&lhs.0).div(&rhs.0)).into_py_any(py)
 }
-impl_rpy_divops!(rpy_div, rpy_rdiv, div);
-impl_rpy_divops!(rpy_mod, rpy_rmod, rem);
+fn rpy_rdiv(lhs: UniInput<'_>, rhs: &RPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    let lhs = lhs.into_rpy()?;
+    if rhs.0.is_zero() {
+        return Err(zero_division_error());
+    }
+    RPy((&lhs.0).div(&rhs.0)).into_py_any(py)
+}
+
+/// The floored modulo of Python (`a - b * floor(a / b)`, which has the sign of `b`), as for
+/// `fractions.Fraction` and for the integers. (The `%` operator of `RBig` gives the remainder
+/// of the least magnitude instead: `5 % 3` is `-1` there.)
+///
+/// A zero divisor raises `ZeroDivisionError`.
+fn rbig_mod_floor(a: &RBig, b: &RBig) -> PyResult<RBig> {
+    if b.is_zero() {
+        return Err(zero_division_error());
+    }
+    let quotient = RBig::from(a.div(b).floor());
+    Ok(a - b * quotient)
+}
+pub(crate) fn rpy_mod(lhs: &RPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    let rhs = rhs.into_rpy()?;
+    RPy(rbig_mod_floor(&lhs.0, &rhs.0)?).into_py_any(py)
+}
+fn rpy_rmod(lhs: UniInput<'_>, rhs: &RPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    let lhs = lhs.into_rpy()?;
+    RPy(rbig_mod_floor(&lhs.0, &rhs.0)?).into_py_any(py)
+}
 
 /// `10^n` as a rational number
 fn pow10(n: usize) -> RBig {
