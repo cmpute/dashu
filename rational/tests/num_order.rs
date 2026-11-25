@@ -134,6 +134,64 @@ fn test_hash() {
 }
 
 #[test]
+fn test_hash_relaxed_common_factor_of_modulus() {
+    use dashu_int::{IBig, UBig};
+    use dashu_ratio::Relaxed;
+
+    fn hash<T: NumHash>(value: &T) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
+        let mut hasher = DefaultHasher::new();
+        value.num_hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // The hash is computed modulo 2^127 - 1. A `Relaxed` keeps common odd factors, so that
+    // modulus can divide both of its components; the hash must still be that of the value.
+    let p = UBig::from((1u128 << 127) - 1);
+    let ip = IBig::from(p.clone());
+
+    // the neighbouring common factors never were a problem
+    for k in [&p - UBig::from(2u8), p.clone(), &p + UBig::from(2u8)] {
+        let r = Relaxed::from_parts(IBig::from(k.clone()), k);
+        assert!(r.num_eq(&IBig::ONE));
+        assert_eq!(hash(&r), hash(&IBig::ONE));
+        assert_eq!(hash(&r), hash(&RBig::ONE));
+    }
+
+    // reached through arithmetic
+    let r = Relaxed::from_parts(IBig::ONE, p.clone()) * Relaxed::from(ip.clone());
+    assert_eq!(r.denominator(), &p); // not in the lowest terms
+    assert!(r.num_eq(&IBig::ONE));
+    assert_eq!(hash(&r), hash(&IBig::ONE));
+
+    // other values, with the modulus cancelling once or twice
+    let p2 = p.sqr();
+    let cases = [
+        (IBig::from(3), UBig::from(5u8)),
+        (IBig::from(-7), UBig::from(3u8)),
+        (IBig::from(-1), UBig::ONE),
+        (ip.clone(), UBig::ONE), // an integer divisible by the modulus
+        (IBig::from(-5) * &ip, UBig::ONE),
+        (IBig::ONE, p.clone()), // a denominator divisible by the modulus
+        (IBig::from(-3), &p * UBig::from(5u8)),
+    ];
+    for (num, den) in cases {
+        let reduced = RBig::from_parts(num.clone(), den.clone());
+        for factor in [&p, &p2] {
+            let r = Relaxed::from_parts(&num * factor, &den * factor);
+            assert!(r.num_eq(&reduced), "{} / {}", num, den);
+            assert_eq!(hash(&r), hash(&reduced), "{} / {}", num, den);
+        }
+        if den.is_one() {
+            let r = Relaxed::from_parts(&num * &p, p.clone());
+            assert!(r.num_eq(&num));
+            assert_eq!(hash(&r), hash(&num), "{}", num);
+        }
+    }
+}
+
+#[test]
 fn test_primitive_floats() {
     // trivial cases
     assert_eq!(rbig!(0).num_cmp(&0f32), Ordering::Equal);
