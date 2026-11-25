@@ -80,10 +80,11 @@ impl<R: ErrorBounds> Context<R> {
             FBig::from_repr(Repr::zero_with_sign(re.sign()), self.float()),
             FBig::from_repr(Repr::zero_with_sign(im.sign()), self.float()),
         );
-        // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed
-        // product `x·y` (`−0` iff the two parts are opposite-signed zeros) — the Annex-G table
-        // value, which differs from the naive `−sinx·sinhy` propagation (`ccos(-0 + i·0) = 1 - i·0`).
-        let cos_im = re.sign() * im.sign(); // Annex G: negative iff the signs differ
+        // cos(x+iy) = cosx·coshy − i·sinx·sinhy: real = 1; the imaginary part is the signed zero
+        // `−sin x·sinh y = −(x·y)`, i.e. `−0` iff the two parts are like-signed zeros. This is the
+        // Annex-G value `ccos(z) = ccosh(iz)` (`ccos(+0 + i·0) = ccosh(−0 + i·0) = 1 − i·0`), and
+        // the sign the nonzero neighbours `cos(±ε ± i·0)` have.
+        let cos_im = -(re.sign() * im.sign());
         let cos = crate::repr::exact(
             FBig::from_repr(Repr::one(), self.float()),
             FBig::from_repr(Repr::zero_with_sign(cos_im), self.float()),
@@ -1384,15 +1385,15 @@ mod tests {
     #[test]
     fn sin_cos_signed_zero() {
         // Annex-G signed-zero cases for exactly-zero input: `csin(±0 ± i·0)` carries the input
-        // zeros' signs per part; `ccos`'s imaginary part is the signed product `x·y` (`−0` iff the
-        // two parts are opposite-signed — e.g. `ccos(-0 + i·0) = 1 - i·0`).
+        // zeros' signs per part; `ccos`'s imaginary part is the signed zero `−x·y` (`−0` iff the
+        // two parts are like-signed — `ccos(z) = ccosh(iz)`, e.g. `ccos(+0 + i·0) = 1 - i·0`).
         let fctx = dashu_float::Context::<mode::HalfAway>::new(53);
         let (neg0, pos0) = (F::from_repr(Repr::neg_zero(), fctx), F::from_repr(Repr::zero(), fctx));
         for (z, s_re_neg, s_im_neg, c_im_neg) in [
-            (C::from_parts(pos0.clone(), pos0.clone()), false, false, false), // +0 + i·0
-            (C::from_parts(pos0.clone(), neg0.clone()), false, true, true),   // +0 − i·0
-            (C::from_parts(neg0.clone(), pos0.clone()), true, false, true),   // −0 + i·0
-            (C::from_parts(neg0.clone(), neg0.clone()), true, true, false),   // −0 − i·0
+            (C::from_parts(pos0.clone(), pos0.clone()), false, false, true), // +0 + i·0
+            (C::from_parts(pos0.clone(), neg0.clone()), false, true, false), // +0 − i·0
+            (C::from_parts(neg0.clone(), pos0.clone()), true, false, false), // −0 + i·0
+            (C::from_parts(neg0.clone(), neg0.clone()), true, true, true),   // −0 − i·0
         ] {
             let (s, c) = z.sin_cos();
             assert_eq!(s.re().is_neg_zero(), s_re_neg, "sin re sign for {z}");

@@ -606,17 +606,19 @@ proptest! {
 
         let re_sign = if re.is_sign_negative() { Sign::Negative } else { Sign::Positive };
         let im_sign = if im.is_sign_negative() { Sign::Negative } else { Sign::Positive };
-        // cos / sqr imaginary zero is the signed product x·y: -0 iff the parts have opposite signs.
+        // sqr's imaginary zero is the signed product x·y: -0 iff the parts have opposite signs.
+        // cos's is -sin x·sinh y, the opposite one (ccos(z) = ccosh(iz)).
         let product_sign = if re_sign != im_sign { Sign::Negative } else { Sign::Positive };
+        let cos_sign = -product_sign;
 
-        // sin(±0 + i·0) = ±0 + i·0, cos(±0 + i·0) = 1 + i·(signed x·y).
+        // sin(±0 + i·0) = ±0 + i·0, cos(±0 + i·0) = 1 - i·(signed x·y).
         let (s, co) = ctx.sin_cos(&c, None);
         let s = s.unwrap().value();
         let co = co.unwrap().value();
         prop_assert_eq!(s.re().sign(), re_sign, "sin re sign z=({}, {})", re, im);
         prop_assert_eq!(s.im().sign(), im_sign, "sin im sign z=({}, {})", re, im);
         prop_assert!(co.re().significand().is_one(), "cos re = 1 z=({}, {})", re, im);
-        prop_assert_eq!(co.im().sign(), product_sign, "cos im sign z=({}, {})", re, im);
+        prop_assert_eq!(co.im().sign(), cos_sign, "cos im sign z=({}, {})", re, im);
 
         // sqr(±0 + i·0) = +0 + i·(signed 2·x·y).
         let sq = ctx.sqr(&c).unwrap().value();

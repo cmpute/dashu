@@ -113,6 +113,57 @@ fn asin_acos_of_signed_zero() {
     }
 }
 
+/// `cos(±0 ± 0i) = 1 ∓ 0i`: the imaginary zero is `−sin x·sinh y`, negative iff the two zeros
+/// are like-signed (Annex G: `ccos(z) = ccosh(iz)`), the sign the nonzero neighbours
+/// `cos(±ε ± 0i)` and `cos(±0 ± εi)` have. The ×π family has the same table.
+#[test]
+fn cos_of_signed_zero() {
+    for p in PRECISIONS {
+        let ctx = Context::<HalfEven>::new(p);
+        let one = fb::<HalfEven, 2>(1, 0);
+        for re_neg in [false, true] {
+            for im_neg in [false, true] {
+                let z = C::from_parts(zero(re_neg), zero(im_neg));
+                let want = sign_of(re_neg == im_neg);
+                let what =
+                    format!("cos(zeros: re negative {re_neg}, im negative {im_neg}) at p={p}");
+
+                let (_, sc_cos) = ctx.sin_cos(&z, None);
+                let (_, sc_cos_pi) = ctx.sin_cos_pi(&z, None);
+                for r in [ctx.cos(&z, None), sc_cos, ctx.cos_pi(&z, None), sc_cos_pi] {
+                    let r = r.unwrap();
+                    assert_eq!(flags(&r), None, "{what}");
+                    let r = r.value();
+                    assert_eq!(r.re(), one.repr(), "{what}");
+                    assert!(r.im().significand().is_zero(), "{what}");
+                    assert_eq!(r.im().sign(), want, "{what}");
+                }
+                assert_eq!(z.cos().im().sign(), want, "{what}");
+
+                // cos z = cosh(iz), with iz = −y + ix
+                let iz = C::from_parts(zero(!im_neg), zero(re_neg));
+                let cosh = ctx.cosh(&iz, None).unwrap().value();
+                assert_eq!(cosh.im().sign(), want, "{what} against cosh");
+
+                // the neighbours with one zero replaced by a tiny number of the same sign
+                let tiny = |negative: bool| fb::<HalfEven, 2>(if negative { -1 } else { 1 }, -300);
+                for near in [
+                    C::from_parts(tiny(re_neg), zero(im_neg)),
+                    C::from_parts(zero(re_neg), tiny(im_neg)),
+                ] {
+                    for im in [
+                        ctx.cos(&near, None).unwrap().value().into_parts().1,
+                        ctx.cos_pi(&near, None).unwrap().value().into_parts().1,
+                    ] {
+                        assert!(im.repr().significand().is_zero(), "{what}: neighbour");
+                        assert_eq!(im.repr().sign(), want, "{what}: neighbour");
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// On the cuts (`|x| > 1` on the real axis) the sign of the imaginary zero selects the side:
 /// `asin(x ± 0i) = sign(x)·π/2 ± i·acosh|x|`, `acos(x ± 0i) = (0 or π) ∓ i·acosh|x|`.
 #[test]
