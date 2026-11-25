@@ -792,7 +792,7 @@ impl<R: ErrorBounds> Context<R> {
         if let Some(result) = self.powf_exact(base, exp) {
             return result;
         }
-        self.pow_exp_log(base, exp, cache)
+        self.pow_exp_log(base, exp, Sign::Positive, cache)
     }
 
     /// The value of `x^y` when it is a *rounding boundary* — exactly representable in base `B`
@@ -904,13 +904,17 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// Overflow/underflow of `exp(y·ln x)` is detected inside the Ziv closure by `exp` itself
     /// (which returns `Err(Overflow)` / `Err(Underflow)`) and propagated — the result is positive
-    /// (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign; callers that need a
-    /// negative result (the `powi` fallback for a negative base) flip the sign of both the value
-    /// and the error.
+    /// (argument to `exp`), so overflow is `+∞` and underflow carries `+` sign.
+    ///
+    /// `sign` is the sign of the result: `Negative` computes `−exp(y·ln x)` (the `powi` fallback
+    /// for a negative base and an odd exponent). The sign is applied to the working value
+    /// *before* it is rounded — negating a rounded magnitude instead would round a negative
+    /// result in the mirrored direction under `Up`/`Down` — and to a range error.
     fn pow_exp_log<const B: Word>(
         &self,
         pos_base: &Repr<B>,
         exp: &Repr<B>,
+        sign: Sign,
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         // The `exp_ball` powering chain amplifies the input radius by `Bⁿ` — the same compounding
@@ -937,7 +941,18 @@ impl<R: ErrorBounds> Context<R> {
             let (result_ball, s) =
                 self.exp_ball_reduced::<B>(&arg_ball, wp, reborrow_cache(&mut cache))?;
             scale = s;
+            let result_ball = if sign == Sign::Negative {
+                -result_ball
+            } else {
+                result_ball
+            };
             Ok(result_ball.to_value_radius::<R>(&Context::<R>::new(wp)))
+        });
+        // a range error of the positive `exp(y·ln x)` is one of the signed result
+        let rounded = rounded.map_err(|e| match e {
+            FpError::Overflow(_) => FpError::Overflow(sign),
+            FpError::Underflow(_) => FpError::Underflow(sign),
+            e => e,
         })?;
         self.scale_rounded(rounded, scale)
     }
@@ -945,7 +960,7 @@ impl<R: ErrorBounds> Context<R> {
     /// `powi` fallback for exponents past the squaring chain's feasible bit length: compute
     /// `base^signed_exp = exp(signed_exp · ln|base|)`. The integer exponent is an exact float
     /// (significand `|signed_exp|`, exponent `0`), so this delegates to [`pow_exp_log`](Self::pow_exp_log)
-    /// — reusing its Ziv rounding — and then fixes the result sign from the
+    /// — reusing its Ziv rounding — with the result sign fixed from the
     /// exponent's parity for a negative base. The working precision never scales with
     /// `signed_exp.bit_length()`, so (unlike the squaring chain) this cannot allocate unboundedly.
     fn powi_via_exp_log<const B: Word>(
@@ -955,8 +970,8 @@ impl<R: ErrorBounds> Context<R> {
     ) -> FpResult<FBig<R, B>> {
         let neg_base = base.sign() == Sign::Negative;
         // `(-base)^n = (-1)^n · base^n`, so the magnitude is always `|base|^n` and only the sign
-        // depends on parity. `pow_exp_log` returns the positive magnitude; flip it (and the
-        // overflow/underflow sign) when the base is negative and the exponent is odd.
+        // depends on parity. `pow_exp_log` applies it before rounding (and to a range error): the
+        // result is negative when the base is negative and the exponent is odd.
         let odd = signed_exp.clone().into_parts().1.bit(0);
         let result_sign = Sign::from(neg_base && odd);
         let base_mag = if neg_base {
@@ -966,12 +981,7 @@ impl<R: ErrorBounds> Context<R> {
             base.clone()
         };
         let exp_repr = Repr::new(signed_exp.clone(), 0);
-        match self.pow_exp_log(&base_mag, &exp_repr, None) {
-            Ok(rounded) => Ok(rounded.map(|v| v * result_sign)),
-            Err(FpError::Overflow(_)) => Err(FpError::Overflow(result_sign)),
-            Err(FpError::Underflow(_)) => Err(FpError::Underflow(result_sign)),
-            Err(e) => Err(e),
-        }
+        self.pow_exp_log(&base_mag, &exp_repr, result_sign, None)
     }
 
     /// Calculate the exponential function (`eˣ`) on the floating point number under this context.

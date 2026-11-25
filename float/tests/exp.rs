@@ -1185,4 +1185,68 @@ mod pow_range {
             .powf(&y);
         assert_eq!(r.repr(), &Repr::new(IBig::ONE, isize::MIN));
     }
+
+    /// A negative base with an odd exponent beyond the squaring chain (above `2^64`) is
+    /// rounded as the negative number it is. Regression: the magnitude was rounded first and
+    /// then negated, so `Down` and `Up` came back swapped (with each other's flag):
+    /// `(-(1 + 2^-70))^(2^64 + 1) ≈ -e^(1/64)` under `Down` was above the `Up` result.
+    #[test]
+    fn test_powi_huge_odd_exponent_negative_base_directed() {
+        // the reported call: -e^(1/64) = -1.01574770858… lies between -532545·2^-19 and
+        // -8321·2^-13
+        let a = Repr::<2>::new(IBig::from((1u128 << 70) + 1), -70);
+        let neg_a = -a.clone();
+        let n = (IBig::ONE << 64) + IBig::ONE;
+        let lo: FBig<mode::Down> = FBig::from_parts(IBig::from(-532545), -19);
+        let hi: FBig<mode::Down> = FBig::from_parts(IBig::from(-8321), -13);
+        let got = Context::<mode::Down>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(lo.clone(), SubOne)));
+        let got = Context::<mode::Up>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.clone().with_rounding(), NoOp)));
+        let got = Context::<mode::Zero>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.clone().with_rounding(), NoOp)));
+        let got = Context::<mode::Away>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(lo.with_rounding(), SubOne)));
+        let got = Context::<mode::HalfEven>::new(20).powi(&neg_a, n.clone());
+        assert_eq!(got, Ok(Inexact(hi.with_rounding(), NoOp)));
+
+        // (-a)^n = -(a^n) rounded in the mirrored direction for an odd n, and a^n for an even
+        // one — on both sides of the squaring chain's limit
+        fn check<R: ErrorBounds, M: ErrorBounds>(p: usize, k: usize, n: &IBig) {
+            // a = 1 + 2^-k
+            let a = Repr::<2>::new((IBig::ONE << k) + IBig::ONE, -(k as isize));
+            let neg_a = -a.clone();
+            let got = Context::<R>::new(p).powi(&neg_a, n.clone()).unwrap();
+            let odd = dashu_base::BitTest::bit(n, 0);
+            let want = if odd {
+                let mirrored = Context::<M>::new(p).powi(&a, n.clone()).unwrap();
+                match mirrored {
+                    Exact(v) => Exact((-v).with_rounding()),
+                    Inexact(v, AddOne) => Inexact((-v).with_rounding(), SubOne),
+                    Inexact(v, SubOne) => Inexact((-v).with_rounding(), AddOne),
+                    Inexact(v, NoOp) => Inexact((-v).with_rounding(), NoOp),
+                }
+            } else {
+                Context::<R>::new(p).powi(&a, n.clone()).unwrap()
+            };
+            assert_eq!(got, want, "(-(1 + 2^-{k}))^{n} at {p} bits");
+        }
+        for p in [20, 50, 100, 500] {
+            for (k, bits) in [(70usize, 64usize), (70, 66), (100, 96), (600, 601)] {
+                for n in [
+                    (IBig::ONE << bits) - IBig::ONE,
+                    IBig::ONE << bits,
+                    (IBig::ONE << bits) + IBig::ONE,
+                    -(IBig::ONE << bits) - IBig::ONE,
+                ] {
+                    check::<mode::Down, mode::Up>(p, k, &n);
+                    check::<mode::Up, mode::Down>(p, k, &n);
+                    check::<mode::Zero, mode::Zero>(p, k, &n);
+                    check::<mode::Away, mode::Away>(p, k, &n);
+                    check::<mode::HalfEven, mode::HalfEven>(p, k, &n);
+                    check::<mode::HalfAway, mode::HalfAway>(p, k, &n);
+                }
+            }
+        }
+    }
 }
