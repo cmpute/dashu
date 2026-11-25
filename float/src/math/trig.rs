@@ -1732,9 +1732,20 @@ impl<R: ErrorBounds> Context<R> {
                 .value();
             let half_pi = &pi / 2u8;
             let rad = ulps::<B>(&half_pi.repr, wp, 8);
-            let half_pi = Ball::with_error(half_pi.into_repr(), rad);
-            let inv_x = one.div(&x_abs, wp)?;
-            half_pi.sub(&self.atan_compute(&inv_x)?, wp)
+            let mut half_pi = Ball::with_error(half_pi.into_repr(), rad);
+            if bottom_exp(&x_abs.mid) > (wp as isize).saturating_add(2)
+                && x_abs.rad.mul2() <= Mag::from_repr_lower(&x_abs.mid)
+            {
+                // Every `t` of the ball is at least `mid/2 ≥ B^(wp+2)`, so `atan(1/t) < 1/t` is
+                // below the last place of `π/2`: no reciprocal is formed (it underflows for an
+                // exponent near the top of the range, and so does its cube in the series for
+                // one beyond a third of it).
+                half_pi.add_error(ulp_mag::<B>(&half_pi.mid, wp));
+                Ok(half_pi)
+            } else {
+                let inv_x = one.div(&x_abs, wp)?;
+                half_pi.sub(&self.atan_compute(&inv_x)?, wp)
+            }
         } else {
             self.atan_compute(&x_abs)
         };
@@ -1823,8 +1834,33 @@ impl<R: ErrorBounds> Context<R> {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let y_ball = Ball::from_rounded(work.repr_round_ref(y), work.precision);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
-            let ratio = y_ball.div(&x_ball, work.precision)?;
-            let atan_val = work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache))?;
+            let atan_val = match y_ball.div(&x_ball, work.precision) {
+                Ok(ratio) => work.atan_ball::<B>(&ratio, reborrow_cache(&mut cache))?,
+                // `|y/x|` is beyond the exponent range: the angle is within `|x/y|` — far less
+                // than a last place — of the `±π/2` it has on the y axis.
+                Err(FpError::Overflow(_)) => {
+                    let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
+                    let half_pi = &pi / 2u8;
+                    let rad = ulps::<B>(&half_pi.repr, work.precision, 9);
+                    let half_pi = Ball::with_error(half_pi.into_repr(), rad);
+                    if y.sign() == x.sign() {
+                        half_pi
+                    } else {
+                        -half_pi
+                    }
+                }
+                // `|y/x|` is below the exponent range. In the right half plane that ratio is
+                // the result (to a relative `(y/x)²`), an underflow with the sign of `y`; in
+                // the left one it is the invisible distance from `±π`.
+                Err(FpError::Underflow(_)) => {
+                    if x.sign() == Sign::Positive {
+                        return Err(FpError::Underflow(y.sign()));
+                    }
+                    let one = Repr::<B>::one();
+                    Ball::with_error(Repr::zero(), ulp_mag::<B>(&one, work.precision))
+                }
+                Err(other) => return Err(other),
+            };
             let res = if x.sign() == Sign::Positive {
                 atan_val
             } else {

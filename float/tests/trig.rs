@@ -860,3 +860,87 @@ fn test_asin_acos_unit_half_row_is_exact() {
         assert!(near.acos_unit(12) < F::from(2));
     }
 }
+
+/// `atan(x)` of a huge `|x|` is `±(π/2 − 1/|x|)` — the rounded `±π/2`, like `atan(±inf)`. Its
+/// reciprocal series cubes `1/x`, which underflows once the exponent passes a third of the
+/// range: `atan(3e3074457345618258583)` was `Err(Underflow)` (`0` through `FBig::atan`) where
+/// one less in the exponent gave 1.570796327. `atan2` of a huge or tiny ratio shares the path.
+#[test]
+fn test_atan_of_huge_argument() {
+    let ctx = Context::<HalfAway>::new(10);
+    let half_pi = DBig::from_str("1.570796327").unwrap();
+    for e in [
+        3074457345618258582isize,
+        3074457345618258583,
+        isize::MAX / 2 + 10,
+        isize::MAX - 100,
+    ] {
+        let x = Repr::<10>::new(3.into(), e);
+        assert_eq!(ctx.atan(&x, None).unwrap().value(), half_pi, "atan(3e{e})");
+        assert_eq!(ctx.atan(&-x.clone(), None).unwrap().value(), -half_pi.clone());
+        assert_eq!(ctx.atan_unit(&x, 4, None).unwrap().value(), DBig::ONE);
+        let f = DBig::from_parts(3.into(), e).with_precision(10).value();
+        assert_eq!(f.atan(), half_pi);
+    }
+    for e in [
+        -3074457345618258602isize,
+        -3074457345618258603,
+        isize::MIN + 100,
+    ] {
+        let x = Repr::<10>::new(3.into(), e);
+        let one = Repr::<10>::one();
+        assert_eq!(ctx.atan2(&one, &x, None).unwrap().value(), half_pi, "atan2(1, 3e{e})");
+        assert_eq!(ctx.atan2(&-one, &x, None).unwrap().value(), -half_pi.clone());
+        let f = DBig::from_parts(3.into(), e).with_precision(10).value();
+        assert_eq!(DBig::ONE.with_precision(10).value().atan2(&f), half_pi);
+    }
+
+    // Every mode and precision: the same value and flag as at infinity. (π/2 is irrational,
+    // so a displacement this small never crosses a rounding boundary.)
+    fn check<R: round::ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let pos = ctx.atan(&Repr::<2>::infinity(), None);
+        let neg = ctx.atan(&Repr::<2>::neg_infinity(), None);
+        assert!(matches!(pos, Ok(Inexact(..))));
+        let one = Repr::<2>::one();
+        for e in [
+            1000isize,
+            1_000_000,
+            isize::MAX / 3 + 1,
+            isize::MAX / 2 + 10,
+            isize::MAX - 100,
+        ] {
+            let x = Repr::<2>::new(3.into(), e);
+            assert_eq!(ctx.atan(&x, None), pos, "atan, p = {p}, e = {e}");
+            assert_eq!(ctx.atan(&-x.clone(), None), neg, "atan(-), p = {p}, e = {e}");
+            // a ratio of that size, on either side of the y axis
+            let tiny = Repr::<2>::new(3.into(), -e);
+            assert_eq!(ctx.atan2(&one, &tiny, None), pos, "atan2, p = {p}, e = {e}");
+            assert_eq!(ctx.atan2(&one, &-tiny.clone(), None), pos);
+            assert_eq!(ctx.atan2(&-one.clone(), &tiny, None), neg);
+            assert_eq!(ctx.atan2(&-one.clone(), &-tiny, None), neg);
+        }
+        // a ratio beyond the exponent range in either direction
+        let big = Repr::<2>::new(3.into(), isize::MAX / 2 + 10);
+        let small = Repr::<2>::new(5.into(), -(isize::MAX / 2) - 10);
+        assert_eq!(ctx.atan2(&big, &small, None), pos, "p = {p}");
+        assert_eq!(ctx.atan2(&big, &-small.clone(), None), pos);
+        assert_eq!(ctx.atan2(&-big.clone(), &small, None), neg);
+        // next to the positive x axis the angle is the ratio itself, which underflows; next
+        // to the negative one it is ±π
+        assert_eq!(ctx.atan2(&small, &big, None), Err(FpError::Underflow(Sign::Positive)));
+        assert_eq!(ctx.atan2(&-small.clone(), &big, None), Err(FpError::Underflow(Sign::Negative)));
+        let pi = ctx.pi::<2>(None);
+        assert_eq!(ctx.atan2(&small, &-big.clone(), None), Ok(pi), "p = {p}");
+        // −π, rounded once under the mode from a wider π
+        let wide = Context::<HalfEven>::new(p + 100).pi::<2>(None).value();
+        let neg_pi = (-wide).with_rounding::<R>().with_precision(p);
+        assert_eq!(ctx.atan2(&-small, &-big, None), Ok(neg_pi), "p = {p}");
+    }
+    for p in [20usize, 50, 100, 500] {
+        check::<HalfEven>(p);
+        check::<Up>(p);
+        check::<Down>(p);
+        check::<Zero>(p);
+    }
+}
