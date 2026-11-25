@@ -643,6 +643,11 @@ impl<R: Round> Context<R> {
             return Err(FpError::Underflow(repr.sign()));
         }
         let odd = convert_base_odd::<B>(repr, 60);
+        // The base conversion itself can leave the exponent range of the binary float (a huge
+        // decimal exponent times log2(10) does not fit an `isize`); it then reports an infinity.
+        if odd.is_infinite() {
+            return Err(FpError::Overflow(odd.sign()));
+        }
         // Unified range check (shared by `to_f64` and `TryFrom`): a value beyond f64::MAX is out
         // of range regardless of rounding mode (the mode only picks the saturation endpoint).
         // Checked on the base-2 `odd`, BEFORE the significand rounding that could collapse a
@@ -697,6 +702,10 @@ impl<R: Round> Context<R> {
             return Err(FpError::Underflow(repr.sign()));
         }
         let odd = convert_base_odd::<B>(repr, 32);
+        // see `convert_to_f64`: the base conversion overflowed the binary exponent range
+        if odd.is_infinite() {
+            return Err(FpError::Overflow(odd.sign()));
+        }
         // See `convert_to_f64`: unified range check on the base-2 `odd`, before the significand
         // rounding. f32::MAX = (2^24 − 1) × 2^104 ≈ 2^128.
         let (lb, ub) = odd.log2_bounds();

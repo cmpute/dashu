@@ -1431,4 +1431,34 @@ fn test_from_parts_zero_significand() {
     assert!(Repr::<10>::neg_zero().is_neg_zero());
     assert!(Repr::<10>::infinity().is_infinite());
     assert!(Repr::<10>::neg_infinity().is_infinite());
+
+fn test_to_float_exponent_beyond_binary_range() {
+    use dashu_float::round::mode::Down;
+
+    // The value is finite, but its binary exponent (the decimal one times log2(10), or four
+    // times the hexadecimal one) does not fit an `isize`: the base conversion saturates to an
+    // infinity, which `to_f32` / `to_f64` have to treat as the overflow it is.
+    let dec = DBig::from_parts(IBig::ONE, 3_000_000_000_000_000_000);
+    assert_eq!(dec.to_f64(), Inexact(f64::INFINITY, AddOne));
+    assert_eq!(dec.to_f32(), Inexact(f32::INFINITY, AddOne));
+    assert_eq!(dec.repr().to_f64().value(), f64::INFINITY);
+    assert_eq!((-dec.clone()).to_f64().value(), f64::NEG_INFINITY);
+    assert_eq!((-dec.clone()).to_f32().value(), f32::NEG_INFINITY);
+
+    let hex = FBig::<HalfEven, 16>::from_parts(IBig::ONE, isize::MAX / 2);
+    assert_eq!(hex.to_f64().value(), f64::INFINITY);
+    assert_eq!(hex.to_f32().value(), f32::INFINITY);
+
+    // an inward rounding mode saturates at the largest finite float instead
+    let down = dec.clone().with_rounding::<Down>();
+    assert_eq!(down.to_f64(), Inexact(f64::MAX, NoOp));
+    assert_eq!(down.to_f32(), Inexact(f32::MAX, NoOp));
+    assert_eq!((-down.clone()).to_f64().value(), f64::NEG_INFINITY);
+
+    // the mirrored tiny values underflow without a panic
+    let tiny = DBig::from_parts(IBig::ONE, -3_000_000_000_000_000_000);
+    assert_eq!(tiny.to_f64().value(), 0.0);
+    assert_eq!(tiny.to_f32().value(), 0.0);
+    let tiny = FBig::<HalfEven, 16>::from_parts(IBig::ONE, isize::MIN / 2);
+    assert_eq!(tiny.to_f64().value(), 0.0);
 }
