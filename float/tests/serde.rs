@@ -287,6 +287,39 @@ fn test_serde_infinity() {
 }
 
 #[test]
+fn test_serde_finite_number_spelled_inf() {
+    // In bases above 23 the letters of `inf` are digits. The finite integer with those digits
+    // must not be written as the string that the deserializer reads as an infinity.
+    type F<const B: dashu_int::Word> = dashu_float::FBig<dashu_float::round::mode::HalfAway, B>;
+    fn check<const B: dashu_int::Word>() {
+        let inf = dashu_int::IBig::from((18 * B + 23) * B + 15);
+        for significand in [inf.clone(), -inf] {
+            let repr = Repr::<B>::new(significand, 0);
+            let json = to_string(&repr).unwrap();
+            let parsed: Repr<B> = from_str(&json).unwrap();
+            assert_eq!(parsed, repr, "base {B}: {json}");
+
+            for precision in [0, 3, 4, 10] {
+                let f = F::<B>::from_repr(repr.clone(), dashu_float::Context::new(precision));
+                let json = to_string(&f).unwrap();
+                let parsed: F<B> = from_str(&json).unwrap();
+                assert_eq!(parsed, f, "base {B}: {json}");
+                assert_eq!(parsed.precision(), precision, "base {B}: {json}");
+            }
+        }
+        // the infinities are still written as `inf` / `-inf`
+        assert_eq!(to_string(&Repr::<B>::infinity()).unwrap(), "\"inf\"");
+        let r: Repr<B> = from_str("\"-inf\"").unwrap();
+        assert_eq!(r, Repr::<B>::neg_infinity());
+        let f: F<B> = from_str(&to_string(&F::<B>::INFINITY).unwrap()).unwrap();
+        assert_eq!(f, F::<B>::INFINITY);
+    }
+    check::<24>();
+    check::<30>();
+    check::<36>();
+}
+
+#[test]
 fn test_serde_struct_field_names() {
     use serde_test::{assert_de_tokens, assert_de_tokens_error, Configure, Token};
 

@@ -64,6 +64,9 @@ impl<const B: Word> Repr<B> {
         if self.significand.is_zero() || positional_zeros <= MAX_POSITIONAL_ZEROS {
             // the positional form (and the zeros and infinities, which have their own)
             write!(&mut s, "{}", self).ok()?;
+            if spells_infinity(self) {
+                s.push_str(ZERO_SCALE);
+            }
         } else {
             write!(&mut s, "{}@{}", self.significand.in_radix(B as _), self.exponent).ok()?;
         }
@@ -78,6 +81,21 @@ impl<const B: Word> Repr<B> {
 }
 
 const ERR_TOO_MANY_DIGITS: &str = "the significand has more digits than the precision allows";
+
+/// An explicit zero scale. In bases above 23 the letters of `inf` are digits, so the finite
+/// integer written `inf` (`-inf`) would be read back as an infinity; it is written with this
+/// suffix instead, which changes neither the value nor the number of digits.
+const ZERO_SCALE: &str = "@0";
+
+/// Whether the positional form of a finite number is exactly `inf` or `-inf`.
+fn spells_infinity<const B: Word>(repr: &Repr<B>) -> bool {
+    if B <= 23 || repr.is_infinite() || repr.exponent != 0 {
+        return false;
+    }
+    // the digits `i`, `n`, `f` are 18, 23 and 15
+    let inf = IBig::from((18 * B + 23) * B + 15);
+    repr.significand == inf || repr.significand == -inf
+}
 
 impl<R: Round, const B: Word> FBig<R, B> {
     /// The literal that parses back to this number *with the same precision*, if one exists.
@@ -132,6 +150,8 @@ impl<R: Round, const B: Word> FBig<R, B> {
                         s.push('.');
                     }
                     s.extend(core::iter::repeat('0').take(precision - n));
+                } else if spells_infinity(&self.repr) {
+                    s.push_str(ZERO_SCALE);
                 }
             }
             _ => {
