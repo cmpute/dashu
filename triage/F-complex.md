@@ -261,10 +261,11 @@ through its series as a ball (`ln_1p_ball`, at most 16 terms, else the float `ln
 `s` is exact and tiny the result is `s/2` rounded with a negative sticky part (even bases).
 Elsewhere `ln(hypot)` as before (`CBall::ln_abs`, split out of `CBall::log`). A real part that
 underflows now saturates on its own (`combine_results`).
-Note: in an odd base under the round-to-nearest modes a deep case still does not return —
-`log(1 + i·3^-510)` at 500 digits. That is not this cluster's defect but a float one (see
-"Cross-group notes": odd-base `ErrorBounds`); it fails the same way at `b0705ed`, and returns
-at the base. Pinned by the `#[ignore]`d `complex/tests/log.rs::log_next_to_one_odd_base_nearest`.
+Note: in an odd base under the round-to-nearest modes a deep case still does not return in
+this worktree — `log(1 + i·3^-510)` at 500 digits. That is not this cluster's defect but the
+odd-base certification one (F51/F72, float-trig group; see "Cross-group notes"); it fails the
+same way at `b0705ed`, and returns at the base. Pinned by the `#[ignore]`d
+`complex/tests/log.rs::log_next_to_one_odd_base_nearest`, to be enabled once that fix is in.
 
 ### float: the finite number spelled `inf` serializes as an infinity (found with F28)
 Reports: none (found while fixing F28; the complex struct form goes through `Repr`'s serde)
@@ -324,7 +325,8 @@ Why not fixed: each function needs its own closed form and side analysis, as don
 Counts: 15 real, fixed (13 clusters). Provenance by report: 9 pre-existing, 4 incomplete-fix,
 2 regression. Found on the way and not from a report: the float serde `inf` spelling
 (regression, fixed), the tiny-argument leftover (pre-existing, not fixed) and the odd-base
-`ErrorBounds` hang in dashu-float (regression, not fixed, flagged).
+`ErrorBounds` hang in dashu-float (regression; not fixed here, it is F51/F72 of the float-trig
+group).
 
 ## Changelog entries
 
@@ -359,17 +361,20 @@ Counts: 15 real, fixed (13 clusters). Provenance by report: 9 pre-existing, 4 in
 
 ## Cross-group notes
 
-- **float (round / Ziv), not fixed — a regression that other groups should know about**: in an
-  odd base the round-to-nearest `ErrorBounds` are cut off about 129 digits (base 3) inside half
-  an ulp (`half_ulp`, `float/src/round.rs:215-227`, from `f2b0479`). A value closer to a tie
-  than that is never certified, so every Ziv loop (float and complex) climbs to its retry cap
-  at an exploding working precision — an effective hang. Ties are natural in odd bases
+- **float (round / Ziv), not fixed here — fixed by the float-trig group**: in an odd base the
+  round-to-nearest `ErrorBounds` are cut off about 129 digits (base 3) inside half an ulp
+  (`half_ulp`, `float/src/round.rs:215-227`, from `f2b0479`). A value closer to a tie than that
+  is never certified, so every Ziv loop (float and complex) climbs to its retry cap at an
+  exploding working precision — an effective hang. Ties are natural in odd bases
   (`1/2 = 0.111…₃`): `FBig::<HalfEven, 3>` `ln_1p(3^-220)` at 228 digits does not return at
   this commit and returns in 0.2 ms at `a0fc535`; complex `log(1 + i·3^-510)` at 500 digits
-  likewise (both verified by running, also at `b0705ed`). It is outside this group's reports
-  and needs an exact comparison against half an ulp (doubling both sides) in the two
-  certification routines rather than a truncated bound.
-
+  likewise (both verified by running, also at `b0705ed`). This is the cluster "Results next to
+  a midpoint are never certified in an odd base" (F51, F72) of `triage/F-float-trig.md`, whose
+  fix (in `float/src/ziv.rs` **and** `complex/src/ziv.rs`) is on `master` but not in this
+  worktree. **When the branches are combined:** remove the `#[ignore]` from
+  `complex/tests/log.rs::log_next_to_one_odd_base_nearest` (it should then pass; not verified
+  here) and, if it does, drop the `contains("Half")` guard around the base-3 cases of
+  `::log_next_to_one`.
 - **float (serde)**: `float/src/third_party/serde.rs` and `float/tests/serde.rs` — the `inf@0`
   fix above (commit "float: do not serialize the finite number spelled inf as an infinity").
   Small and self-contained; it may collide textually with another agent's serde changes.
