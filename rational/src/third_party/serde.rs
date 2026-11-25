@@ -163,6 +163,14 @@ fn deserialize_repr<'de, D: Deserializer<'de>>(
     } else {
         deserializer.deserialize_struct(name, FIELDS, ReprVisitor)?
     };
+    // The string form is checked by the parser; the struct form carries the two integers
+    // as they are, so a zero denominator has to be rejected here.
+    if repr.denominator.is_zero() {
+        return Err(de::Error::invalid_value(
+            de::Unexpected::Other("a zero denominator"),
+            &"a rational number with a nonzero denominator",
+        ));
+    }
     Ok(repr)
 }
 

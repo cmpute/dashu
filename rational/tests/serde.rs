@@ -113,3 +113,55 @@ fn test_serde_struct_field_names() {
         "duplicate field `denominator`",
     );
 }
+
+#[test]
+fn test_serde_zero_denominator() {
+    use dashu_int::{IBig, UBig};
+    use serde_test::{assert_de_tokens_error, Token};
+
+    // the string form goes through the parser
+    assert!(from_str::<RBig>("\"3/0\"").is_err());
+    assert!(from_str::<Relaxed>("\"3/0\"").is_err());
+
+    // the struct form of the binary formats carries the two integers as they are
+    for num in [3, -4, 0] {
+        let bytes = to_allocvec(&(IBig::from(num), UBig::ZERO)).unwrap();
+        assert!(from_bytes::<RBig>(&bytes).is_err(), "{}/0 was accepted", num);
+        assert!(from_bytes::<Relaxed>(&bytes).is_err(), "{}/0 was accepted", num);
+    }
+    let bytes = to_allocvec(&(IBig::from(6), UBig::from(4u8))).unwrap();
+    assert_eq!(from_bytes::<RBig>(&bytes).unwrap(), rbig!(3 / 2));
+    assert_eq!(from_bytes::<Relaxed>(&bytes).unwrap(), rbig!(~3/2));
+
+    // also when the fields are given by name
+    let message = "invalid value: a zero denominator, \
+                   expected a rational number with a nonzero denominator";
+    assert_de_tokens_error::<serde_test::Compact<RBig>>(
+        &[
+            Token::Struct {
+                name: "RBig",
+                len: 2,
+            },
+            Token::Str("numerator"),
+            Token::Bytes(&[3]),
+            Token::Str("denominator"),
+            Token::Bytes(&[]),
+            Token::StructEnd,
+        ],
+        message,
+    );
+    assert_de_tokens_error::<serde_test::Compact<Relaxed>>(
+        &[
+            Token::Struct {
+                name: "Relaxed",
+                len: 2,
+            },
+            Token::Str("denominator"),
+            Token::Bytes(&[]),
+            Token::Str("numerator"),
+            Token::Bytes(&[3]),
+            Token::StructEnd,
+        ],
+        message,
+    );
+}
