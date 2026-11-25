@@ -72,7 +72,8 @@ old object (an alias, a `set` member, a `dict` key) keep their value.
 
 Transcendentals are **panic-free**: domain errors raise `ValueError`, indeterminate forms
 like `0/0` raise `ZeroDivisionError`, and overflow/underflow yield signed infinities or
-zeros. They share a module-wide constant cache (`dashu.Cache`) so repeated calls at
+zeros. A value of unlimited precision (`x.with_precision(0)`) raises `ValueError` where the
+result would have to be rounded. They share a module-wide constant cache (`dashu.Cache`) so repeated calls at
 increasing precision reuse the precomputed constants.
 
 A module-level `math` API mirrors the common functions — `dashu.sin`, `dashu.sqrt`,
@@ -233,7 +234,7 @@ on the same type:
 ### zeroize (feature `zeroize`)
 
 Every type gains a `.zeroize()` method that overwrites the backing memory (buffers become
-zero) before the value is dropped:
+zero) before the value is dropped. The value becomes zero; a float keeps its precision:
 
 ```python
 >>> v = UBig(12345)

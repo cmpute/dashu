@@ -1,6 +1,7 @@
 import math
 from decimal import Decimal
 
+import dashu
 from dashu import *
 
 
@@ -151,6 +152,84 @@ def test_mod_is_floored():
     assert DBig(5) % 3 == UBig(5) % DBig(3) == 5 % DBig(3) == 2
     assert IBig(-5) % FBig(3.0) == 1 and UBig(5) % FBig(-3.0) == -1
     assert DBig("7.5") % 2 == Decimal("1.5")
+
+
+def test_rounding_methods_keep_a_precision():
+    # trunc / floor / ceil / round / fract returned a value of unlimited precision (0) for a
+    # zero result and where no digit of the number was left, and the transcendentals then
+    # panicked on it: FBig(0.0).fract().acos(), DBig.from_parts(1, -1).ceil().sin()
+    methods = ["trunc", "floor", "ceil", "round", "fract"]
+    values = [0.0, 0.1, 0.3, 0.5, 0.75, 1.0, 2.5, -0.1, -0.5, -2.5, 1e-10, 123456.75]
+    for cls in (FBig, DBig):
+        for v in values:
+            x = cls(v)
+            for m in methods:
+                r = getattr(x, m)()
+                assert r.precision() > 0, (cls.__name__, v, m)
+                # the value is unchanged by the fix, and usable in a transcendental
+                if m != "round" and m != "fract":
+                    assert r == getattr(math, m)(v), (cls.__name__, v, m)
+                r.cos().sin()
+                r.exp()
+    assert FBig(0.0).fract().precision() == 53
+    assert FBig(0.0).fract().acos() == FBig(0.0).acos()
+    assert abs(float(FBig(0.1).trunc().acos()) - math.pi / 2) < 1e-15
+    one = DBig.from_parts(1, -1).ceil()
+    assert one == 1 and one.precision() == 1 and one.sin() == DBig("1").sin()
+    assert round(DBig("0.001"), 2).precision() == 4 and round(DBig("0.001"), 2) == 0
+    round(DBig("0.001"), 2).cos()
+    # a rounding that leaves digits keeps the precision the Rust method gives
+    assert DBig("1.234").trunc().precision() == 1
+
+
+def test_unlimited_precision_raises_instead_of_panicking():
+    # a value of unlimited precision (with_precision(0)) cannot be the operand of a function
+    # whose result has to be rounded: that is a ValueError, where the binding panicked
+    import pytest
+    unary = ["sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh",
+             "acosh", "atanh", "exp", "exp_m1", "ln", "ln_1p", "log2", "log10", "sqrt", "cbrt",
+             "sin_cos", "sinh_cosh"]
+    for cls in (FBig, DBig):
+        for v in (0.0, 0.5, 1.0, 4.0):
+            x = cls(v).with_precision(0)
+            assert x.precision() == 0
+            for name in unary:
+                with pytest.raises(ValueError):
+                    getattr(x, name)()
+            for call in (lambda: x.nth_root(2), lambda: x.powi(-2), lambda: x.powf(x),
+                         lambda: x.atan2(x)):
+                with pytest.raises(ValueError):
+                    call()
+            # exact operations still work
+            assert x.powi(2) == v * v and x.powi(2).precision() == 0
+            assert (x * x + x).precision() == 0
+            # with a limited precision on the other operand there is one to round to
+            assert x.atan2(cls(1.0)).precision() == cls(1.0).precision()
+    x = FBig(0.5).with_precision(0)
+    for fn in (dashu.sin, dashu.sqrt, dashu.exp, dashu.log, dashu.sin_cos):
+        with pytest.raises(ValueError):
+            fn(x)
+    for fn in (dashu.hypot, dashu.atan2, dashu.powf):
+        with pytest.raises(ValueError):
+            fn(x, x)
+        assert fn(x, 0.5).precision() == fn(0.5, x).precision() == 53
+    with pytest.raises(ValueError):
+        dashu.nth_root(x, 3)
+    with pytest.raises(ValueError):
+        dashu.powi(x, -1)
+    assert dashu.powi(x, 2) == 0.25
+
+    z = CBig(FBig(1.0).with_precision(0), FBig(2.0).with_precision(0))
+    assert z.precision() == 0
+    for name in ["sin", "cos", "tan", "exp", "ln", "sinh", "cosh", "tanh", "asinh", "acosh",
+                 "atanh", "sqrt", "abs", "arg"]:
+        with pytest.raises(ValueError):
+            getattr(z, name)()
+    with pytest.raises(ValueError):
+        z.powf(z)
+    with pytest.raises(ValueError):
+        z.powi(-1)
+    assert z.powi(2) == CBig(-3.0, 4.0) and z.norm() == 5
 
 
 if __name__ == "__main__":

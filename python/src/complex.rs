@@ -21,7 +21,7 @@ use pyo3::{
 };
 
 use crate::{
-    cache::{unwrap_complex, unwrap_float, with_cache},
+    cache::{limited_complex, unwrap_complex, unwrap_float, with_cache},
     convert::{conversion_error_to_py, parse_error_to_py, parse_to_ibig, parse_to_long},
     types::{CPy, DPy, FPy, IPy, UPy, UniInput},
 };
@@ -129,7 +129,7 @@ macro_rules! impl_cpy_math {
         impl CPy {
             $(
                 fn $name(&self) -> PyResult<Self> {
-                    let ctx = self.0.context();
+                    let ctx = limited_complex(self.0.context())?;
                     let res = with_cache(|c| ctx.$ctx(&self.0, Some(c)));
                     Ok(Self(unwrap_complex(res, ctx)?))
                 }
@@ -339,13 +339,13 @@ impl CPy {
     }
     /// Modulus |z| (algebraic — hypot; routed through the float Context layer for clean errors).
     fn abs(&self) -> PyResult<FPy> {
-        let ctx = self.0.context();
+        let ctx = limited_complex(self.0.context())?;
         let res = ctx.abs(&self.0);
         Ok(FPy(unwrap_float(res, ctx_to_float(&ctx))?))
     }
     /// Argument (phase) of z.
     fn arg(&self) -> PyResult<FPy> {
-        let ctx = self.0.context();
+        let ctx = limited_complex(self.0.context())?;
         let res = with_cache(|c| ctx.arg(&self.0, Some(c)));
         Ok(FPy(unwrap_float(res, ctx_to_float(&ctx))?))
     }
@@ -365,16 +365,21 @@ impl CPy {
 
     /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited_complex(self.0.context())?;
         Ok(Self(unwrap_complex(ctx.sqrt(&self.0), ctx)?))
     }
     fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
         let n = n.into_ibig()?;
-        let ctx = self.0.context();
+        // (a non-negative power is exact with an unlimited precision)
+        let ctx = if n.sign() == dashu::base::Sign::Negative {
+            limited_complex(self.0.context())?
+        } else {
+            self.0.context()
+        };
         Ok(Self(unwrap_complex(ctx.powi(&self.0, n), ctx)?))
     }
     fn powf(&self, w: &Self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited_complex(self.0.context())?;
         let res = with_cache(|c| ctx.powf(&self.0, &w.0, Some(c)));
         Ok(Self(unwrap_complex(res, ctx)?))
     }
@@ -386,10 +391,14 @@ impl CPy {
 #[pymethods]
 impl CPy {
     /// Zeroize the internal buffers, clearing the memory used by this complex number. The
-    /// value becomes zero.
+    /// value becomes zero, and keeps its precision.
     fn zeroize(&mut self) {
         use zeroize::Zeroize;
+        // (the precision is zeroized with the buffers; keep it, as for the floats)
+        let context = self.0.context();
         self.0.zeroize();
+        let zero = dashu::float::Repr::zero;
+        self.0 = CBig::new(zero(), zero(), context);
     }
 }
 

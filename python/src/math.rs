@@ -8,7 +8,7 @@
 //! [`UniInput::into_math_fpy`]). The functions of two operands work at the larger of the two
 //! precisions, as the arithmetic operators do.
 
-use crate::cache::{unwrap_float, with_cache};
+use crate::cache::{limited, unwrap_float, with_cache};
 use crate::types::{FPy, UPy, UniInput};
 use dashu::base::ring::{ExtendedGcd, Gcd};
 use dashu::float::Context;
@@ -21,7 +21,7 @@ macro_rules! math_trans {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
             let x = x.into_math_fpy()?;
-            let ctx = x.0.context();
+            let ctx = limited(x.0.context())?;
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             Ok(FPy(unwrap_float(res, ctx)?))
         }
@@ -34,7 +34,7 @@ macro_rules! math_trans_pair {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<(FPy, FPy)> {
             let x = x.into_math_fpy()?;
-            let ctx = x.0.context();
+            let ctx = limited(x.0.context())?;
             let res = with_cache(|c| ctx.$ctx_method(x.0.repr(), Some(c)));
             let (a, b) = res;
             Ok((FPy(unwrap_float(a, ctx)?), FPy(unwrap_float(b, ctx)?)))
@@ -51,7 +51,7 @@ macro_rules! math_root {
         #[pyfunction]
         pub fn $name(x: UniInput<'_>) -> PyResult<FPy> {
             let x = x.into_math_fpy()?;
-            let ctx = x.0.context();
+            let ctx = limited(x.0.context())?;
             Ok(FPy(unwrap_float(ctx.$ctx_method(x.0.repr()), ctx)?))
         }
     };
@@ -91,7 +91,7 @@ math_root!(cbrt, cbrt);
 #[pyfunction]
 pub fn nth_root(x: UniInput<'_>, n: usize) -> PyResult<FPy> {
     let x = x.into_math_fpy()?;
-    let ctx = x.0.context();
+    let ctx = limited(x.0.context())?;
     Ok(FPy(unwrap_float(ctx.nth_root(n, x.0.repr()), ctx)?))
 }
 
@@ -99,7 +99,7 @@ pub fn nth_root(x: UniInput<'_>, n: usize) -> PyResult<FPy> {
 pub fn atan2(y: UniInput<'_>, x: UniInput<'_>) -> PyResult<FPy> {
     let y = y.into_math_fpy()?;
     let x = x.into_math_fpy()?;
-    let ctx = Context::max(y.0.context(), x.0.context());
+    let ctx = limited(Context::max(y.0.context(), x.0.context()))?;
     let res = with_cache(|c| ctx.atan2(y.0.repr(), x.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
@@ -108,7 +108,7 @@ pub fn atan2(y: UniInput<'_>, x: UniInput<'_>) -> PyResult<FPy> {
 pub fn powf(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
     let x = x.into_math_fpy()?;
     let y = y.into_math_fpy()?;
-    let ctx = Context::max(x.0.context(), y.0.context());
+    let ctx = limited(Context::max(x.0.context(), y.0.context()))?;
     let res = with_cache(|c| ctx.powf(x.0.repr(), y.0.repr(), Some(c)));
     Ok(FPy(unwrap_float(res, ctx)?))
 }
@@ -117,7 +117,12 @@ pub fn powf(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
 pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
     let x = x.into_math_fpy()?;
     let n = n.into_ibig()?;
-    let ctx = x.0.context();
+    // (a non-negative power is exact with an unlimited precision)
+    let ctx = if n.sign() == dashu::base::Sign::Negative {
+        limited(x.0.context())?
+    } else {
+        x.0.context()
+    };
     Ok(FPy(unwrap_float(ctx.powi(x.0.repr(), n), ctx)?))
 }
 
@@ -125,7 +130,7 @@ pub fn powi(x: UniInput<'_>, n: UniInput<'_>) -> PyResult<FPy> {
 pub fn hypot(x: UniInput<'_>, y: UniInput<'_>) -> PyResult<FPy> {
     let x = x.into_math_fpy()?;
     let y = y.into_math_fpy()?;
-    let ctx = Context::max(x.0.context(), y.0.context());
+    let ctx = limited(Context::max(x.0.context(), y.0.context()))?;
     Ok(FPy(unwrap_float(ctx.hypot(x.0.repr(), y.0.repr()), ctx)?))
 }
 

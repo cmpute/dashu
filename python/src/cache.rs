@@ -29,6 +29,31 @@ pub fn with_cache<R>(f: impl FnOnce(&mut ConstCache) -> R) -> R {
     CONST_CACHE.with(|c| f(&mut c.borrow_mut()))
 }
 
+const ERRMSG_UNLIMITED_PRECISION: &str = "the value has unlimited precision (0), but the result of this operation has to be \
+     rounded: set a precision with with_precision() first";
+
+/// The context of an operation whose result has to be rounded, which needs a limited
+/// precision: with an unlimited one (precision 0, as `x.with_precision(0)` gives) the Rust
+/// functions panic, so a `ValueError` is raised here instead.
+pub fn limited<R: Round>(ctx: Context<R>) -> PyResult<Context<R>> {
+    if ctx.precision() == 0 {
+        Err(PyValueError::new_err(ERRMSG_UNLIMITED_PRECISION))
+    } else {
+        Ok(ctx)
+    }
+}
+
+/// The same check as [`limited`], for the context of a complex number.
+pub fn limited_complex<R: Round>(
+    ctx: dashu::complex::Context<R>,
+) -> PyResult<dashu::complex::Context<R>> {
+    if ctx.precision() == 0 {
+        Err(PyValueError::new_err(ERRMSG_UNLIMITED_PRECISION))
+    } else {
+        Ok(ctx)
+    }
+}
+
 /// Map a float `FpResult<Rounded<FBig>>` to a `PyResult<FBig>`:
 /// - `Overflow(sign)` / `Underflow(sign)` → signed ∞ / signed 0 (graceful, like Python float);
 /// - `InfiniteInput` / `OutOfDomain` → `ValueError`;

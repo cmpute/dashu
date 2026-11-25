@@ -68,7 +68,8 @@ UBig(3) - 5 == IBig(-2)   # UBig 相减得到负数时结果为 IBig
   以及超越函数（`sin`/`cos`/`exp`/`ln`/`sqrt`/...）。
 
 超越函数**不会 panic**：定义域错误抛出 `ValueError`，`0/0` 等不定形式抛出
-`ZeroDivisionError`，上溢/下溢则产生带符号的无穷或零。它们共享一个模块级的常数缓存
+`ZeroDivisionError`，上溢/下溢则产生带符号的无穷或零。对于精度无限的值
+（`x.with_precision(0)`），若结果需要舍入，则抛出 `ValueError`。它们共享一个模块级的常数缓存
 （`dashu.Cache`），因此在不断提高精度的情况下重复调用时会复用预先计算的常数。
 
 模块级的 `math` API 镜像了常见函数——`dashu.sin`、`dashu.sqrt`、
@@ -222,7 +223,8 @@ True
 
 ### zeroize（feature `zeroize`）
 
-每种类型都会获得一个 `.zeroize()` 方法，在值被释放之前覆写其底层内存（缓冲区清零）：
+每种类型都会获得一个 `.zeroize()` 方法，在值被释放之前覆写其底层内存（缓冲区清零）。值变为零；
+浮点数保留其精度：
 
 ```python
 >>> v = UBig(12345)

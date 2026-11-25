@@ -342,11 +342,7 @@ impl<'a> UniInput<'a> {
             other => {
                 let exact = other.is_exact();
                 let f = other.into_fpy()?.0;
-                Ok(FPy(if exact {
-                    exact_at_least(f, default)
-                } else {
-                    f
-                }))
+                Ok(FPy(if exact { exact_at_least(f, default) } else { f }))
             }
         }
     }

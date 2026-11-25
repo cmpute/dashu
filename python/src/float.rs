@@ -1,7 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 
-use dashu::base::Abs;
+use dashu::base::{Abs, Sign};
 use dashu::float::{Context, DBig, FBig, Word, round::Round};
 use dashu::integer::IBig;
 use num_order::NumOrd;
@@ -15,7 +15,7 @@ use pyo3::{
 };
 
 use crate::{
-    cache::{unwrap_float, with_cache},
+    cache::{limited, unwrap_float, with_cache},
     convert::{conversion_error_to_py, parse_error_to_py, parse_to_dbig},
     types::{DPy, FPy, IPy, PySign, RPy, UniInput},
 };
@@ -89,6 +89,20 @@ fn integral_to_ibig<R: Round, const B: Word>(
     Ok(round(f).to_int().value())
 }
 
+/// Give the result of a rounding method (`trunc`, `floor`, `ceil`, `round`, `fract`) the
+/// precision of the number it was computed from, where the Rust method returns it with an
+/// unlimited precision (which it does for a zero, and wherever no digit of the number is left).
+/// The result has at most as many digits as the source, so this is exact, and the result can be
+/// used like the source in the operations that need a limited precision
+/// (`FBig(0.5).floor().cos()`).
+fn keep_precision<R: Round, const B: Word>(result: FBig<R, B>, source: &FBig<R, B>) -> FBig<R, B> {
+    if result.precision() == 0 && source.precision() != 0 && result.repr().is_finite() {
+        result.with_precision(source.precision()).value()
+    } else {
+        result
+    }
+}
+
 impl_float_binops!(FPy, into_fpy, fpy_add, add);
 impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, sub);
 impl_float_binops!(FPy, into_fpy, fpy_mul, mul);
@@ -144,7 +158,7 @@ macro_rules! impl_float_math {
         impl $ty {
             $(
                 fn $name(&self) -> PyResult<Self> {
-                    let ctx = self.0.context();
+                    let ctx = limited(self.0.context())?;
                     let res = with_cache(|c| ctx.$name(self.0.repr(), Some(c)));
                     Ok(Self(unwrap_float(res, ctx)?))
                 }
@@ -282,19 +296,19 @@ impl FPy {
 
     /********** rounding (algebraic, no cache) **********/
     fn trunc(&self) -> Self {
-        FPy(self.0.trunc())
+        FPy(keep_precision(self.0.trunc(), &self.0))
     }
     fn floor(&self) -> Self {
-        FPy(self.0.floor())
+        FPy(keep_precision(self.0.floor(), &self.0))
     }
     fn ceil(&self) -> Self {
-        FPy(self.0.ceil())
+        FPy(keep_precision(self.0.ceil(), &self.0))
     }
     fn round(&self) -> Self {
-        FPy(self.0.round())
+        FPy(keep_precision(self.0.round(), &self.0))
     }
     fn fract(&self) -> Self {
-        FPy(self.0.fract())
+        FPy(keep_precision(self.0.fract(), &self.0))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
@@ -355,42 +369,47 @@ impl FPy {
 
     /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
     }
     fn cbrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.cbrt(self.0.repr()), ctx)?))
     }
     fn nth_root(&self, n: usize) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
     fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
         let n = n.into_ibig()?;
-        let ctx = self.0.context();
+        // (a non-negative power is exact with an unlimited precision)
+        let ctx = if n.sign() == Sign::Negative {
+            limited(self.0.context())?
+        } else {
+            self.0.context()
+        };
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_fpy()?;
         // at the larger precision of the two operands, as for the arithmetic operators
-        let ctx = Context::max(self.0.context(), w.0.context());
+        let ctx = limited(Context::max(self.0.context(), w.0.context()))?;
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_fpy()?;
-        let ctx = Context::max(self.0.context(), x.0.context());
+        let ctx = limited(Context::max(self.0.context(), x.0.context()))?;
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn sin_cos(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
     fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
@@ -528,19 +547,19 @@ impl DPy {
 
     /********** rounding (algebraic, no cache) **********/
     fn trunc(&self) -> Self {
-        DPy(self.0.trunc())
+        DPy(keep_precision(self.0.trunc(), &self.0))
     }
     fn floor(&self) -> Self {
-        DPy(self.0.floor())
+        DPy(keep_precision(self.0.floor(), &self.0))
     }
     fn ceil(&self) -> Self {
-        DPy(self.0.ceil())
+        DPy(keep_precision(self.0.ceil(), &self.0))
     }
     fn round(&self) -> Self {
-        DPy(self.0.round())
+        DPy(keep_precision(self.0.round(), &self.0))
     }
     fn fract(&self) -> Self {
-        DPy(self.0.fract())
+        DPy(keep_precision(self.0.fract(), &self.0))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
@@ -560,7 +579,10 @@ impl DPy {
             // round(x) with no digits returns a Python int (CPython contract).
             None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n): quantize to the 10^(-n) digit place (Python's Decimal.quantize).
-            Some(n) => DPy(self.0.quantize(-(n as isize)).value()).into_py_any(py),
+            Some(n) => {
+                let rounded = self.0.quantize(-(n as isize)).value();
+                DPy(keep_precision(rounded, &self.0)).into_py_any(py)
+            }
         }
     }
 
@@ -597,42 +619,47 @@ impl DPy {
 
     /********** roots, powers & atan2 **********/
     fn sqrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.sqrt(self.0.repr()), ctx)?))
     }
     fn cbrt(&self) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.cbrt(self.0.repr()), ctx)?))
     }
     fn nth_root(&self, n: usize) -> PyResult<Self> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         Ok(Self(unwrap_float(ctx.nth_root(n, self.0.repr()), ctx)?))
     }
     fn powi(&self, n: UniInput<'_>) -> PyResult<Self> {
         let n = n.into_ibig()?;
-        let ctx = self.0.context();
+        // (a non-negative power is exact with an unlimited precision)
+        let ctx = if n.sign() == Sign::Negative {
+            limited(self.0.context())?
+        } else {
+            self.0.context()
+        };
         Ok(Self(unwrap_float(ctx.powi(self.0.repr(), n), ctx)?))
     }
     fn powf(&self, w: UniInput<'_>) -> PyResult<Self> {
         let w = w.into_dpy()?;
         // at the larger precision of the two operands, as for the arithmetic operators
-        let ctx = Context::max(self.0.context(), w.0.context());
+        let ctx = limited(Context::max(self.0.context(), w.0.context()))?;
         let res = with_cache(|c| ctx.powf(self.0.repr(), w.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn atan2(&self, x: UniInput<'_>) -> PyResult<Self> {
         let x = x.into_dpy()?;
-        let ctx = Context::max(self.0.context(), x.0.context());
+        let ctx = limited(Context::max(self.0.context(), x.0.context()))?;
         let res = with_cache(|c| ctx.atan2(self.0.repr(), x.0.repr(), Some(c)));
         Ok(Self(unwrap_float(res, ctx)?))
     }
     fn sin_cos(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sin_cos(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
     fn sinh_cosh(&self) -> PyResult<(Self, Self)> {
-        let ctx = self.0.context();
+        let ctx = limited(self.0.context())?;
         let (s, c) = with_cache(|cache| ctx.sinh_cosh(self.0.repr(), Some(cache)));
         Ok((Self(unwrap_float(s, ctx)?), Self(unwrap_float(c, ctx)?)))
     }
@@ -647,10 +674,14 @@ impl_float_math!(
 #[pymethods]
 impl FPy {
     /// Zeroize the internal buffers, clearing the memory used by this float. The value
-    /// becomes zero.
+    /// becomes zero, and keeps its precision.
     fn zeroize(&mut self) {
         use zeroize::Zeroize;
+        // (the precision is zeroized with the buffers, which would leave a zero of unlimited
+        // precision behind)
+        let context = self.0.context();
         self.0.zeroize();
+        self.0 = FBig::from_repr(dashu::float::Repr::zero(), context);
     }
 }
 
@@ -658,9 +689,13 @@ impl FPy {
 #[pymethods]
 impl DPy {
     /// Zeroize the internal buffers, clearing the memory used by this float. The value
-    /// becomes zero.
+    /// becomes zero, and keeps its precision.
     fn zeroize(&mut self) {
         use zeroize::Zeroize;
+        // (the precision is zeroized with the buffers, which would leave a zero of unlimited
+        // precision behind)
+        let context = self.0.context();
         self.0.zeroize();
+        self.0 = FBig::from_repr(dashu::float::Repr::zero(), context);
     }
 }
