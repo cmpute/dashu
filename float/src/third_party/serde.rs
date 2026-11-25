@@ -217,7 +217,7 @@ impl<'de, const B: Word> Visitor<'de> for ReprVisitor<B> {
         if seq.next_element::<de::IgnoredAny>()?.is_some() {
             Err(err_report())?
         } else {
-            Ok(Repr::new(significand, exponent))
+            Ok(Repr::from_encoded_parts(significand, exponent))
         }
     }
 
@@ -244,7 +244,7 @@ impl<'de, const B: Word> Visitor<'de> for ReprVisitor<B> {
 
         let significand = signif.ok_or_else(|| de::Error::missing_field(KEY_SIGNIF))?;
         let exponent = exp.ok_or_else(|| de::Error::missing_field(KEY_EXPONENT))?;
-        Ok(Repr::new(significand, exponent))
+        Ok(Repr::from_encoded_parts(significand, exponent))
     }
 }
 
@@ -299,7 +299,7 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
             Err(err_report())?
         } else {
             Ok(FBig {
-                repr: Repr::new(significand, exponent),
+                repr: Repr::from_encoded_parts(significand, exponent),
                 context: Context::new(precision),
             })
         }
@@ -336,7 +336,7 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
         let exponent = exp.ok_or_else(|| de::Error::missing_field(KEY_EXPONENT))?;
         let precision = prec.ok_or_else(|| de::Error::missing_field(KEY_PREC))?;
         Ok(FBig {
-            repr: Repr::new(significand, exponent),
+            repr: Repr::from_encoded_parts(significand, exponent),
             context: Context::new(precision),
         })
     }

@@ -230,6 +230,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`)
     ///
+    /// A zero significand gives `+0` (with precision 1) whatever the exponent is, see
+    /// [`Repr::new`].
+    ///
     /// # Examples
     ///
     /// ```
@@ -239,6 +242,7 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// let a = DBig::from_parts((-1234).into(), -2);
     /// assert_eq!(a, DBig::from_str("-12.34")?);
     /// assert_eq!(a.precision(), 4); // 1234 has 4 (decimal) digits
+    /// assert!(DBig::from_parts(0.into(), -1).repr().is_pos_zero());
     /// # Ok::<(), ParseError>(())
     /// ```
     #[inline]

@@ -593,8 +593,13 @@ impl<const B: Word> Repr<B> {
         self.exponent + (self.digits_ub() as isize) < -1
     }
 
-    /// Create a [Repr] from the significand and exponent. This
+    /// Create a [Repr] for the value `significand * B^exponent`. This
     /// constructor will normalize the representation.
+    ///
+    /// A zero significand gives `+0` whatever the exponent is. The special values (`-0` and
+    /// the infinities) are not values of this form: build them with [`Repr::neg_zero`],
+    /// [`Repr::infinity`] and [`Repr::neg_infinity`]. In particular the parts returned by
+    /// [`Repr::into_parts`] for a special value do not give that value back.
     ///
     /// # Examples
     ///
@@ -608,9 +613,30 @@ impl<const B: Word> Repr<B> {
     /// let b = Repr::<10>::new(400.into(), -2);
     /// assert_eq!(b.significand(), &IBig::from(4));
     /// assert_eq!(b.exponent(), 0);
+    ///
+    /// // zero is `+0` at every exponent
+    /// assert!(Repr::<10>::new(IBig::ZERO, -1).is_pos_zero());
+    /// assert!(Repr::<10>::new(IBig::ZERO, isize::MAX).is_pos_zero());
     /// ```
     #[inline]
     pub fn new(significand: IBig, exponent: isize) -> Self {
+        if significand.is_zero() {
+            return Self::zero();
+        }
+        Self {
+            significand,
+            exponent,
+        }
+        .normalize()
+    }
+
+    /// Rebuild a [Repr] from its encoded `(significand, exponent)` pair, as [`Repr::into_parts`]
+    /// returns it. Unlike [`Repr::new`], a zero significand is read as the special value its
+    /// exponent encodes (`+0`, `-0`, `+inf`, `-inf`, see the struct-level docs); any other
+    /// exponent of a zero significand gives `+0`. This is what the deserializers use.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    #[inline]
+    pub(crate) fn from_encoded_parts(significand: IBig, exponent: isize) -> Self {
         Self {
             significand,
             exponent,
@@ -667,6 +693,9 @@ impl<const B: Word> Repr<B> {
     }
 
     /// Convert the float number into raw `(signficand, exponent)` parts
+    ///
+    /// For a special value these are the parts of its encoding (a zero significand with the
+    /// exponent described in the type-level docs), which [`Repr::new`] reads as `+0`.
     ///
     /// # Examples
     ///

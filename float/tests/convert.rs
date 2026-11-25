@@ -1386,3 +1386,49 @@ fn test_base_change_huge_exponent() {
         .repr()
         .is_neg_zero());
 }
+
+#[test]
+fn test_from_parts_zero_significand() {
+    use dashu_base::Sign;
+    use dashu_float::Repr;
+
+    // `0 * B^e` is `+0` for every exponent, including the ones that encode `-0` (-1) and the
+    // infinities (`isize::MAX` / `isize::MIN`) next to a zero significand.
+    let exponents = [
+        -2,
+        -1,
+        0,
+        1,
+        5,
+        isize::MAX - 1,
+        isize::MAX,
+        isize::MIN + 1,
+        isize::MIN,
+    ];
+    for e in exponents {
+        let r2 = Repr::<2>::new(IBig::ZERO, e);
+        assert!(r2.is_pos_zero(), "Repr::<2>::new(0, {e}) = {r2:?}");
+        let r10 = Repr::<10>::new(IBig::ZERO, e);
+        assert!(r10.is_pos_zero(), "Repr::<10>::new(0, {e}) = {r10:?}");
+        assert_eq!(r10, Repr::<10>::new_const(Sign::Positive, 0, e));
+
+        let a = FHex::from_parts(IBig::ZERO, e);
+        assert!(a.repr().is_pos_zero(), "from_parts(0, {e}) = {a:?}");
+        assert_eq!(a.precision(), 1);
+        let d = DBig::from_parts(IBig::ZERO, e);
+        assert!(d.repr().is_pos_zero(), "from_parts(0, {e}) = {d:?}");
+        assert_eq!(d.sign(), Sign::Positive);
+        assert_eq!(d.precision(), 1);
+        let c = DBig::from_parts_const(Sign::Positive, 0, e, None);
+        assert_eq!(d.repr(), c.repr());
+    }
+
+    // so the reciprocal of a computed zero is `+inf`, not `-inf`
+    let z = FBig::<Zero, 10>::from_parts(IBig::ZERO, -1);
+    assert_eq!(FBig::<Zero, 10>::ONE / z, FBig::<Zero, 10>::INFINITY);
+
+    // the special values still survive a trip through their own constructors
+    assert!(Repr::<10>::neg_zero().is_neg_zero());
+    assert!(Repr::<10>::infinity().is_infinite());
+    assert!(Repr::<10>::neg_infinity().is_infinite());
+}
