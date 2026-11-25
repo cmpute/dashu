@@ -3,7 +3,7 @@ use crate::{
     fbig::FBig,
     repr::{Context, Repr},
     round::{mode, Round, Rounded},
-    utils::{shr_digits, split_digits_ref},
+    utils::{digit_len, shr_digits, split_digits_ref},
 };
 use dashu_base::{Approximation::*, Sign};
 use dashu_int::{IBig, Word};
@@ -365,6 +365,10 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// # Ok::<(), ParseError>(())
     /// ```
     ///
+    /// A result too large for the exponent range (the rounding carries it to or beyond
+    /// `BASE^isize::MAX`) saturates like an overflowing multiplication does, see
+    /// [`Context::unwrap_fp`].
+    ///
     /// # Panics
     ///
     /// Panics if the number is infinte
@@ -406,10 +410,18 @@ impl<R: Round, const B: Word> FBig<R, B> {
             let repr = Repr::zero_with_sign(self.repr.sign());
             return Inexact(FBig::new(repr, Context::new(0)), adjust);
         }
-        let repr = Repr::new(signif, exp);
-        // precision is set so that ulp == BASE^exp
-        let precision = repr.exponent.abs_diff(exp).saturating_add(repr.digits());
-        Inexact(FBig::new(repr, Context::new(precision)), adjust)
+        // precision is set so that ulp == BASE^exp: the digits of the multiple of the quantum
+        let context = Context::new(digit_len::<B>(&signif));
+        match Repr::new_wide(signif, exp as i128) {
+            Ok(repr) => Inexact(FBig::new(repr, context), adjust),
+            // The multiple does not fit the exponent range: a carry out of the top digit (or
+            // the multiple's own trailing zeros) moved it onto or past the `isize::MAX`
+            // sentinel exponent. Like every other operation it saturates to the overflow
+            // endpoint of the rounding mode, instead of leaving a nonzero significand at the
+            // sentinel exponent (which normalization would have capped a factor `BASE` too
+            // low). `exp` lies above the stored exponent, so there is no underflow here.
+            Err(_) => context.overflow_repr_endpoint(self.repr.sign()),
+        }
     }
 }
 

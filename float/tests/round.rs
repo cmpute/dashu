@@ -480,6 +480,12 @@ mod triage {
                             assert_eq!(value.sign(), x.sign(), "{x:?}.quantize({exp})");
                             assert_eq!(value.precision(), 0);
                             assert_eq!(rounding, Rounding::NoOp);
+                        } else if exp == isize::MAX {
+                            // one quantum is `B^isize::MAX`, beyond the largest exponent:
+                            // rounding away from zero overflows (see
+                            // `test_quantize_overflow_saturates`)
+                            assert!(value.repr().is_infinite());
+                            assert_eq!(value.sign(), x.sign());
                         } else {
                             // rounded away from zero to one quantum
                             assert_eq!(value.repr(), &Repr::new(sign.into(), exp));
@@ -547,6 +553,57 @@ mod triage {
         check::<mode::HalfAway, 10>();
         check::<mode::Zero, 2>();
         assert_eq!(Sign::Positive, DBig::ONE.quantize(isize::MIN).value().sign());
+    }
+
+    /// A multiple of the quantum that lands on or beyond the `isize::MAX` sentinel exponent
+    /// is an overflow, resolved by the rounding mode like `<<` and `*` resolve theirs. It used
+    /// to come back as `1 * B^isize::MAX`: a nonzero significand at the sentinel exponent,
+    /// and a factor `B` too small when the carry went to `B^(isize::MAX + 1)` (F13).
+    #[test]
+    fn test_quantize_overflow_saturates() {
+        use Approximation::Inexact;
+        type Away = FBig<mode::HalfAway, 10>;
+        const MAX: isize = isize::MAX;
+
+        // 9.6 * 10^MAX to a multiple of 10^MAX is 10^(MAX + 1)
+        let q = fbig::<mode::HalfAway, 10>(96, MAX - 1, 2).quantize(MAX);
+        assert_eq!(q, Inexact(Away::INFINITY, Rounding::AddOne));
+        // 9.6 * 10^(MAX - 1) to a multiple of 10^(MAX - 1) is 10^MAX
+        let q = fbig::<mode::HalfAway, 10>(96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::INFINITY, Rounding::AddOne));
+        let q = fbig::<mode::HalfAway, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::NEG_INFINITY, Rounding::SubOne));
+        // the same overflow as a shift to that exponent
+        assert_eq!(fbig::<mode::HalfAway, 10>(1, MAX - 1, 2) << 1, Away::INFINITY);
+        // without a carry the result is ordinary
+        let q = fbig::<mode::HalfAway, 10>(94, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(Away::from_parts(9.into(), MAX - 1), Rounding::NoOp));
+
+        // the directed modes only overflow in their own direction
+        let q = fbig::<mode::Up, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q.value().repr(), &Repr::new((-9).into(), MAX - 1));
+        let q = fbig::<mode::Down, 10>(-96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q, Inexact(FBig::NEG_INFINITY, Rounding::SubOne));
+        let q = fbig::<mode::Zero, 10>(96, MAX - 2, 2).quantize(MAX - 1);
+        assert_eq!(q.value().repr(), &Repr::new(9.into(), MAX - 1));
+        // toward zero, an out-of-range multiple is the overflow endpoint of its precision
+        let q = fbig::<mode::Zero, 10>(96, MAX - 1, 2).quantize(MAX).value();
+        let overflow = Err(dashu_float::FpError::Overflow(Sign::Positive));
+        assert_same(&q, &Context::<mode::Zero>::new(1).unwrap_fp(overflow));
+
+        // base 2, at every test precision: 1.11…1 * 2^(MAX - 1) rounds up to 2^MAX
+        for precision in [20usize, 50, 100, 500] {
+            let ones = (IBig::ONE << precision) - 1;
+            let x = FBig::<mode::HalfEven, 2>::from_parts(ones, MAX - precision as isize);
+            assert_eq!(x.precision(), precision);
+            let q = x.quantize(MAX - 1);
+            assert_eq!(q, Inexact(FBig::INFINITY, Rounding::AddOne));
+            let q = (-x.clone()).quantize(MAX - 1);
+            assert_eq!(q, Inexact(FBig::NEG_INFINITY, Rounding::SubOne));
+            // one quantum lower there is room for the carry
+            let q = (x >> 1).quantize(MAX - 2);
+            assert_eq!(q.value().repr(), &Repr::new(IBig::ONE, MAX - 1));
+        }
     }
 }
 
