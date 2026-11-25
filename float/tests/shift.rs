@@ -102,3 +102,75 @@ fn test_shift_exponent_saturation() {
     assert_eq!(DBig::ONE << isize::MAX, DBig::INFINITY);
     assert_eq!(DBig::NEG_ONE << isize::MAX, DBig::NEG_INFINITY);
 }
+
+/// A shift by zero changes nothing — also for the values whose exponent is `isize::MAX` or
+/// `isize::MIN`, which the saturating operations produce themselves (the largest finite value
+/// under an inward mode, the smallest one under an outward mode) and which `from_parts`
+/// accepts. The range check of a shift used to take them for an overflow / underflow:
+/// `1·10^isize::MAX << 0` was `inf` (or `9·10^isize::MAX` under `mode::Zero`) and
+/// `1·10^isize::MIN >> 0` was `0` (F88).
+#[test]
+fn test_shift_by_zero_is_identity() {
+    use dashu_base::Sign;
+    use dashu_float::{
+        round::{mode, Round},
+        Context, FBig, FpError, Repr, Word,
+    };
+
+    fn check<R: Round, const B: Word>() {
+        for precision in [1usize, 20, 50, 100, 500] {
+            let ctx = Context::<R>::new(precision);
+            let mut values = Vec::new();
+            for sig in [1i32, -1, 3, -3] {
+                let exponents = [
+                    0,
+                    -7,
+                    isize::MAX - 1,
+                    isize::MAX,
+                    isize::MIN + 1,
+                    isize::MIN,
+                ];
+                for exp in exponents {
+                    values.push(FBig::<R, B>::from_repr(Repr::new(sig.into(), exp), ctx));
+                }
+            }
+            // the saturation endpoints of this mode and precision
+            for sign in [Sign::Positive, Sign::Negative] {
+                values.push(ctx.unwrap_fp(Err(FpError::Overflow(sign))));
+                values.push(ctx.unwrap_fp(Err(FpError::Underflow(sign))));
+            }
+            values.push(FBig::from_repr(Repr::zero(), ctx));
+            values.push(FBig::from_repr(Repr::neg_zero(), ctx));
+            for x in values {
+                if x.repr().is_infinite() {
+                    continue; // infinities are not shifted at all
+                }
+                let cases = [x.clone() << 0, x.clone() >> 0];
+                let mut assigned = (x.clone(), x.clone());
+                assigned.0 <<= 0;
+                assigned.1 >>= 0;
+                for got in cases.iter().chain([&assigned.0, &assigned.1]) {
+                    assert_eq!(got.repr(), x.repr(), "{x:?} shifted by 0");
+                    assert_eq!(got.sign(), x.sign());
+                    assert_eq!(got.precision(), precision);
+                }
+            }
+        }
+    }
+    check::<mode::Zero, 10>();
+    check::<mode::HalfEven, 10>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::Up, 2>();
+    check::<mode::Down, 3>();
+    check::<mode::Away, 10>();
+
+    // A nonzero shift onto a sentinel exponent is still an overflow / underflow, so such a
+    // value does not survive a round trip — like a multiplication by the base would not.
+    let x = DBig::from_parts(1.into(), isize::MAX);
+    assert_eq!(x.clone() << 0, x);
+    assert_eq!((x.clone() >> 1).repr(), &Repr::new(1.into(), isize::MAX - 1));
+    assert_eq!((x.clone() >> 1) << 1, DBig::INFINITY);
+    let y = DBig::from_parts(1.into(), isize::MIN);
+    assert_eq!(y.clone() >> 0, y);
+    assert!(((y << 1) >> 1).repr().is_pos_zero());
+}

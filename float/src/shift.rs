@@ -12,10 +12,15 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// sentinel exponents overflows / underflows exactly like a multiplication by `B^delta`
     /// would (see [`Context::unwrap_fp`](crate::Context::unwrap_fp)), instead of leaving a
     /// nonzero significand at a sentinel exponent (or wrapping around).
+    ///
+    /// A shift by zero is the identity for every finite value, also for the saturation
+    /// endpoints themselves (the largest finite value `(B^p − 1)·B^isize::MAX` and the
+    /// smallest `B^isize::MIN` have a nonzero significand at a sentinel exponent): nothing
+    /// is scaled, so nothing overflows.
     fn scale_exponent(&mut self, delta: i128) {
         assert_finite(&self.repr);
-        if self.repr.significand.is_zero() {
-            return; // ±0 is unchanged
+        if delta == 0 || self.repr.significand.is_zero() {
+            return; // unchanged (±0 has no scale)
         }
         let exponent = self.repr.exponent as i128 + delta;
         if exponent >= isize::MAX as i128 {
