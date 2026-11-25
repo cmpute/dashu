@@ -132,6 +132,17 @@ fn test_hash() {
         let i = FBin::try_from(v).unwrap();
         assert_eq!(hash(&v), hash(&i));
     }
+
+    // The exponent `isize::MIN` can sit next to a nonzero significand: the hash must not
+    // negate it, and must agree with the same value written in another base.
+    for e in [isize::MIN, isize::MIN + 2, isize::MAX - 1] {
+        let d = DBig::from_parts(ibig!(3), e);
+        let c = FBig::<dashu_float::round::mode::HalfEven, 100>::from_parts(ibig!(3), e / 2);
+        assert_eq!(hash(&d), hash(&c), "3 * 10^{e}");
+        let b = FBin::from_parts(ibig!(3), e);
+        let q = FBig::<dashu_float::round::mode::Zero, 4>::from_parts(ibig!(3), e / 2);
+        assert_eq!(hash(&b), hash(&q), "3 * 2^{e}");
+    }
 }
 
 #[test]

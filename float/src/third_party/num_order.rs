@@ -1,4 +1,4 @@
-use _num_modular::{FixedMersenneInt, ModularAbs, ModularInteger};
+use _num_modular::{FixedMersenneInt, ModularInteger};
 use core::cmp::Ordering;
 use dashu_base::{BitTest, EstimatedLog2, FloatEncoding, Sign, Signed};
 use dashu_int::{IBig, UBig, Word};
@@ -331,11 +331,14 @@ impl<const B: Word> Repr<B> {
         let signif_residue = &self.significand % M127;
         let signif_hash = MInt::new(signif_residue.unsigned_abs(), &M127U);
         let exp_hash = if B == 2 {
-            signif_hash.convert(1 << self.exponent.absm(&127))
+            // 2 has order 127 modulo 2^127 - 1; `rem_euclid` is total, also for `isize::MIN`
+            signif_hash.convert(1 << self.exponent.rem_euclid(127))
         } else if self.exponent < 0 {
             signif_hash
                 .convert(B as u128)
-                .pow(&(-self.exponent as u128))
+                // `unsigned_abs`: the exponent can be `isize::MIN` (the outward underflow
+                // endpoint has a nonzero significand there), which has no `isize` negation
+                .pow(&(self.exponent.unsigned_abs() as u128))
                 .inv()
                 .unwrap()
         } else {
