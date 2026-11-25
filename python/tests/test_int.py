@@ -115,6 +115,22 @@ def test_bit_index_out_of_index_range():
         UBig(5)["a"]
 
 
+def test_ibig_chunks_of_negative_raise():
+    # the chunks are unsigned: IBig.to_chunks of a negative number silently gave the chunks
+    # of its absolute value, so that from_chunks(to_chunks(x)) was abs(x)
+    import pytest
+    for x in (IBig(0), IBig(5), IBig(2**70 + 3)):
+        for bits in (1, 8, 64, 100):
+            chunks = x.to_chunks(bits)
+            assert IBig.from_chunks(chunks, bits) == x
+            assert chunks == UBig(int(x)).to_chunks(bits)
+    for x in (IBig(-1), IBig(-5), IBig(-(2**70) - 3)):
+        with pytest.raises(OverflowError):
+            x.to_chunks(8)
+        # the magnitude is still available explicitly
+        assert IBig.from_chunks(abs(x).to_chunks(8), 8) == -x
+
+
 if __name__ == "__main__":
     # test_bit_ops()
     test_conversion_to_chunks()

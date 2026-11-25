@@ -1221,6 +1221,11 @@ impl IPy {
         if chunk_bits == 0 {
             return Err(PyValueError::new_err(ERRMSG_ZERO_CHUNK_SIZE));
         }
+        // the chunks are unsigned, so they cannot carry the sign of a negative number (which
+        // `from_chunks` would then give back as its absolute value)
+        if self.0.is_negative() {
+            return Err(PyOverflowError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED));
+        }
         let mag = (&self.0).unsigned_abs();
         let chunks: Vec<Py<PyAny>> = mag
             .to_chunks(chunk_bits)
