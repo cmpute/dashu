@@ -777,3 +777,34 @@ fn circular_functions_directed_match_oracle() {
     check!(Up);
     check!(Zero);
 }
+
+/// The circular and hyperbolic functions and their inverses still have the weakness `exp` and
+/// `log` had: next to a closed form (`sin z = z − z³/6 + …` for a tiny `z`) the directed modes
+/// are only certified at a working precision proportional to the exponent of the argument.
+/// At `2^-300000` each of `sin`, `cos`, `tan`, `asin`, `acos` (and the hyperbolic twins) takes
+/// 0.3–0.8 s, `atan`/`atanh` off the axes more than 10 s; at `2^-10⁷` none of them returns in
+/// minutes. The values below are the closed forms.
+#[test]
+#[ignore = "tiny arguments under directed modes need a working precision proportional to the exponent of the argument (all complex transcendentals except exp and log); does not return in minutes"]
+fn tiny_arguments_under_directed_modes() {
+    let k: isize = 10_000_000;
+    let p = 53;
+    let ctx = Context::<Down>::new(p);
+    let t: FBig<Down, 2> = fb(1, -k);
+    let below: FBig<Down, 2> = fb((1 << p) - 1, -k - p as isize);
+    let z: CBig<Down, 2> = cb((1, -k), (1, -k));
+    // sin(t + it) = t·(1 + t²/3) + i·t·(1 − t²/3), and sinh, asin, asinh, tan, tanh, atan,
+    // atanh likewise up to the signs of the cubic terms
+    let v = ctx.sin(&z, None).unwrap().value();
+    assert_eq!((v.re(), v.im()), (t.repr(), below.repr()));
+    let v = ctx.sinh(&z, None).unwrap().value();
+    assert_eq!((v.re(), v.im()), (below.repr(), t.repr()));
+    let v = ctx.atan(&z, None).unwrap().value();
+    assert_eq!((v.re(), v.im()), (t.repr(), below.repr()));
+    let v = ctx.asin(&z, None).unwrap().value();
+    assert_eq!((v.re(), v.im()), (below.repr(), t.repr()));
+    // cos(t + it) = 1 − i·t²·(1 − …) (the real part is 1 − t⁴/6)
+    let v = ctx.cos(&z, None).unwrap().value();
+    assert_eq!(v.re(), fb::<Down, 2>((1 << p) - 1, -(p as isize)).repr());
+    assert_eq!(v.im(), fb::<Down, 2>(-1, -2 * k).repr());
+}
