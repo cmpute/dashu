@@ -355,11 +355,27 @@ fn is_abs_half<const B: Word>(x: &Repr<B>) -> bool {
 /// The exact rational `num/den` rounded under the caller's mode — the exact-value rows of the
 /// ×u tables (exact whenever den's prime factors divide the base, e.g. `u/4` in base 2 or 10;
 /// correctly rounded otherwise).
+///
+/// A context of unlimited precision gets the ratio when it has a finite expansion (it needs no
+/// precision to round to, like the `0` and `±1` rows) and the limited-precision panic otherwise.
 fn exact_ratio<R: Round, const B: Word>(
     ctx: &Context<R>,
     num: IBig,
     den: usize,
 ) -> FpResult<FBig<R, B>> {
+    if !ctx.is_limited() {
+        // The table denominators divide 24, so a finite expansion of `num/den` ends within
+        // three digits of the point in any base: a few digits past the numerator's own hold it.
+        debug_assert!(24 % den == 0);
+        let wide = Context::<R>::new(digit_len::<B>(&num) + 8);
+        return match wide.div(&Repr::new(num, 0), &Repr::from(den))? {
+            Exact(q) => Ok(Exact(FBig::new(q.into_repr(), *ctx))),
+            _ => {
+                assert_limited_precision(ctx.precision);
+                unreachable!()
+            }
+        };
+    }
     ctx.div(&Repr::new(num, 0), &Repr::from(den))
 }
 
@@ -849,7 +865,6 @@ impl<R: ErrorBounds> Context<R> {
             // sin(±0) = ±0 — ahead of the assertion, like the radian `sin`
             return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
 
         // Exact cases (±0 lands in the quarter table's q = 0 row). Resolved outside the Ziv
         // loop: its containment test cannot certify an exact 0/±1/±1/2 under directed rounding.
@@ -873,6 +888,8 @@ impl<R: ErrorBounds> Context<R> {
             // j even with 3 ∤ j: the cosine sixths — sine is ±√3/2 there, not exact.
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // sin is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
@@ -927,7 +944,6 @@ impl<R: ErrorBounds> Context<R> {
             // cos(±0) = 1 — ahead of the assertion, like the radian `cos`
             return Ok(FBig::<R, B>::ONE.with_precision(self.precision));
         }
-        assert_limited_precision(self.precision);
 
         // Exact cases — outside the Ziv loop, whose containment test cannot certify exact
         // values under directed rounding.
@@ -951,6 +967,8 @@ impl<R: ErrorBounds> Context<R> {
             // j odd (the sine sixths): cosine is ±√3/2 there, not exact.
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         let reduced = reduce_unit_argument(x, u);
         if let Some(r) = self.tiny_cos_unit(&reduced) {
             return Ok(r);
@@ -1006,7 +1024,6 @@ impl<R: ErrorBounds> Context<R> {
                 Ok(FBig::<R, B>::ONE.with_precision(self.precision)),
             );
         }
-        assert_limited_precision(self.precision);
 
         // Exact cases — outside the Ziv loop, whose containment test cannot certify exact
         // values under directed rounding.
@@ -1047,6 +1064,8 @@ impl<R: ErrorBounds> Context<R> {
             }
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // sin is odd (cos even): reduce and evaluate on |x|, apply the sign to sin at the end.
         let reduced = reduce_unit_argument(x, u);
         if let Some(c) = self.tiny_cos_unit(&reduced) {
@@ -1111,7 +1130,6 @@ impl<R: ErrorBounds> Context<R> {
             // tan(±0) = ±0 — ahead of the assertion, like the radian `tan`
             return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(x.sign()), *self)));
         }
-        assert_limited_precision(self.precision);
 
         // tan hits an exact value at every eighth-of-turn argument (`8x/u` an integer) — the
         // whole table resolves before the Ziv loop (its containment test cannot certify exact
@@ -1129,6 +1147,8 @@ impl<R: ErrorBounds> Context<R> {
             };
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // tan is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
@@ -1179,7 +1199,6 @@ impl<R: ErrorBounds> Context<R> {
             // asin(±0) = ±0 (asin is odd), exact.
             return signed_zero_normal(self, x);
         }
-        assert_limited_precision(self.precision);
 
         // Domain check |x| ≤ 1 and the `±u/4` row, compared *exactly* (no precision
         // argument) — `±1` is a vertical tangent of `asin`, and the ×u inverse family's exact
@@ -1210,6 +1229,8 @@ impl<R: ErrorBounds> Context<R> {
             };
             return exact_ratio(self, num, 12);
         }
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
@@ -1239,7 +1260,6 @@ impl<R: ErrorBounds> Context<R> {
         if x.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
 
         // Domain |x| ≤ 1 and the `u/2` row, compared *exactly* (no precision argument) — see
         // `asin_unit` for why the exact form matters here.
@@ -1275,6 +1295,8 @@ impl<R: ErrorBounds> Context<R> {
             );
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // A tiny argument: `acos_unit(x) = u/4 ∓ δ` with `0 < δ = |asin_unit(x)| < u·|x|` — next
         // to the exactly representable `u/4` whenever that has a finite expansion.
         if top_exp(x) < 0 {
@@ -1336,7 +1358,6 @@ impl<R: ErrorBounds> Context<R> {
             // atan(±0) = ±0
             return signed_zero_normal(self, x);
         }
-        assert_limited_precision(self.precision);
         // atan(±1) = ±u/8 — outside the Ziv loop. Compared *exactly*, like the other `±1` rows;
         // `atan` has no pole there, so a rounded `1 ± ulp` argument would only be a fraction of an
         // ulp out, but the exact form makes the whole family's `±1` rows mean "the argument *is*
@@ -1350,6 +1371,8 @@ impl<R: ErrorBounds> Context<R> {
             return exact_ratio(self, num, 8);
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // A huge argument: `atan_unit(x) = ±(u/4 − δ)` with `0 < δ = u·atan(1/|x|)/(2π) < u/|x|`.
         if bottom_exp(x) > 0 {
             let delta_exp =
@@ -1394,8 +1417,6 @@ impl<R: ErrorBounds> Context<R> {
             // the u → 0 limit: the signed zero carrying the angle's sign (atan2's sign is y's)
             return Ok(Exact(FBig::<R, B>::new(Repr::zero_with_sign(y.sign()), *self)));
         }
-
-        assert_limited_precision(self.precision);
 
         // The `k·π/8` angles as exact `k·u/8` ratios (shared by the infinity table and the
         // finite axis/diagonal rows below).
@@ -1455,6 +1476,8 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
+        // every exact row is behind us: the rest needs a precision to round to
+        assert_limited_precision(self.precision);
         // Next to an axis the angle is an exactly representable `k·u/4` displaced by less than
         // `u·min(|y/x|, |x/y|)` (`atan t < t`), on a side fixed by the quadrant.
         {

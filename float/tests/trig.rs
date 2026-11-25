@@ -258,6 +258,95 @@ fn test_exact_results_at_unlimited_precision_zero() {
     assert_eq!(F::ONE.acos(), F::ZERO);
 }
 
+/// The exact rows of the ×u family need no precision to round to either: `0`, `±1`, and the
+/// table ratios (`u/4`, `u/12`, `±1/2`, …) wherever they have a finite expansion. On the
+/// unlimited-precision constants `acos_unit` used to panic with "precision cannot be 0" where
+/// `acos` returned its exact `0`.
+#[test]
+fn test_unit_exact_rows_at_unlimited_precision() {
+    type F = FBig<HalfEven, 2>;
+    let f = |sig: i32, exp: isize| F::from_parts(sig.into(), exp).with_precision(0).value();
+    let half = f(1, -1);
+    assert_eq!(F::ONE.precision(), 0);
+    assert_eq!(half.precision(), 0);
+
+    // inverse functions
+    assert_eq!(F::ONE.acos_unit(360), F::ZERO);
+    assert_eq!(F::ZERO.acos_unit(360), F::from(90));
+    assert_eq!(F::NEG_ONE.acos_unit(360), F::from(180));
+    assert_eq!(half.acos_unit(360), F::from(60));
+    assert_eq!((-half.clone()).acos_unit(360), F::from(120));
+    assert_eq!(F::ONE.asin_unit(360), F::from(90));
+    assert_eq!(F::NEG_ONE.asin_unit(360), F::from(-90));
+    assert_eq!(half.asin_unit(360), F::from(30));
+    assert_eq!(F::ONE.atan_unit(360), F::from(45));
+    assert_eq!(F::NEG_ONE.atan_unit(360), F::from(-45));
+    assert_eq!(F::INFINITY.atan_unit(360), F::from(90));
+    assert_eq!(F::ONE.atan2_unit(&F::ONE, 360), F::from(45));
+    assert_eq!(F::ONE.atan2_unit(&F::NEG_ONE, 360), F::from(135));
+    assert_eq!(F::ONE.atan2_unit(&F::ZERO, 360), F::from(90));
+    assert_eq!(F::ZERO.atan2_unit(&F::NEG_ONE, 360), F::from(180));
+    assert_eq!(F::ZERO.atan2_unit(&F::ONE, 360), F::ZERO);
+    // a ratio that is a binary fraction: u/4 = 1/4, u/8 = 5/8
+    assert_eq!(F::ZERO.acos_unit(1), f(1, -2));
+    assert_eq!(F::ONE.atan_unit(5), f(5, -3));
+
+    // forward functions
+    assert_eq!(f(90, 0).sin_unit(360), F::ONE);
+    assert_eq!(f(270, 0).sin_unit(360), F::NEG_ONE);
+    assert_eq!(f(180, 0).sin_unit(360), F::ZERO);
+    assert_eq!(f(30, 0).sin_unit(360), half);
+    assert_eq!(f(180, 0).cos_unit(360), F::NEG_ONE);
+    assert_eq!(f(90, 0).cos_unit(360), F::ZERO);
+    assert_eq!(f(120, 0).cos_unit(360), -half.clone());
+    assert_eq!(f(90, 0).sin_cos_unit(360), (F::ONE, F::ZERO));
+    assert_eq!(f(45, 0).tan_unit(360), F::ONE);
+    assert_eq!(f(135, 0).tan_unit(360), F::NEG_ONE);
+    assert_eq!(half.sin_pi(), F::ONE);
+    assert_eq!(F::ONE.cos_pi(), F::NEG_ONE);
+    assert_eq!(f(1, -2).tan_pi(), F::ONE);
+    assert_eq!(f(1, -2).tan_pi().precision(), 0);
+
+    // base 10 has the same rows
+    assert_eq!(DBig::ONE.acos_unit(360), DBig::ZERO);
+    assert_eq!(DBig::ZERO.acos_unit(360), DBig::from(90));
+    assert_eq!(DBig::ONE.asin_unit(2), DBig::from_str("0.5").unwrap());
+}
+
+/// A row whose ratio has no finite expansion is not exact, and an ordinary argument is not a
+/// row at all: both still need a precision.
+#[test]
+fn test_unit_inexact_at_unlimited_precision_panics() {
+    fn panics(f: impl FnOnce() + std::panic::UnwindSafe) -> bool {
+        match std::panic::catch_unwind(f) {
+            Ok(()) => false,
+            Err(e) => e
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| e.downcast_ref::<String>().cloned())
+                .is_some_and(|s| s.contains("precision cannot be 0")),
+        }
+    }
+    type F = FBig<HalfEven, 2>;
+    type F3 = FBig<HalfEven, 3>;
+    // 1/4 and 1/2 in base 3, 1/3 in base 2
+    assert!(panics(|| drop(F3::ZERO.acos_unit(1))));
+    assert!(panics(|| drop(F3::ONE.asin_unit(2))));
+    let half = F::from_parts(1.into(), -1).with_precision(0).value();
+    assert!(panics(|| drop(half.asin_unit(4))));
+    // sin(1°), acos_unit(1/4)
+    assert!(panics(|| drop(F::ONE.sin_unit(360))));
+    assert!(panics(|| drop(F::ONE.tan_unit(360))));
+    let quarter = F::from_parts(1.into(), -2).with_precision(0).value();
+    assert!(panics(|| drop(quarter.acos_unit(360))));
+    assert!(panics(|| drop(
+        F::from_parts(3.into(), 0)
+            .with_precision(0)
+            .value()
+            .atan_unit(360)
+    )));
+}
+
 /// An argument within ~1e-24 of a multiple of π that carries more digits than the context:
 /// the reduced argument cancels onto a zero midpoint at the first working precision, and its
 /// radius used to be dropped — `sin` returned an exact `0` (π to 77 bits at 26 bits, 10π to 79
