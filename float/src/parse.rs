@@ -87,8 +87,10 @@ impl<const B: Word> Repr<B> {
             (0, false)
         };
 
-        // parse the body of the float number
-        let mut exponent = scale;
+        // Parse the body of the float number. The exponent is tracked in a wider type until the
+        // number is normalized: `cc - len(bbb)` can lie below `isize::MIN` for a literal whose
+        // trailing zeros bring the exponent back into the range (`0.100e<isize::MIN + 2>`).
+        let mut exponent = scale as i128;
         let ndigits;
         let significand = if let Some(dot) = src.find('.') {
             // check whether both integral part and fractional part are empty
@@ -142,11 +144,8 @@ impl<const B: Word> Repr<B> {
             if fract.is_zero() {
                 int
             } else {
-                // `cc - len(bbb)` can leave the exponent range when `cc` is near `isize::MIN`
-                exponent = isize::try_from(fract_digits)
-                    .ok()
-                    .and_then(|n| exponent.checked_sub(n))
-                    .ok_or(ParseError::InvalidDigit)?;
+                // (a `usize` always fits an `i128`, and the difference cannot overflow one)
+                exponent -= fract_digits as i128;
                 int * UBig::from_word(B).pow(fract_digits) + fract
             }
         } else {
@@ -173,14 +172,11 @@ impl<const B: Word> Repr<B> {
         let repr = if significand.is_zero() {
             Repr::zero_with_sign(sign)
         } else {
-            let repr = Repr::new(sign * significand, exponent);
-            // The extreme exponents are reserved (a nonzero significand there is neither a
-            // finite number nor an infinity), and normalization saturates into them when
-            // folding trailing zeros overflows; such a literal is out of range.
-            if repr.exponent == isize::MAX || repr.exponent == isize::MIN {
-                return Err(ParseError::InvalidDigit);
-            }
-            repr
+            // The extreme exponents are reserved (a nonzero significand there is not what a
+            // literal can denote), so the exponent has to lie strictly between them once the
+            // trailing zeros of the significand are folded into it; a literal beyond that is
+            // out of range.
+            Repr::new_wide(sign * significand, exponent).map_err(|_| ParseError::InvalidDigit)?
         };
         Ok((repr, ndigits))
     }

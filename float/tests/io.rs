@@ -308,6 +308,9 @@ fn test_from_str_extreme_exponent() {
         format!("1000e{}", max - 3),
         format!("100e{}", max - 1),
         format!("1e{max}0"),
+        format!("0.1e{}", min + 1),
+        format!("0.010e{}", min + 2),
+        format!("0.{}1e{}", "0".repeat(40), min + 20),
     ];
     for s in &rejected {
         assert_eq!(DBig::from_str(s), Err(ParseError::InvalidDigit), "{s:?}");
@@ -326,6 +329,15 @@ fn test_from_str_extreme_exponent() {
         (format!("1e{}", min + 1), 1, min + 1),
         (format!("1.5e{}", min + 2), 15, min + 1),
         (format!("10e{}", max - 2), 1, max - 1),
+        // The scale minus the number of fractional digits is below `isize::MIN` in these, but
+        // the trailing zeros of the fraction bring the exponent back to `isize::MIN + 1`.
+        (format!("10e{min}"), 1, min + 1),
+        (format!(".10e{}", min + 2), 1, min + 1),
+        (format!(".100e{}", min + 2), 1, min + 1),
+        (format!("0.1000e{}", min + 3), 1, min + 2),
+        (format!("0.010e{}", min + 3), 1, min + 1),
+        (format!("1.50000e{}", min + 2), 15, min + 1),
+        (format!("0.1{}e{}", "0".repeat(40), min + 2), 1, min + 1),
     ];
     for (s, signif, exp) in &accepted {
         let x = DBig::from_str(s).unwrap();
@@ -334,6 +346,14 @@ fn test_from_str_extreme_exponent() {
         assert!(x.repr().is_finite());
         assert_eq!(&x - &x, DBig::ZERO, "{s:?}");
     }
+    // the same with the other scale markers
+    let x = FBin::from_str(&format!("0.1000b{}", min + 2)).unwrap();
+    assert_eq!(x.repr().exponent(), min + 1);
+    assert_eq!(x.precision(), 5);
+    let x = FBin::from_str(&format!("0x0.80p{}", min + 2)).unwrap();
+    assert_eq!(x.repr().exponent(), min + 1);
+    let x = FHex::from_str(&format!("-0.100@{}", min + 2)).unwrap();
+    assert_eq!((x.repr().significand(), x.repr().exponent()), (&IBig::NEG_ONE, min + 1));
 }
 
 #[test]
@@ -1327,4 +1347,143 @@ fn test_string_roundtrip() {
         assert_eq!(DBig::from_str(format!("{:e}", case).as_str()).unwrap(), case);
         assert_eq!(DBig::from_str(format!("{:+010E}", case).as_str()).unwrap(), case);
     }
+}
+
+#[test]
+fn test_scientific_format_extreme_exponent() {
+    // The printed exponent is the one of the leading digit, which is beyond `isize::MAX` for
+    // a significand of several digits at one of the largest exponents.
+    let max = isize::MAX as i128;
+    let min = isize::MIN as i128;
+    let x = DBig::from_str(&format!("123e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.23e{}", max + 1));
+    assert_eq!(format!("{:E}", -x.clone()), format!("-1.23E{}", max + 1));
+    assert_eq!(format!("{:.1e}", x), format!("1.2e{}", max + 1));
+    assert_eq!(format!("{:.4e}", x), format!("1.2300e{}", max + 1));
+    assert_eq!(format!("{:30e}", x), format!("      1.23e{}", max + 1));
+    let x = DBig::from_str(&format!("12e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.2e{max}"));
+    let x = DBig::from_str(&format!("1e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1e{}", max - 1));
+    // a carry out of the leading digit moves the exponent once more
+    let x = DBig::from_str(&format!("95e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:.0e}", x), format!("1e{}", max + 1));
+    let x = DBig::from_str(&format!("9995e{}", max - 1)).unwrap();
+    assert_eq!(format!("{:.2e}", x), format!("1.00e{}", max + 3));
+
+    // the other end of the range, and the other bases
+    let x = DBig::from_str(&format!("123e{}", min + 1)).unwrap();
+    assert_eq!(format!("{:e}", x), format!("1.23e{}", min + 3));
+    let x = FBin::from_parts(IBig::from(0b101), isize::MAX - 1);
+    assert_eq!(format!("{:b}", x), format!("1.01b{}", max + 1));
+    assert_eq!(format!("{:x}", x), format!("0x5p{}", max - 1));
+    let x = FBin::from_parts(IBig::from(0x123), isize::MAX - 1);
+    assert_eq!(format!("{:x}", x), format!("0x1.23p{}", max + 7));
+    let x = FHex::from_parts(IBig::from(0xabc), isize::MAX - 1);
+    assert_eq!(format!("{:x}", x), format!("a.bch{}", max + 1));
+    let x = FOct::from_parts(IBig::from(0o17), isize::MAX - 1);
+    assert_eq!(format!("{:o}", x), format!("1.7o{max}"));
+}
+
+#[test]
+fn test_format_negative_zero_precision() {
+    // A zero is never rounded, whatever the rounding mode: the exponent that marks the sign
+    // of `-0` is not the position of a nonzero fraction.
+    fn check<R: dashu_float::round::Round, const B: Word>() {
+        let neg = -FBig::<R, B>::ZERO;
+        let pos = FBig::<R, B>::ZERO;
+        assert!(neg.repr().is_neg_zero());
+        assert_eq!(format!("{}", neg), "-0");
+        assert_eq!(format!("{:.0}", neg), "-0");
+        assert_eq!(format!("{:.1}", neg), "-0.0");
+        assert_eq!(format!("{:.3}", neg), "-0.000");
+        assert_eq!(format!("{:5.0}", neg), "   -0");
+        assert_eq!(format!("{:<5.0}|", neg), "-0   |");
+        assert_eq!(format!("{:05.0}", neg), "-0000");
+        assert_eq!(format!("{:7.2}", neg), "  -0.00");
+        assert_eq!(format!("{:.0}", pos), "0");
+        assert_eq!(format!("{:+.0}", pos), "+0");
+        assert_eq!(format!("{:.2}", pos), "0.00");
+        assert_eq!(format!("{:.0}", neg.repr()), "-0");
+    }
+    check::<mode::Zero, 2>();
+    check::<mode::Away, 2>();
+    check::<mode::Up, 2>();
+    check::<mode::Down, 2>();
+    check::<mode::HalfEven, 2>();
+    check::<mode::HalfAway, 2>();
+    check::<mode::Zero, 10>();
+    check::<mode::Away, 10>();
+    check::<mode::Up, 10>();
+    check::<mode::Down, 10>();
+    check::<mode::HalfEven, 10>();
+    check::<mode::HalfAway, 10>();
+    check::<mode::Up, 16>();
+    check::<mode::Away, 3>();
+
+    assert_eq!(format!("{:.0e}", -FBig::<mode::Up, 10>::ZERO), "-0e0");
+    assert_eq!(format!("{:.2e}", -FBig::<mode::Away, 10>::ZERO), "-0.00e0");
+    assert_eq!(format!("{:.0b}", -FBig::<mode::Away, 2>::ZERO), "-0b0");
+}
+
+#[test]
+fn test_format_infinity_flags() {
+    // An infinity honors the width, fill, alignment, `+` and `0` flags like a finite number
+    // (and like `f64`); the precision does not apply to it.
+    macro_rules! check {
+        ($fmt:literal) => {
+            assert_eq!(format!($fmt, DBig::INFINITY), format!($fmt, f64::INFINITY), "{}", $fmt);
+            assert_eq!(
+                format!($fmt, DBig::NEG_INFINITY),
+                format!($fmt, f64::NEG_INFINITY),
+                "{}",
+                $fmt
+            );
+            assert_eq!(format!($fmt, FBin::INFINITY), format!($fmt, f64::INFINITY), "{}", $fmt);
+            assert_eq!(
+                format!($fmt, FBin::NEG_INFINITY),
+                format!($fmt, f64::NEG_INFINITY),
+                "{}",
+                $fmt
+            );
+            assert_eq!(
+                format!($fmt, DBig::INFINITY.repr()),
+                format!($fmt, f64::INFINITY),
+                "{}",
+                $fmt
+            );
+        };
+    }
+    check!("{}");
+    check!("{:+}");
+    check!("{:8}");
+    check!("{:+8}");
+    check!("{:<6}|");
+    check!("{:>8}");
+    check!("{:^9}");
+    check!("{:*^9}");
+    check!("{:*^+10}");
+    check!("{:#<7}");
+    check!("{:08}");
+    check!("{:+08}");
+    check!("{:<08}");
+    check!("{:.2}");
+    check!("{:8.2}");
+    check!("{:2}");
+    check!("{:e}");
+    check!("{:>8e}");
+    check!("{:+E}");
+    check!("{:*<9.1e}");
+
+    assert_eq!(format!("{:+8}", DBig::INFINITY), "    +inf");
+    assert_eq!(format!("{:<6}|", DBig::NEG_INFINITY), "-inf  |");
+    assert_eq!(format!("{:*^9}", DBig::INFINITY), "***inf***");
+    assert_eq!(format!("{:>8e}", DBig::INFINITY), "     inf");
+
+    // the base-specific scientific formats
+    assert_eq!(format!("{:>6b}", FBin::INFINITY), "   inf");
+    assert_eq!(format!("{:<6x}|", FBin::NEG_INFINITY), "-inf  |");
+    assert_eq!(format!("{:+7X}", FBin::INFINITY), "   +inf");
+    assert_eq!(format!("{:^7o}", FOct::INFINITY), "  inf  ");
+    assert_eq!(format!("{:07x}", FHex::NEG_INFINITY), "-000inf");
 }
