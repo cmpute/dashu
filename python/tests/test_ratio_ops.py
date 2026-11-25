@@ -112,6 +112,21 @@ def test_mod_is_floored():
     assert IBig(-5) % RBig(3) == 1
 
 
+def test_to_float_needs_a_precision():
+    # a precision of 0 (unlimited) is a ValueError for the lossy conversions (a Rust panic
+    # before), whatever the value
+    import pytest
+    for r in (RBig(Fraction(1, 3)), RBig(1), RBig(0), RBig.from_parts(-1, 2)):
+        with pytest.raises(ValueError):
+            r.to_float(0)
+        with pytest.raises(ValueError):
+            r.to_decimal(0)
+    third = RBig(Fraction(1, 3))
+    assert third.to_float(10).precision() == 10 and third.to_float(10) == Fraction(341, 1024)
+    assert str(third.to_decimal(5)) == "0.33333" and third.to_decimal(5).precision() == 5
+    assert RBig(0).to_float(1) == 0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

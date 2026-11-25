@@ -6,7 +6,10 @@ use dashu::float::{Context, DBig, Repr};
 use dashu::integer::UBig;
 use dashu::rational::RBig;
 use num_order::NumOrd;
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, intern, prelude::*};
+use pyo3::{
+    Bound, IntoPyObjectExt, Py, PyAny, PyResult, basic::CompareOp, exceptions::PyValueError,
+    intern, prelude::*,
+};
 
 use crate::{
     convert::{parse_error_to_py, parse_to_rbig, zero_division_error},
@@ -69,6 +72,16 @@ pub(crate) fn rpy_mod(lhs: &RPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<
 fn rpy_rmod(lhs: UniInput<'_>, rhs: &RPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
     let lhs = lhs.into_rpy()?;
     RPy(rbig_mod_floor(&lhs.0, &rhs.0)?).into_py_any(py)
+}
+
+/// The precision of a conversion to a float: it cannot be 0 (unlimited), because a rational
+/// has no finite expansion in general (the Rust conversion panics on it).
+fn check_precision(precision: usize) -> PyResult<()> {
+    if precision == 0 {
+        Err(PyValueError::new_err("precision must be a positive integer"))
+    } else {
+        Ok(())
+    }
 }
 
 /// `10^n` as a rational number
@@ -350,13 +363,15 @@ impl RPy {
     fn to_int(&self) -> IPy {
         IPy(self.0.trunc())
     }
-    /// Lossy conversion to a binary float with the given precision.
-    fn to_float(&self, precision: usize) -> FPy {
-        FPy(self.0.to_float::<mode::Zero, 2>(precision).value())
+    /// Lossy conversion to a binary float with the given precision (in bits, at least 1).
+    fn to_float(&self, precision: usize) -> PyResult<FPy> {
+        check_precision(precision)?;
+        Ok(FPy(self.0.to_float::<mode::Zero, 2>(precision).value()))
     }
-    /// Lossy conversion to a decimal float with the given precision.
-    fn to_decimal(&self, precision: usize) -> DPy {
-        DPy(self.0.to_float::<mode::HalfAway, 10>(precision).value())
+    /// Lossy conversion to a decimal float with the given precision (in digits, at least 1).
+    fn to_decimal(&self, precision: usize) -> PyResult<DPy> {
+        check_precision(precision)?;
+        Ok(DPy(self.0.to_float::<mode::HalfAway, 10>(precision).value()))
     }
     #[staticmethod]
     fn from_parts(numerator: UniInput<'_>, denominator: UniInput<'_>) -> PyResult<Self> {
