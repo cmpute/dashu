@@ -359,3 +359,171 @@ fn test_serde_struct_field_names() {
     assert_eq!(parsed, DBig::from_parts(5.into(), -1));
     assert_eq!(parsed.precision(), 0);
 }
+
+/// The human-readable form of a `Repr` is short whatever the exponent is: the positional form
+/// would spell out one zero per unit of the exponent.
+#[test]
+fn test_repr_serde_large_exponent() {
+    use core::str::FromStr;
+
+    for lit in [
+        "1e1000",
+        "1e-1000",
+        "1e10000000",
+        "1e-10000000",
+        "-12345e123456789012",
+        "12345e-123456789012",
+        "1e9223372036854775806",
+        "1e-9223372036854775807",
+    ] {
+        let x = DBig::from_str(lit).unwrap();
+        let json = to_string(x.repr()).unwrap();
+        assert!(json.len() <= 64, "{lit}: {} bytes", json.len());
+        let back: Repr<10> = from_str(&json).unwrap();
+        assert_eq!(&back, x.repr(), "{lit} through {json}");
+    }
+    assert_eq!(
+        to_string(DBig::from_str("1e10000000").unwrap().repr()).unwrap(),
+        "\"1@10000000\""
+    );
+    assert_eq!(
+        to_string(DBig::from_str("-1.5e-10000000").unwrap().repr()).unwrap(),
+        "\"-15@-10000001\""
+    );
+    let big = FBig::from_parts(5.into(), 1 << 40);
+    let json = to_string(big.repr()).unwrap();
+    assert_eq!(json, "\"101@1099511627776\"");
+    assert_eq!(&from_str::<Repr<2>>(&json).unwrap(), big.repr());
+
+    // ordinary numbers keep the positional form, and the special values their own
+    for (lit, json) in [
+        ("0", "\"0\""),
+        ("-0", "\"-0\""),
+        ("1.5", "\"1.5\""),
+        ("-123.456", "\"-123.456\""),
+        ("1e10", "\"10000000000\""),
+        ("12e-10", "\"0.0000000012\""),
+    ] {
+        let x = DBig::from_str(lit).unwrap();
+        assert_eq!(to_string(x.repr()).unwrap(), json);
+        assert_eq!(&from_str::<Repr<10>>(json).unwrap(), x.repr());
+    }
+    // every exponent around the switch to the form with a scale round-trips
+    for exp in -80isize..80 {
+        for sig in [1i64, -7, 123456789, 1 << 50] {
+            let repr = Repr::<10>::new(sig.into(), exp);
+            let json = to_string(&repr).unwrap();
+            assert!(json.len() <= 64);
+            assert_eq!(from_str::<Repr<10>>(&json).unwrap(), repr, "{json}");
+            let repr = Repr::<2>::new(sig.into(), exp);
+            let json = to_string(&repr).unwrap();
+            assert_eq!(from_str::<Repr<2>>(&json).unwrap(), repr, "{json}");
+        }
+    }
+}
+
+/// A nonzero number at one of the two reserved exponents (`from_parts` can build one, and an
+/// overflowing or underflowing operation saturates to one under the rounding modes that do
+/// not go to an infinity or a zero) is not something a literal can denote, so it is carried by
+/// the struct form, like the other numbers without a literal.
+#[test]
+fn test_serde_reserved_exponent() {
+    use dashu_float::round::mode::Zero;
+    type F = dashu_float::FBig<Zero, 2>;
+    type D = dashu_float::FBig<Zero, 10>;
+
+    // the neighbour below still has a literal
+    let x = F::from_parts(2.into(), isize::MAX - 2);
+    assert_eq!(check_roundtrip(&x), format!("\"1.0@{}\"", isize::MAX - 1));
+
+    // trailing zeros folded onto the reserved exponent
+    let x = F::from_parts(2.into(), isize::MAX - 1);
+    assert_eq!(x.repr().exponent(), isize::MAX);
+    assert_eq!(
+        check_roundtrip(&x),
+        format!(r#"{{"significand":"1","exponent":{},"precision":2}}"#, isize::MAX)
+    );
+    let json = to_string(x.repr()).unwrap();
+    assert_eq!(json, format!(r#"{{"significand":"1","exponent":{}}}"#, isize::MAX));
+    assert_eq!(&from_str::<Repr<2>>(&json).unwrap(), x.repr());
+
+    // the saturation endpoints of the arithmetic
+    let huge = D::from_parts(9.into(), isize::MAX - 1)
+        .with_precision(3)
+        .value();
+    let overflowed = &huge * &huge;
+    assert!(overflowed.repr().is_finite());
+    assert_eq!(overflowed.repr().exponent(), isize::MAX);
+    check_roundtrip(&overflowed);
+    check_roundtrip(&-overflowed.clone());
+    let json = to_string(overflowed.repr()).unwrap();
+    assert_eq!(&from_str::<Repr<10>>(&json).unwrap(), overflowed.repr());
+
+    let x = D::from_parts((-7).into(), isize::MIN);
+    check_roundtrip(&x);
+    let json = to_string(x.repr()).unwrap();
+    assert_eq!(&from_str::<Repr<10>>(&json).unwrap(), x.repr());
+
+    // a literal with such an exponent stays an error
+    for s in [
+        format!("\"5e{}\"", isize::MAX),
+        format!("\"5e{}\"", isize::MIN),
+    ] {
+        assert!(from_str::<DBig>(&s).is_err(), "{s}");
+        assert!(from_str::<Repr<10>>(&s).is_err(), "{s}");
+    }
+}
+
+/// The struct form states the precision, and the significand has to fit it (with the one
+/// guard digit of an inexact sum) as it does everywhere else.
+#[test]
+fn test_serde_struct_significand_fits_precision() {
+    use serde_test::{assert_de_tokens_error, Token};
+
+    // one guard digit is what the serializer itself writes
+    let guarded: DBig = from_str(r#"{"significand":"12","exponent":0,"precision":1}"#).unwrap();
+    assert_eq!((guarded.repr().digits(), guarded.precision()), (2, 1));
+    // trailing zeros are not digits of the significand
+    let folded: DBig = from_str(r#"{"significand":"123000","exponent":0,"precision":3}"#).unwrap();
+    assert_eq!((folded.repr().digits(), folded.precision()), (3, 3));
+    // an unlimited precision holds anything, and so does an infinity
+    let free: DBig = from_str(r#"{"significand":"123456","exponent":0,"precision":0}"#).unwrap();
+    assert_eq!(free.repr().digits(), 6);
+    let inf: DBig =
+        from_str(&format!(r#"{{"significand":"0","exponent":{},"precision":1}}"#, isize::MAX))
+            .unwrap();
+    assert!(inf.repr().is_infinite());
+
+    for json in [
+        r#"{"significand":"123456","exponent":0,"precision":1}"#,
+        r#"{"significand":"123","exponent":-7,"precision":1}"#,
+        r#"{"significand":"-1001","exponent":3,"precision":2}"#,
+    ] {
+        let err = from_str::<DBig>(json).unwrap_err();
+        assert!(err.to_string().contains("more digits than the precision"), "{err}");
+    }
+    let err = from_str::<FBig>(r#"{"significand":"7","exponent":0,"precision":1}"#).unwrap_err();
+    assert!(err.to_string().contains("more digits than the precision"), "{err}");
+
+    // the binary formats read the same three fields
+    let bytes = to_allocvec(&(dashu_int::IBig::from(123456), 0isize, 1usize)).unwrap();
+    assert!(from_bytes::<DBig>(&bytes).is_err());
+    let bytes = to_allocvec(&(dashu_int::IBig::from(12), 0isize, 1usize)).unwrap();
+    assert_eq!(from_bytes::<DBig>(&bytes).unwrap().repr().digits(), 2);
+    assert_de_tokens_error::<serde_test::Compact<DBig>>(
+        &[
+            Token::Struct {
+                name: "FBig",
+                len: 3,
+            },
+            Token::Str("significand"),
+            Token::Bytes(&[0x40, 0xe2, 0x01]),
+            Token::Str("exponent"),
+            Token::I64(0),
+            Token::Str("precision"),
+            Token::U64(1),
+            Token::StructEnd,
+        ],
+        "the significand has more digits than the precision allows",
+    );
+}

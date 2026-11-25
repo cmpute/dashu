@@ -31,6 +31,54 @@ fn parse_infinity<const B: Word>(v: &str) -> Option<Repr<B>> {
     }
 }
 
+/// The number of zeros that the positional form of a number may spell out beyond its
+/// significant digits before the human-readable serializers switch to a literal with an
+/// explicit scale (`123@456`). The positional form of a number with a large exponent would
+/// otherwise have one character per unit of the exponent.
+const MAX_POSITIONAL_ZEROS: usize = 32;
+
+impl<const B: Word> Repr<B> {
+    /// Whether this is a nonzero number at one of the two reserved exponents. The parser
+    /// refuses a literal with such an exponent, so these numbers (the saturation endpoints of
+    /// an overflowing or underflowing operation under some rounding modes) are only
+    /// expressible in the struct form.
+    fn is_beyond_literals(&self) -> bool {
+        !self.significand.is_zero() && (self.exponent == isize::MAX || self.exponent == isize::MIN)
+    }
+
+    /// The literal that parses back to this representation, if one exists (see
+    /// [`Self::is_beyond_literals`]). It is short whatever the exponent is.
+    fn to_literal(&self) -> Option<String> {
+        if self.is_beyond_literals() {
+            return None;
+        }
+        let mut s = String::new();
+        // zeros that the positional form writes in addition to the significant digits
+        let positional_zeros = if self.exponent >= 0 || self.significand.is_zero() {
+            self.exponent.unsigned_abs()
+        } else {
+            self.exponent
+                .unsigned_abs()
+                .saturating_sub(self.digits_lb())
+        };
+        if self.significand.is_zero() || positional_zeros <= MAX_POSITIONAL_ZEROS {
+            // the positional form (and the zeros and infinities, which have their own)
+            write!(&mut s, "{}", self).ok()?;
+        } else {
+            write!(&mut s, "{}@{}", self.significand.in_radix(B as _), self.exponent).ok()?;
+        }
+        Some(s)
+    }
+
+    /// Check the parts of a struct form: the significand must fit the precision, with the one
+    /// guard digit that an inexact sum may carry (the condition of [`FBig::from_repr`]).
+    fn fits_precision(&self, precision: usize) -> bool {
+        precision == 0 || self.is_infinite() || self.digits() <= precision.saturating_add(1)
+    }
+}
+
+const ERR_TOO_MANY_DIGITS: &str = "the significand has more digits than the precision allows";
+
 impl<R: Round, const B: Word> FBig<R, B> {
     /// The literal that parses back to this number *with the same precision*, if one exists.
     ///
@@ -38,9 +86,13 @@ impl<R: Round, const B: Word> FBig<R, B> {
     /// zeros included), so the literal must contain exactly `precision` digits. That is not
     /// possible when the precision is unlimited (zero) or smaller than the number of
     /// significant digits (an inexact sum may carry a guard digit), and an infinity literal
-    /// carries no precision at all; `None` is returned in those cases.
+    /// carries no precision at all; `None` is returned in those cases. So it is for a number
+    /// at a reserved exponent, which no literal can denote.
     fn to_literal_with_precision(&self) -> Option<String> {
         let precision = self.context.precision;
+        if self.repr.is_beyond_literals() {
+            return None;
+        }
         if self.repr.is_infinite() {
             return if precision == 0 {
                 Some(String::from(match self.repr.sign() {
@@ -102,15 +154,19 @@ impl<const B: Word> Serialize for Repr<B> {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            // serialize to formatted string if the serializer is human readable
-            serializer.collect_str(self)
-        } else {
-            // otherwise serialize as a (significand, exponent) struct
-            let mut se = serializer.serialize_struct("FBigRepr", 2)?;
-            se.serialize_field(KEY_SIGNIF, &self.significand)?;
-            se.serialize_field(KEY_EXPONENT, &self.exponent)?;
-            se.end()
+            // serialize to a literal if the serializer is human readable
+            if let Some(s) = self.to_literal() {
+                return serializer.serialize_str(&s);
+            }
         }
+
+        // Otherwise serialize as a (significand, exponent) struct. This is the only form of
+        // the non-human-readable formats, and the fallback of the human-readable ones for the
+        // numbers that no literal can denote.
+        let mut se = serializer.serialize_struct("FBigRepr", 2)?;
+        se.serialize_field(KEY_SIGNIF, &self.significand)?;
+        se.serialize_field(KEY_EXPONENT, &self.exponent)?;
+        se.end()
     }
 }
 
@@ -252,7 +308,9 @@ impl<'de, const B: Word> Deserialize<'de> for Repr<B> {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            deserializer.deserialize_str(ReprVisitor)
+            // a literal string, or the struct form for the numbers that no literal can denote
+            // (see `Serialize`)
+            deserializer.deserialize_any(ReprVisitor)
         } else {
             deserializer.deserialize_struct("FBigRepr", REPR_FIELDS, ReprVisitor)
         }
@@ -298,8 +356,14 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
         if seq.next_element::<de::IgnoredAny>()?.is_some() {
             Err(err_report())?
         } else {
+            let repr = Repr::new(significand, exponent);
+            if !repr.fits_precision(precision) {
+                return Err(de::Error::custom(ERR_TOO_MANY_DIGITS));
+            }
             Ok(FBig {
                 repr: Repr::from_encoded_parts(significand, exponent),
+
+                repr,
                 context: Context::new(precision),
             })
         }
@@ -335,8 +399,14 @@ impl<'de, R: Round, const B: Word> Visitor<'de> for FBigVisitor<R, B> {
         let significand = signif.ok_or_else(|| de::Error::missing_field(KEY_SIGNIF))?;
         let exponent = exp.ok_or_else(|| de::Error::missing_field(KEY_EXPONENT))?;
         let precision = prec.ok_or_else(|| de::Error::missing_field(KEY_PREC))?;
+        let repr = Repr::new(significand, exponent);
+        if !repr.fits_precision(precision) {
+            return Err(de::Error::custom(ERR_TOO_MANY_DIGITS));
+        }
         Ok(FBig {
             repr: Repr::from_encoded_parts(significand, exponent),
+
+            repr,
             context: Context::new(precision),
         })
     }
