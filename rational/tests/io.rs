@@ -297,6 +297,44 @@ fn test_format_flags_apply_to_whole_fraction() {
 }
 
 #[test]
+fn test_format_zero_padding_after_radix_prefix() {
+    // With `#` and `0` the zeros go between the radix prefix and the digits of the
+    // numerator, as for an integer, so that the output reads back.
+    assert_eq!(format!("{:#012x}", rbig!(1 / 2)), "0x000001/0x2");
+    assert_eq!(format!("{:#012X}", rbig!(255 / 16)), "0x000FF/0x10");
+    assert_eq!(format!("{:#012b}", rbig!(1 / 2)), "0b00001/0b10");
+    assert_eq!(format!("{:#012o}", rbig!(1 / 2)), "0o000001/0o2");
+    assert_eq!(format!("{:#012x}", rbig!(-3 / 4)), "-0x00003/0x4");
+    assert_eq!(format!("{:+#012x}", rbig!(3 / 4)), "+0x00003/0x4");
+    assert_eq!(format!("{:#012x}", rbig!(~3/9)), "0x000003/0x9");
+    assert_eq!(format!("{:#010x}", rbig!(3)), "0x00000003");
+    assert_eq!(format!("{:#06x}", rbig!(1 / 2)), "0x1/0x2"); // narrower than the text
+
+    // unchanged: no prefix without `#`, and the fill of an explicit alignment goes outside
+    assert_eq!(format!("{:010x}", rbig!(1 / 2)), "00000001/2");
+    assert_eq!(format!("{:010}", rbig!(-1 / 2)), "-0000001/2");
+    assert_eq!(format!("{:#010}", rbig!(1 / 2)), "00000001/2");
+    assert_eq!(format!("{:>#10x}", rbig!(1 / 2)), "   0x1/0x2");
+    assert_eq!(format!("{:*<#10x}", rbig!(-1 / 2)), "-0x1/0x2**");
+    assert_eq!(format!("{:#010}", rbig!(~171/16).in_radix(16)), "00000AB/10");
+
+    for x in [rbig!(1 / 2), rbig!(-3 / 4), rbig!(255 / 16), rbig!(-7)] {
+        for (text, radix) in [
+            (format!("{:#012x}", x), 16),
+            (format!("{:#012X}", x), 16),
+            (format!("{:#012b}", x), 2),
+            (format!("{:#012o}", x), 8),
+            (format!("{:+#012x}", x), 16),
+        ] {
+            assert_eq!(RBig::from_str_with_radix_prefix(&text), Ok((x.clone(), radix)), "{}", text);
+        }
+    }
+    let relaxed = rbig!(~1/2);
+    let text = format!("{:#012x}", relaxed);
+    assert_eq!(Relaxed::from_str_with_radix_prefix(&text), Ok((relaxed, 16)));
+}
+
+#[test]
 fn test_rbig_in_expanded_width_fill_alignment() {
     let half = rbig!(1 / 2);
     // the flags apply to the whole number, as for the primitive floats

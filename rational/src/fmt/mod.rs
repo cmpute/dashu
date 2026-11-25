@@ -16,9 +16,14 @@ use dashu_base::Sign;
 /// Write a fraction whose numerator and denominator have been rendered into `body`
 /// (including the `-` of a negative numerator) as a single item: the `+` flag adds one sign
 /// in front of the fraction, and the width, fill and alignment apply to the whole of it.
+///
+/// `prefix` is the radix prefix that the alternate flag puts in front of the numerator
+/// (empty if there is none): with the `0` flag the zeros go between that prefix and the
+/// digits of the numerator, as they do for an integer (`0x000001/0x2`).
 fn fmt_fraction(
     f: &mut fmt::Formatter<'_>,
     is_negative: bool,
+    prefix: &str,
     body: fmt::Arguments<'_>,
 ) -> fmt::Result {
     if f.width().is_none() {
@@ -30,7 +35,12 @@ fn fmt_fraction(
     } else {
         let body = body.to_string();
         let magnitude = body.strip_prefix('-').unwrap_or(&body);
-        f.pad_integral(!is_negative, "", magnitude)
+        // `pad_integral` writes the prefix itself (only with the alternate flag)
+        let (prefix, magnitude) = match magnitude.strip_prefix(prefix) {
+            Some(digits) if f.alternate() => (prefix, digits),
+            _ => ("", magnitude),
+        };
+        f.pad_integral(!is_negative, prefix, magnitude)
     }
 }
 
@@ -39,7 +49,7 @@ fn fmt_fraction(
 // "numerator/denominator" with each component in the target radix. The alternate flag
 // (radix prefix) applies to both components, every other flag to the fraction as a whole.
 macro_rules! impl_radix_fmt {
-    ($trait:ident, $plain:literal, $alternate:literal) => {
+    ($trait:ident, $plain:literal, $alternate:literal, $prefix:literal) => {
         impl fmt::$trait for Repr {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 if self.denominator.is_one() {
@@ -50,12 +60,14 @@ macro_rules! impl_radix_fmt {
                         fmt_fraction(
                             f,
                             is_negative,
+                            $prefix,
                             format_args!($alternate, self.numerator, self.denominator),
                         )
                     } else {
                         fmt_fraction(
                             f,
                             is_negative,
+                            "",
                             format_args!($plain, self.numerator, self.denominator),
                         )
                     }
@@ -79,11 +91,11 @@ macro_rules! impl_radix_fmt {
     };
 }
 
-impl_radix_fmt!(Display, "{}/{}", "{:#}/{:#}");
-impl_radix_fmt!(Binary, "{:b}/{:b}", "{:#b}/{:#b}");
-impl_radix_fmt!(Octal, "{:o}/{:o}", "{:#o}/{:#o}");
-impl_radix_fmt!(LowerHex, "{:x}/{:x}", "{:#x}/{:#x}");
-impl_radix_fmt!(UpperHex, "{:X}/{:X}", "{:#X}/{:#X}");
+impl_radix_fmt!(Display, "{}/{}", "{:#}/{:#}", "");
+impl_radix_fmt!(Binary, "{:b}/{:b}", "{:#b}/{:#b}", "0b");
+impl_radix_fmt!(Octal, "{:o}/{:o}", "{:#o}/{:#o}", "0o");
+impl_radix_fmt!(LowerHex, "{:x}/{:x}", "{:#x}/{:#x}", "0x");
+impl_radix_fmt!(UpperHex, "{:X}/{:X}", "{:#X}/{:#X}", "0x");
 
 impl fmt::Debug for Repr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -147,9 +159,9 @@ impl fmt::Display for InRadix<'_> {
             let den = self.denominator.in_radix(r);
             let is_negative = self.numerator.sign() == Sign::Negative;
             if f.alternate() {
-                fmt_fraction(f, is_negative, format_args!("{:#}/{:#}", num, den))
+                fmt_fraction(f, is_negative, "", format_args!("{:#}/{:#}", num, den))
             } else {
-                fmt_fraction(f, is_negative, format_args!("{}/{}", num, den))
+                fmt_fraction(f, is_negative, "", format_args!("{}/{}", num, den))
             }
         }
     }
