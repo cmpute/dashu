@@ -131,6 +131,31 @@ def test_ibig_chunks_of_negative_raise():
         assert IBig.from_chunks(abs(x).to_chunks(8), 8) == -x
 
 
+def test_ibig_to_bytes_unsigned_has_no_sign_byte():
+    # IBig.to_bytes(byteorder, signed=False) is the unsigned encoding, as UBig.to_bytes and
+    # int.to_bytes give it; it had the extra 0x00 of the signed encoding wherever the top bit
+    # of the leading byte is set (IBig(200) -> b'\x00\xc8')
+    import pytest
+    for n in [0, 1, 127, 128, 200, 255, 256, 2**15, 2**63, 2**64 - 1, 2**64, 2**100 + 5]:
+        length = max((n.bit_length() + 7) // 8, 1)
+        for order in ("big", "little"):
+            unsigned = IBig(n).to_bytes(order, False)
+            assert unsigned == UBig(n).to_bytes(order), (n, order)
+            assert int.from_bytes(unsigned, order) == n
+            assert IBig.from_bytes(unsigned, order, False) == n
+            if n:
+                assert unsigned == n.to_bytes(length, order), (n, order)
+            # the signed encoding keeps room for the sign bit, for both signs
+            for m in (n, -n):
+                signed = IBig(m).to_bytes(order, True)
+                assert int.from_bytes(signed, order, signed=True) == m
+                assert IBig.from_bytes(signed, order, True) == m
+    assert IBig(200).to_bytes("big", False) == b"\xc8"
+    assert IBig(200).to_bytes("big", True) == b"\x00\xc8"
+    with pytest.raises(OverflowError):
+        IBig(-1).to_bytes("big", False)
+
+
 if __name__ == "__main__":
     # test_bit_ops()
     test_conversion_to_chunks()

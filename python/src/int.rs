@@ -1276,13 +1276,17 @@ impl IPy {
             return Err(PyOverflowError::new_err(ERRMSG_NEGATIVE_TO_UNSIGNED));
         }
 
+        // signed: the shortest two's complement encoding (with room for the sign bit);
+        // unsigned: the bytes of the magnitude, as `UBig.to_bytes` gives them
         let byteorder = byteorder.unwrap_or("little");
-        let bytes = match byteorder {
-            "little" => PyBytes::new(py, &self.0.to_le_bytes()),
-            "big" => PyBytes::new(py, &self.0.to_be_bytes()),
+        let bytes = match (byteorder, signed) {
+            ("little", true) => self.0.to_le_bytes(),
+            ("big", true) => self.0.to_be_bytes(),
+            ("little", false) => (&self.0).unsigned_abs().to_le_bytes(),
+            ("big", false) => (&self.0).unsigned_abs().to_be_bytes(),
             _ => return Err(PyValueError::new_err(ERRMSG_WRONG_ENDIANNESS)),
         };
-        bytes.into_py_any(py)
+        PyBytes::new(py, &bytes).into_py_any(py)
     }
     /// Create IBig from bytes, like int.from_bytes().
     #[staticmethod]
