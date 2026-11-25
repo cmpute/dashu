@@ -282,3 +282,31 @@ fn test_relaxed_from_str_radix() {
     assert_eq!(Relaxed::from_str_radix("+1/-2", 10).unwrap(), rbig!(~-1/2));
     assert_eq!(Relaxed::from_str_radix("-1/-2", 10).unwrap(), rbig!(~1/2));
 }
+
+#[test]
+fn test_from_str_expanded_large_exponent() {
+    // The value is exact, so its size grows with the exponent. (An exponent such as
+    // 999999999999 needs more memory than there is and panics; that is documented and not
+    // tested here, since some systems only fail after handing out the memory.)
+    let x = RBig::from_str_expanded("1.5e3000", 10).unwrap();
+    assert_eq!(x, RBig::from(UBig::from(15u8) * UBig::from(10u8).pow(2999)));
+    let x = RBig::from_str_expanded("-1@-1000", 16).unwrap();
+    assert_eq!(x, RBig::from_parts((-1).into(), UBig::ONE << 4000));
+    let x = Relaxed::from_str_expanded("0.(3)e-2000", 10).unwrap();
+    assert_eq!(x, Relaxed::from_parts(1.into(), UBig::from(3u8) * UBig::from(10u8).pow(2000)));
+}
+
+// The power-of-two part of `16^(usize::MAX / 4 + 1)` has more bits than a `usize` can count.
+// The count used to wrap around to zero in release builds, and the literal was read as 1.
+
+#[test]
+#[should_panic(expected = "try to allocate too much memory")]
+fn test_from_str_expanded_unrepresentable_exponent() {
+    let _ = RBig::from_str_expanded(&format!("1@{}", isize::MAX / 2 + 1), 16);
+}
+
+#[test]
+#[should_panic(expected = "try to allocate too much memory")]
+fn test_from_str_expanded_unrepresentable_negative_exponent() {
+    let _ = Relaxed::from_str_expanded(&format!("1@-{}", isize::MAX / 2 + 1), 16);
+}

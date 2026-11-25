@@ -3,10 +3,23 @@
 use core::ops::{Shl, Shr};
 
 use crate::{
+    error::panic_allocate_too_much,
     ibig::IBig,
     ubig::UBig,
     Sign::{self, *},
 };
+
+/// The number of trailing zero bits of `base^exp` for a base with `shift` of them.
+///
+/// A product that does not fit in a `usize` belongs to a power that cannot be represented
+/// (a wrapped product would silently give a wrong power instead).
+#[inline]
+fn pow_shift(exp: usize, shift: usize) -> usize {
+    match exp.checked_mul(shift) {
+        Some(bits) => bits,
+        None => panic_allocate_too_much(),
+    }
+}
 
 impl UBig {
     /// Raises self to the power of `exp`.
@@ -27,7 +40,7 @@ impl UBig {
                 .as_typed()
                 .pow(exp)
                 .into_typed()
-                .shl(exp * shift)
+                .shl(pow_shift(exp, shift))
         } else {
             self.repr().pow(exp)
         };
@@ -56,7 +69,7 @@ impl IBig {
                 .as_typed()
                 .pow(exp)
                 .into_typed()
-                .shl(exp * shift)
+                .shl(pow_shift(exp, shift))
         } else {
             mag.pow(exp)
         };
