@@ -149,3 +149,35 @@ fn exponent_out_of_range_rkyv() {
     let v = F::from_parts(3.into(), 1 << 31);
     let _ = to_bytes::<_, 1024>(&v);
 }
+
+#[test]
+fn precision_range_rkyv_roundtrip() {
+    // every precision that the archived (32-bit) representation holds round-trips
+    for precision in [0usize, 1, 5, 1 << 20, u32::MAX as usize] {
+        let v = DBig::from(3).with_precision(precision).value();
+        let bytes = to_bytes::<_, 1024>(&v).unwrap();
+        // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+        let v2 = unsafe { from_bytes_unchecked::<DBig>(&bytes) }.unwrap();
+        assert_eq!(v2.precision(), precision);
+        assert_eq!(v2.repr(), v.repr());
+    }
+}
+
+// A precision outside the archived range is refused instead of being truncated (2^32 + 5 used to
+// come back as 5, and 2^32 as 0, which means unlimited). rkyv 0.7 gives a field no way to return
+// an error, hence the panic.
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "the precision is too large for the archived representation")]
+fn precision_out_of_range_rkyv() {
+    let v = DBig::from(3).with_precision((1 << 32) + 5).value();
+    let _ = to_bytes::<_, 1024>(&v);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "the precision is too large for the archived representation")]
+fn precision_wrapping_to_unlimited_rkyv() {
+    let v = F::from(3u8).with_precision(1 << 32).value();
+    let _ = to_bytes::<_, 1024>(&v);
+}

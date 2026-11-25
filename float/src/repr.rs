@@ -112,6 +112,11 @@ pub struct Repr<const BASE: Word> {
 pub struct Context<RoundingMode: Round> {
     /// The precision of the floating point number.
     /// If set to zero, then the precision is unlimited.
+    #[cfg_attr(feature = "rkyv_v07", with(crate::third_party::rkyv_v07::Precision))]
+    #[cfg_attr(
+        all(feature = "rkyv_v08", not(feature = "rkyv_v07")),
+        rkyv(with = crate::third_party::rkyv_v08::Precision)
+    )]
     pub(crate) precision: usize,
     _marker: PhantomData<RoundingMode>,
 }

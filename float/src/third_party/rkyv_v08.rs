@@ -1,11 +1,11 @@
 //! rkyv 0.8 support: the `Archive`/`Serialize`/`Deserialize` impls live on the derive (`cfg_attr`
-//! on `Repr`/`Context`/`FBig`); this module holds the field wrapper for the exponent and the
-//! round-trip tests. Gated on `all(rkyv_v08, not(rkyv_v07))` because the two versions'
+//! on `Repr`/`Context`/`FBig`); this module holds the field wrappers for the exponent and the
+//! precision, and the round-trip tests. Gated on `all(rkyv_v08, not(rkyv_v07))` because the two versions'
 //! derive-generated type names collide.
 
 use core::fmt;
 use rkyv_v08::{
-    primitive::FixedIsize,
+    primitive::{FixedIsize, FixedUsize},
     rancor::{Fallible, Source},
     with::{ArchiveWith, DeserializeWith, SerializeWith},
     Archive, Archived, Deserialize, Place,
@@ -98,6 +98,68 @@ impl<D: Fallible + ?Sized> DeserializeWith<Archived<isize>, isize, D> for Expone
     fn deserialize_with(field: &Archived<isize>, deserializer: &mut D) -> Result<isize, D::Error> {
         let archived: isize = field.deserialize(deserializer)?;
         Ok(decode(archived))
+    }
+}
+
+/// Archives the precision of a [`Context`][crate::Context].
+///
+/// An archived `usize` has a fixed width that can be narrower than the native one, and the
+/// plain conversion truncates: a precision of `2^32 + 5` would come back as 5, and `2^32` as 0,
+/// which means *unlimited*. This wrapper keeps the archived layout of a `usize`, but refuses a
+/// precision that does not fit instead of truncating it.
+pub struct Precision;
+
+/// Whether the archived representation can hold the precision.
+fn precision_fits(precision: usize) -> bool {
+    precision as u128 <= FixedUsize::MAX as u128
+}
+
+/// The error for a precision that the archived representation cannot hold.
+#[derive(Debug)]
+struct PrecisionOutOfRange;
+
+impl fmt::Display for PrecisionOutOfRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the precision is too large for the archived representation")
+    }
+}
+
+impl core::error::Error for PrecisionOutOfRange {}
+
+impl ArchiveWith<usize> for Precision {
+    type Archived = Archived<usize>;
+    type Resolver = ();
+
+    #[inline]
+    fn resolve_with(field: &usize, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        // `serialize_with` has rejected the precisions that cannot be archived
+        let precision = if precision_fits(*field) {
+            *field
+        } else {
+            FixedUsize::MAX as usize
+        };
+        precision.resolve(resolver, out)
+    }
+}
+
+impl<S: Fallible + ?Sized> SerializeWith<usize, S> for Precision
+where
+    S::Error: Source,
+{
+    #[inline]
+    fn serialize_with(field: &usize, _: &mut S) -> Result<Self::Resolver, S::Error> {
+        if precision_fits(*field) {
+            Ok(())
+        } else {
+            Err(<S::Error as Source>::new(PrecisionOutOfRange))
+        }
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<usize>, usize, D> for Precision {
+    #[inline]
+    fn deserialize_with(field: &Archived<usize>, deserializer: &mut D) -> Result<usize, D::Error> {
+        field.deserialize(deserializer)
     }
 }
 
@@ -233,6 +295,31 @@ mod tests {
             let v = F::from_parts(3.into(), exponent);
             assert!(to_bytes::<rkyv_v08::rancor::Error>(&v).is_err(), "{exponent}");
             assert!(to_bytes::<rkyv_v08::rancor::Error>(v.repr()).is_err(), "{exponent}");
+        }
+    }
+
+    #[test]
+    fn precision_range() {
+        // every precision that the archived (32-bit) representation holds round-trips
+        for precision in [0usize, 1, 5, 1 << 20, u32::MAX as usize] {
+            let v = DBig::from(3).with_precision(precision).value();
+            let bytes = to_bytes::<rkyv_v08::rancor::Error>(&v).unwrap();
+            // SAFETY: `bytes` came from `rkyv::to_bytes` on the same value.
+            let v2 =
+                unsafe { from_bytes_unchecked::<DBig, rkyv_v08::rancor::Error>(&bytes) }.unwrap();
+            assert_eq!(v2.precision(), precision);
+            assert_eq!(v2.repr(), v.repr());
+        }
+
+        // A larger one is refused instead of being truncated: 2^32 + 5 used to come back as
+        // 5, and 2^32 as 0, which means unlimited.
+        #[cfg(target_pointer_width = "64")]
+        for precision in [1usize << 32, (1 << 32) + 5, usize::MAX] {
+            let v = DBig::from(3).with_precision(precision).value();
+            assert_eq!(v.precision(), precision);
+            assert!(to_bytes::<rkyv_v08::rancor::Error>(&v).is_err(), "{precision}");
+            let v = F::from(3u8).with_precision(precision).value();
+            assert!(to_bytes::<rkyv_v08::rancor::Error>(&v).is_err(), "{precision}");
         }
     }
 
