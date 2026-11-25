@@ -147,6 +147,16 @@ fn integral_to_ibig<R: Round, const B: Word>(
     Ok(round(f).to_int().value())
 }
 
+/// The operand of a method that has no value for an infinity (the Rust method panics on
+/// it): a `ValueError`, as for arithmetic with an infinity.
+fn finite<R: Round, const B: Word>(f: &FBig<R, B>) -> PyResult<&FBig<R, B>> {
+    if f.repr().is_infinite() {
+        Err(PyValueError::new_err(ERRMSG_INFINITY))
+    } else {
+        Ok(f)
+    }
+}
+
 /// Give the result of a rounding method (`trunc`, `floor`, `ceil`, `round`, `fract`) the
 /// precision of the number it was computed from, where the Rust method returns it with an
 /// unlimited precision (which it does for a zero, and wherever no digit of the number is left).
@@ -353,20 +363,25 @@ impl FPy {
     }
 
     /********** rounding (algebraic, no cache) **********/
-    fn trunc(&self) -> Self {
-        FPy(keep_precision(self.0.trunc(), &self.0))
+    fn trunc(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.trunc(), x)))
     }
-    fn floor(&self) -> Self {
-        FPy(keep_precision(self.0.floor(), &self.0))
+    fn floor(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.floor(), x)))
     }
-    fn ceil(&self) -> Self {
-        FPy(keep_precision(self.0.ceil(), &self.0))
+    fn ceil(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.ceil(), x)))
     }
-    fn round(&self) -> Self {
-        FPy(keep_precision(self.0.round(), &self.0))
+    fn round(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.round(), x)))
     }
-    fn fract(&self) -> Self {
-        FPy(keep_precision(self.0.fract(), &self.0))
+    fn fract(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(FPy(keep_precision(x.fract(), x)))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
@@ -398,8 +413,8 @@ impl FPy {
     fn precision(&self) -> usize {
         self.0.precision()
     }
-    fn digits(&self) -> usize {
-        self.0.digits()
+    fn digits(&self) -> PyResult<usize> {
+        Ok(finite(&self.0)?.digits())
     }
     fn with_precision(&self, precision: usize) -> Self {
         FPy(self.0.clone().with_precision(precision).value())
@@ -410,8 +425,10 @@ impl FPy {
     }
 
     /********** conversions **********/
-    fn to_int(&self) -> IPy {
-        IPy(self.0.to_int().value())
+    /// The float rounded to an integer (with the rounding mode of the type). An infinity
+    /// raises `OverflowError`, as for `int(x)`.
+    fn to_int(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::clone).map(IPy)
     }
     fn to_decimal(&self) -> DPy {
         DPy(self.0.to_decimal().value())
@@ -604,20 +621,25 @@ impl DPy {
     }
 
     /********** rounding (algebraic, no cache) **********/
-    fn trunc(&self) -> Self {
-        DPy(keep_precision(self.0.trunc(), &self.0))
+    fn trunc(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.trunc(), x)))
     }
-    fn floor(&self) -> Self {
-        DPy(keep_precision(self.0.floor(), &self.0))
+    fn floor(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.floor(), x)))
     }
-    fn ceil(&self) -> Self {
-        DPy(keep_precision(self.0.ceil(), &self.0))
+    fn ceil(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.ceil(), x)))
     }
-    fn round(&self) -> Self {
-        DPy(keep_precision(self.0.round(), &self.0))
+    fn round(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.round(), x)))
     }
-    fn fract(&self) -> Self {
-        DPy(keep_precision(self.0.fract(), &self.0))
+    fn fract(&self) -> PyResult<Self> {
+        let x = finite(&self.0)?;
+        Ok(DPy(keep_precision(x.fract(), x)))
     }
 
     /********** Python numeric protocol (dunders; math.floor/ceil/trunc and round() return int) **********/
@@ -638,8 +660,9 @@ impl DPy {
             None => IPy(integral_to_ibig(&self.0, FBig::round)?).into_py_any(py),
             // round(x, n): quantize to the 10^(-n) digit place (Python's Decimal.quantize).
             Some(n) => {
-                let rounded = self.0.quantize(-(n as isize)).value();
-                DPy(keep_precision(rounded, &self.0)).into_py_any(py)
+                let x = finite(&self.0)?;
+                let rounded = x.quantize(-(n as isize)).value();
+                DPy(keep_precision(rounded, x)).into_py_any(py)
             }
         }
     }
@@ -648,8 +671,8 @@ impl DPy {
     fn precision(&self) -> usize {
         self.0.precision()
     }
-    fn digits(&self) -> usize {
-        self.0.digits()
+    fn digits(&self) -> PyResult<usize> {
+        Ok(finite(&self.0)?.digits())
     }
     fn with_precision(&self, precision: usize) -> Self {
         DPy(self.0.clone().with_precision(precision).value())
@@ -660,8 +683,10 @@ impl DPy {
     }
 
     /********** conversions **********/
-    fn to_int(&self) -> IPy {
-        IPy(self.0.to_int().value())
+    /// The float rounded to an integer (with the rounding mode of the type). An infinity
+    /// raises `OverflowError`, as for `int(x)`.
+    fn to_int(&self) -> PyResult<IPy> {
+        integral_to_ibig(&self.0, FBig::clone).map(IPy)
     }
     fn to_decimal(&self) -> Self {
         DPy(self.0.to_decimal().value())

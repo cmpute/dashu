@@ -285,6 +285,30 @@ def test_zero_over_zero_raises():
     assert (one / FBig(3.0)).precision() == 53
 
 
+def test_methods_of_infinity_raise():
+    # the rounding methods, round(x, n), to_int() and digits() of an infinity raise an
+    # ordinary exception (as math.floor and round(x) already did) instead of a Rust panic
+    import pytest
+    infinities = [FBig(float("inf")), FBig(float("-inf")), DBig(1) / 0, DBig(-1) / 0]
+    for inf in infinities:
+        for method in ("trunc", "floor", "ceil", "round", "fract", "digits"):
+            with pytest.raises(ValueError):
+                getattr(inf, method)()
+        for fn in (math.floor, math.ceil, math.trunc, round, int, type(inf).to_int):
+            with pytest.raises(OverflowError):
+                fn(inf)
+        # these have a value for an infinity
+        assert inf.to_decimal().is_infinite() and inf.to_binary().is_infinite()
+        assert inf.with_precision(10).is_infinite() and inf.precision() >= 0
+        assert float(inf) == (math.inf if inf > 0 else -math.inf)
+    for inf in infinities[2:]:
+        with pytest.raises(ValueError):
+            round(inf, 2)
+    # finite values are unaffected
+    assert FBig(2.5).to_int() == 2 and DBig("2.5").to_int() == 3
+    assert FBig(2.5).digits() == 3 and round(DBig("1.2345"), 2) == DBig("1.23")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
