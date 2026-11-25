@@ -233,11 +233,14 @@ impl<R: Round, const B: Word> CBig<R, B> {
         self.context().unwrap_cfp(self.context().sqr(self))
     }
 
-    /// Fused complex multiply–add (convenience layer, see [`Context::fma`]).
+    /// Fused complex multiply–add `self·b + sign·c` (convenience layer, see [`Context::fma`]).
+    ///
+    /// The result is rounded at the largest precision of the three operands (an unlimited
+    /// precision counts as the lowest), like the binary operators and [`FBig::fma`].
     #[inline]
     pub fn fma(&self, b: &Self, c: &Self, sign: Sign) -> Self {
-        self.context()
-            .unwrap_cfp(self.context().fma(self, b, c, sign))
+        let context = Context::max(self.context(), Context::max(b.context(), c.context()));
+        context.unwrap_cfp(context.fma(self, b, c, sign))
     }
 }
 

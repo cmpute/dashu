@@ -214,6 +214,73 @@ fn fma_keeps_a_fully_cancelled_result() {
 }
 
 #[test]
+fn fma_rounds_at_the_largest_operand_precision() {
+    // The convenience `fma` rounds at the largest precision of its three operands — not at the
+    // receiver's — like the binary operators and `FBig::fma`.
+    type C = CBig<HalfAway, 10>;
+    type F = FBig<HalfAway, 10>;
+    let d = |s: &str, p: usize| s.parse::<F>().unwrap().with_precision(p).value();
+    let a = C::from_parts(d("1.1", 2), d("0", 2));
+    let b = C::from_parts(d("1.23456789", 20), d("0", 20));
+    let c = C::from_parts(d("0.000001", 20), d("0", 20));
+    let ab = a.fma(&b, &c, Sign::Positive);
+    assert_eq!(ab.precision(), 20);
+    assert_eq!(ab, &a * &b + &c);
+    assert_eq!(ab, b.fma(&a, &c, Sign::Positive));
+    let real = d("1.1", 2).fma(&d("1.23456789", 20), &d("0.000001", 20), Sign::Positive);
+    assert_eq!(ab.re(), real.repr());
+
+    // whichever operand carries the wide precision, the result is the context-layer one there
+    for p in PRECISIONS {
+        let narrow = |re, im| int_c::<HalfEven, 2>(re, im, 4);
+        let wide = |re, im| int_c::<HalfEven, 2>(re, im, p);
+        let ctx = Context::<HalfEven>::new(p);
+        let (z1, z2, z3) = ((13, -11), (7, 9), (1 << 40, 3));
+        for which in 0..3 {
+            let pick = |i: usize, (re, im): (i128, i128)| {
+                if i == which {
+                    wide(re, im)
+                } else {
+                    narrow(re, im)
+                }
+            };
+            let (z1, z2, z3) = (pick(0, z1), pick(1, z2), pick(2, z3));
+            for sign in [Sign::Positive, Sign::Negative] {
+                let r = z1.fma(&z2, &z3, sign);
+                assert_eq!(r.precision(), p, "p={p} which={which}");
+                assert_eq!(r, ctx.fma(&z1, &z2, &z3, sign).unwrap().value());
+                assert_eq!(r, z2.fma(&z1, &z3, sign), "p={p} which={which}");
+            }
+        }
+    }
+
+    // an unlimited precision counts as the lowest
+    let unlimited = int_c::<HalfEven, 2>(1 << 30, 1, 0);
+    let limited = int_c::<HalfEven, 2>(3, 5, 20);
+    assert_eq!(
+        unlimited
+            .fma(&unlimited, &limited, Sign::Positive)
+            .precision(),
+        20
+    );
+    assert_eq!(
+        unlimited
+            .fma(&unlimited, &unlimited, Sign::Positive)
+            .precision(),
+        0
+    );
+
+    // the cached wrapper mirrors it
+    let cache = std::rc::Rc::new(core::cell::RefCell::new(dashu_float::ConstCache::new()));
+    let (ca, cb, cc) = (
+        a.clone().into_cached(cache.clone()),
+        b.clone().into_cached(cache.clone()),
+        c.clone().into_cached(cache),
+    );
+    assert_eq!(ca.fma(&cb, &cc, Sign::Positive).as_cbig(), &ab);
+}
+
+#[test]
 fn sqr_respects_directed_rounding() {
     // z = 0 + yi: z² = −y² exactly; under Down the result must not exceed it (and must match
     // the general product).

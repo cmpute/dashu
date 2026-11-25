@@ -380,6 +380,12 @@ impl<R: Round, const B: Word> CachedCBig<R, B> {
     delegate_to_cbig!(proj);
     delegate_to_cbig!(mul_i(negative: bool));
 
+    /// Fused complex multiply–add `self·b + sign·c` (see [`CBig::fma`]).
+    #[inline]
+    pub fn fma(&self, b: &Self, c: &Self, sign: dashu_base::Sign) -> CachedCBig<R, B> {
+        CachedCBig::from_cbig(self.cbig.fma(&b.cbig, &c.cbig, sign), &self.cache)
+    }
+
     /// The squared modulus `re² + im²` (a real [`FBig`]) (see [`CBig::norm`]).
     #[inline]
     pub fn norm(&self) -> FBig<R, B> {
