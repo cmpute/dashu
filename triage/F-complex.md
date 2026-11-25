@@ -380,5 +380,8 @@ Counts: 15 real, fixed (13 clusters). Provenance by report: 9 pre-existing, 4 in
 - **MSRV**: no 1.68 toolchain is installed here; the changed crates were checked with 1.85
   (the oldest installed toolchain whose cargo reads the workspace) and with
   `--no-default-features`. The new code uses nothing newer than `usize::BITS` (1.53).
+- **python**: `CPy.arg` (`python/src/complex.rs:347`) forwards `Context::arg`, so `arg` of a
+  complex zero now returns `±0` / `±π` instead of raising for `OutOfDomain` (matching
+  `cmath.phase`). Nothing in `python/` was touched, and it was not built here.
 - **guides**: `guide/src/compliance.md`, `guide/src/ops/basic.md` and their `guide-zh` mirrors
   (arg of a zero; division no longer has an exception).
