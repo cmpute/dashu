@@ -75,7 +75,7 @@ fn parse_integer_with_error(signed: bool, input: TokenStream) -> Result<(Sign, U
             TokenTree::Ident(ident) => {
                 if val.is_none() {
                     val = Some(ident.to_string()) // this accepts numbers starting with non-base 10 digits
-                } else if base.is_none() && ident == "base" {
+                } else if base.is_none() && !base_marked && ident == "base" {
                     base_marked = true
                 } else {
                     return Err(ParseError::InvalidDigit);
@@ -170,5 +170,32 @@ mod tests {
         for text in ["-5", "+5", ""] {
             assert!(parse(false, text).is_err(), "{:?} was accepted", text);
         }
+    }
+
+    #[test]
+    fn test_single_base_marker_only() {
+        assert_eq!(parse(false, "5 base 36"), Ok((Sign::Positive, UBig::from(5u8))));
+        assert_eq!(parse(false, "z base 36"), Ok((Sign::Positive, UBig::from(35u8))));
+        assert_eq!(parse(true, "-z base 36"), Ok((Sign::Negative, UBig::from(35u8))));
+        // `base` itself is a valid digit string in a large enough base
+        assert_eq!(parse(false, "base base 36"), Ok((Sign::Positive, UBig::from(527198u32))));
+
+        // a repeated, dangling or misplaced marker is rejected, as by `rbig!`
+        for text in [
+            "5 base base 36",
+            "z base base 36",
+            "base base base 36",
+            "5 base",
+            "5 base base",
+            "5 base 36 base",
+            "5 base 36 36",
+            "5 36",
+            "5 base x",
+            "base 36",
+        ] {
+            assert!(parse(false, text).is_err(), "{:?} was accepted", text);
+            assert!(parse(true, text).is_err(), "{:?} was accepted", text);
+        }
+        assert!(parse(true, "-5 base base 36").is_err());
     }
 }
