@@ -69,7 +69,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -120,7 +120,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -174,7 +174,7 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // sinh = (ep - em)/2; cosh = (ep + em)/2 + 1, sharing the two `exp_m1` calls. Certified as a
-        // pair via `ziv_pair` (retry while either endpoint straddles a boundary); the input's own
+        // pair via `ziv_pair_irrational` (retry while either endpoint straddles a boundary); the input's own
         // rounding is folded by `exp_compute` from the raw `x`. For huge |x|, `exp_m1` overflows
         // inside the closure and propagates to both slots; sinh(±huge) = ±inf, cosh(±huge) = +inf,
         // so each slot's overflow sign is remapped below.
@@ -184,7 +184,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+        let (sinh_r, cosh_r) = self.ziv_pair_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let neg_x = -x.clone();
@@ -247,7 +247,7 @@ impl<R: ErrorBounds> Context<R> {
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
             + pi_argument_guard(x);
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -303,7 +303,7 @@ impl<R: ErrorBounds> Context<R> {
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
             + pi_argument_guard(x);
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -356,7 +356,7 @@ impl<R: ErrorBounds> Context<R> {
             return (Err(FpError::Overflow(x.sign())), Err(FpError::Overflow(Sign::Positive)));
         }
 
-        // Certified as a pair via `ziv_pair` (retry while either endpoint straddles a boundary);
+        // Certified as a pair via `ziv_pair_irrational` (retry while either endpoint straddles a boundary);
         // the overflow sign is remapped per slot as in `sinh_cosh`.
         // `+ pow_chain_guard`: the closure's `exp_compute` runs the `Bⁿ` powering chain, whose
         // radius slack is charged by the target precision (the in-closure `n` keeps deriving from
@@ -365,7 +365,7 @@ impl<R: ErrorBounds> Context<R> {
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2))
             + pi_argument_guard(x);
-        let (sinh_r, cosh_r) = self.ziv_pair(initial_guard, |guard| {
+        let (sinh_r, cosh_r) = self.ziv_pair_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let t = crate::math::trig::pi_scaled_ball(&work, x, reborrow_cache(&mut cache))?;
@@ -489,7 +489,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let n = 1usize << (work.precision.bit_len() / 2);
             let two_x = x + x;
@@ -538,7 +538,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let sign = x.sign();
             let wp = work.precision;
@@ -611,7 +611,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             if square_dominates(x, wp) {
@@ -675,7 +675,7 @@ impl<R: ErrorBounds> Context<R> {
         let initial_guard = self.base_guard_digits::<B>()
             + 10
             + pow_chain_guard::<B>(1usize << (self.precision.bit_len() / 2));
-        self.ziv(initial_guard, |guard| {
+        self.ziv_irrational(initial_guard, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), wp);

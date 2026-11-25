@@ -158,6 +158,15 @@ enum UnitReduced<const B: Word> {
     },
 }
 
+impl<const B: Word> UnitReduced<B> {
+    fn quadrant(&self) -> Quadrant {
+        match self {
+            UnitReduced::Small(_) => Quadrant::First,
+            UnitReduced::Split { quadrant, .. } => *quadrant,
+        }
+    }
+}
+
 fn reduce_unit_argument<const B: Word>(x: &Repr<B>, u: usize) -> UnitReduced<B> {
     debug_assert!(!x.significand.is_zero());
     debug_assert!(u > 0);
@@ -518,7 +527,7 @@ impl<R: ErrorBounds> Context<R> {
         }
         let negative = x.sign() == Sign::Negative;
         let abs = Repr::<B>::new(x.significand.clone().abs(), 0);
-        let rounded = self.ziv(10, |guard| {
+        let rounded = self.ziv_irrational(10, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let mut v = match scale {
@@ -550,16 +559,35 @@ impl<R: ErrorBounds> Context<R> {
         }))
     }
 
-    /// `cos_unit` for a reduced argument next to a multiple of `u`: `cos(2π·r/u) = 1 − δ` with
-    /// `0 < δ ≤ (2π·r/u)²/2 < 32·r²` (`u ≥ 1`), i.e. below `r²·B^5`.
+    /// `sign·cos(2π·r/u)` for a reduced argument `r` next to zero — what `cos_unit` returns
+    /// next to a multiple of `u/2` and `sin_unit` next to an odd multiple of `u/4`:
+    /// `cos(2π·r/u) = 1 − δ` with `0 < δ ≤ (2π·r/u)²/2 < 32·r²` (`u ≥ 1`), i.e. below `r²·B^5`.
+    /// `None` when `r` is not small enough for that to stay clear of every rounding boundary.
     fn tiny_cos_unit<const B: Word>(
         &self,
         reduced: &UnitReduced<B>,
+        sign: Sign,
     ) -> Option<Rounded<FBig<R, B>>> {
-        match reduced {
-            UnitReduced::Small(r) => self.tiny_even(r, Sign::Negative, 5),
-            UnitReduced::Split { .. } => None,
+        // |r| < B^top
+        let top = match reduced {
+            UnitReduced::Small(r) => top_exp(r),
+            UnitReduced::Split { num, den, .. } => {
+                if num.is_zero() {
+                    return None;
+                }
+                top_exp(&Repr::<B>::new(num.clone(), 0))
+                    .saturating_sub(bottom_exp(&Repr::<B>::new(den.clone(), 0)))
+            }
+        };
+        if top >= 0 {
+            return None;
         }
+        let one = match sign {
+            Sign::Positive => Repr::<B>::one(),
+            Sign::Negative => Repr::<B>::neg_one(),
+        };
+        // the value lies just inside ±1
+        self.round_near(&one, -sign, top.saturating_mul(2).saturating_add(5))
     }
 
     /// The correctly rounded value of an angle that is `sign·k·u/4` displaced to the side `dir`
@@ -649,7 +677,7 @@ impl<R: ErrorBounds> Context<R> {
         // Ziv: reduce to the first quadrant (the guard grows per retry, enlarging the work precision
         // that absorbs the `x − k·(π/2)` cancellation), evaluate the series. The reduction error is
         // already inside the reduced argument's Ball radius.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -715,7 +743,7 @@ impl<R: ErrorBounds> Context<R> {
             return Ok(r);
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -786,7 +814,7 @@ impl<R: ErrorBounds> Context<R> {
             (None, None) => {}
         }
 
-        let (s, c) = self.ziv_pair(50, |guard| {
+        let (s, c) = self.ziv_pair_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
@@ -873,7 +901,7 @@ impl<R: ErrorBounds> Context<R> {
         // quotient is tracked by the Ball division. The closure's `significand.is_zero()` guard
         // below handles the unreachable exact-pole case (cos cancelling to a zero significand) by
         // forcing a retry.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let (work, r, quadrant) =
                 self.reduce_to_quadrant(x, guard, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&r)?;
@@ -965,7 +993,18 @@ impl<R: ErrorBounds> Context<R> {
         // sin is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
-        self.ziv(50, |guard| {
+        // Next to an odd multiple of `u/4` the sine is `±(1 − δ)` with `δ` of the order of the
+        // squared distance: rounded directly (the loop would need twice the digits of that
+        // distance to see which side of `±1` the result is on).
+        let hugs = match reduced.quadrant() {
+            Quadrant::Second => Some(x.sign()),
+            Quadrant::Fourth => Some(-x.sign()),
+            _ => None,
+        };
+        if let Some(r) = hugs.and_then(|sign| self.tiny_cos_unit(&reduced, sign)) {
+            return Ok(r);
+        }
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -1042,10 +1081,16 @@ impl<R: ErrorBounds> Context<R> {
         // every exact row is behind us: the rest needs a precision to round to
         assert_limited_precision(self.precision);
         let reduced = reduce_unit_argument(x, u);
-        if let Some(r) = self.tiny_cos_unit(&reduced) {
+        // next to a multiple of `u/2` the cosine is `±(1 − δ)` (see `sin_unit`)
+        let hugs = match reduced.quadrant() {
+            Quadrant::First => Some(Sign::Positive),
+            Quadrant::Third => Some(Sign::Negative),
+            _ => None,
+        };
+        if let Some(r) = hugs.and_then(|sign| self.tiny_cos_unit(&reduced, sign)) {
             return Ok(r);
         }
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let val = match quadrant {
@@ -1140,12 +1185,32 @@ impl<R: ErrorBounds> Context<R> {
         assert_limited_precision(self.precision);
         // sin is odd (cos even): reduce and evaluate on |x|, apply the sign to sin at the end.
         let reduced = reduce_unit_argument(x, u);
-        if let Some(c) = self.tiny_cos_unit(&reduced) {
-            // the cosine hugs 1; the sine (≈ 2π·r/u) is an ordinary value with its own loop
-            return (self.sin_unit(x, u, cache), Ok(c));
+        // Next to a multiple of `u/4` one of the two hugs `±1` (see `sin_unit`); the other
+        // (≈ ±2π·r/u) is an ordinary value with its own loop.
+        match reduced.quadrant() {
+            q @ (Quadrant::First | Quadrant::Third) => {
+                let sign = if q == Quadrant::First {
+                    Sign::Positive
+                } else {
+                    Sign::Negative
+                };
+                if let Some(c) = self.tiny_cos_unit(&reduced, sign) {
+                    return (self.sin_unit(x, u, cache), Ok(c));
+                }
+            }
+            q => {
+                let sign = if q == Quadrant::Second {
+                    x.sign()
+                } else {
+                    -x.sign()
+                };
+                if let Some(s) = self.tiny_cos_unit(&reduced, sign) {
+                    return (Ok(s), self.cos_unit(x, u, cache));
+                }
+            }
         }
         let negative = x.sign() == Sign::Negative;
-        let (s, c) = self.ziv_pair(50, |guard| {
+        let (s, c) = self.ziv_pair_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
@@ -1228,7 +1293,7 @@ impl<R: ErrorBounds> Context<R> {
         // tan is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let (t, quadrant) = unit_argument_ball(&work, &reduced, u, reborrow_cache(&mut cache))?;
             let (sin_ball, cos_ball) = work.sin_cos_compute(&t)?;
@@ -1312,7 +1377,7 @@ impl<R: ErrorBounds> Context<R> {
             return r;
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1388,7 +1453,7 @@ impl<R: ErrorBounds> Context<R> {
 
         // acos_unit(x) = u/4 − asin_unit(x): the composition avoids the catastrophic
         // cancellation `π/2 − asin(x)` would suffer near x = 1 once scaled.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1466,7 +1531,7 @@ impl<R: ErrorBounds> Context<R> {
             }
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let a = work.atan_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1588,7 +1653,7 @@ impl<R: ErrorBounds> Context<R> {
         // x ≠ 0, finite: atan2(y/x) ± (quadrant π), scaled by u/(2π). The inner atan2 is
         // itself correctly rounded at the working precision; the scaling's rounding is
         // tracked by the Ball.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let a = work.atan2::<B>(y, x, reborrow_cache(&mut cache))?;
             let a_ball = Ball::from_rounded(a.map(FBig::into_repr), work.precision);
@@ -1627,7 +1692,7 @@ impl<R: ErrorBounds> Context<R> {
             return Err(FpError::OutOfDomain);
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
@@ -1716,7 +1781,7 @@ impl<R: ErrorBounds> Context<R> {
             });
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             let asin_ball = work.asin_ball::<B>(&x_ball, reborrow_cache(&mut cache))?;
@@ -1741,7 +1806,7 @@ impl<R: ErrorBounds> Context<R> {
         mut cache: Option<&mut ConstCache>,
     ) -> FpResult<FBig<R, B>> {
         assert_limited_precision(self.precision);
-        self.ziv(10, |guard| {
+        self.ziv_irrational(10, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let wp = work.precision;
             let pi = work.pi::<B>(reborrow_cache(&mut cache)).value();
@@ -1781,7 +1846,7 @@ impl<R: ErrorBounds> Context<R> {
             return r;
         }
 
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);
             Ok(work
@@ -1914,7 +1979,7 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // x ≠ 0, finite: atan2 = atan(y/x) ± (quadrant π), all as Ball composition.
-        self.ziv(50, |guard| {
+        self.ziv_irrational(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
             let y_ball = Ball::from_rounded(work.repr_round_ref(y), work.precision);
             let x_ball = Ball::from_rounded(work.repr_round_ref(x), work.precision);

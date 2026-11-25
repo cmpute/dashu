@@ -133,6 +133,36 @@ impl<R: ErrorBounds> Context<R> {
     pub(crate) fn ziv<const B: Word>(
         &self,
         initial_guard: usize,
+        approx: impl FnMut(usize) -> Result<(FBig<R, B>, FBig<R, B>), FpError>,
+    ) -> FpResult<FBig<R, B>> {
+        self.ziv_impl(initial_guard, false, approx)
+    }
+
+    /// [`ziv`](Self::ziv) for a function whose true result is never a rounding boundary —
+    /// neither a representable value nor a midpoint — on the arguments that reach the loop:
+    /// an irrational result, with the rational ones resolved beforehand. That is the case for
+    /// the trigonometric and hyperbolic families (`sin` of a nonzero rational is transcendental;
+    /// `sin(2π·q)` of a rational `q` is rational only at the tabulated twelfths; …).
+    ///
+    /// Such a result always separates from the returned value once the radius is small
+    /// enough, so the loop keeps going until the `Rounding` flag is proven, however close the
+    /// result lies (see [`certified`](Self::certified)): the flag costs what the value costs
+    /// under a directed mode, where the same separation decides the value itself. [`ziv`]
+    /// gives up on the flag at about twice the target precision — at once for a precision
+    /// below the initial guard — which is not enough for an argument that carries more digits
+    /// than the context (`cos_pi(2 − 10⁻⁴⁰)` at 10 digits was `Exact(1)`).
+    pub(crate) fn ziv_irrational<const B: Word>(
+        &self,
+        initial_guard: usize,
+        approx: impl FnMut(usize) -> Result<(FBig<R, B>, FBig<R, B>), FpError>,
+    ) -> FpResult<FBig<R, B>> {
+        self.ziv_impl(initial_guard, true, approx)
+    }
+
+    fn ziv_impl<const B: Word>(
+        &self,
+        initial_guard: usize,
+        irrational: bool,
         mut approx: impl FnMut(usize) -> Result<(FBig<R, B>, FBig<R, B>), FpError>,
     ) -> FpResult<FBig<R, B>> {
         // Unlimited precision: the approximation is exact, so report it as-is.
@@ -155,7 +185,7 @@ impl<R: ErrorBounds> Context<R> {
             // `with_precision` consumes `a`, but the containment test still needs it, so round a
             // clone and keep the original for the interval check.
             let candidate = a.clone().with_precision(self.precision);
-            if self.certified::<B>(&a.repr, &e.repr, &candidate, guard) {
+            if self.certified::<B>(&a.repr, &e.repr, &candidate, guard, irrational) {
                 return Ok(candidate);
             }
 
@@ -220,7 +250,11 @@ impl<R: ErrorBounds> Context<R> {
     /// [`FpError`], propagated to both slots as `(Err(e), Err(e))`. The driver certifies **both**
     /// values: it retries while *either* containment test fails, and returns both only when both fit
     /// their rounding preimages. Shares the guard-growth loop and retry counter with [`ziv`](Self::ziv).
-    pub(crate) fn ziv_pair<const B: Word>(
+    ///
+    /// The pairs are all trigonometric or hyperbolic, so this is the pair form of
+    /// [`ziv_irrational`](Self::ziv_irrational): neither result is ever a rounding boundary
+    /// (the exact ones are resolved before the loop), and both flags are proven.
+    pub(crate) fn ziv_pair_irrational<const B: Word>(
         &self,
         initial_guard: usize,
         mut approx: impl FnMut(
@@ -246,8 +280,8 @@ impl<R: ErrorBounds> Context<R> {
             };
             let c1 = a1.clone().with_precision(self.precision);
             let c2 = a2.clone().with_precision(self.precision);
-            if self.certified::<B>(&a1.repr, &e1.repr, &c1, guard)
-                && self.certified::<B>(&a2.repr, &e2.repr, &c2, guard)
+            if self.certified::<B>(&a1.repr, &e1.repr, &c1, guard, true)
+                && self.certified::<B>(&a2.repr, &e2.repr, &c2, guard, true)
             {
                 return (Ok(c1), Ok(c2));
             }
@@ -282,13 +316,16 @@ impl<R: ErrorBounds> Context<R> {
     /// certify them either); as a backstop, the side is only pursued up to a working precision
     /// of about `2p` — past every near-miss built from a few terms of the operation's own
     /// series, whose distance from `y` is bounded by the digits of the argument — after which
-    /// the attempt is accepted with the approximation's flag.
+    /// the attempt is accepted with the approximation's flag. A caller that guarantees an
+    /// irrational result ([`ziv_irrational`](Self::ziv_irrational)) has no such case, and gets
+    /// the side pursued without that bound.
     fn certified<const B: Word>(
         &self,
         a: &Repr<B>,
         e: &Repr<B>,
         candidate: &Rounded<FBig<R, B>>,
         guard: usize,
+        irrational: bool,
     ) -> bool {
         let y = candidate.value_ref();
         if !Self::contained::<B>(a, e, y) {
@@ -298,7 +335,7 @@ impl<R: ErrorBounds> Context<R> {
             return true; // an exact approximation: its flag is the result's
         }
         let side_known = repr_cmp_same_base::<B, true>(&(a - &y.repr), e, None).is_gt();
-        side_known || guard >= self.precision.saturating_add(SIDE_GUARD)
+        side_known || (!irrational && guard >= self.precision.saturating_add(SIDE_GUARD))
     }
 
     /// The exponent `k` such that an offset `0 < δ ≤ B^k` on either side of the exactly known
@@ -579,6 +616,26 @@ mod tests {
         assert!((1..=5).contains(&retries), "{retries} retries");
     }
 
+    // A caller that guarantees an irrational result gets the side resolved at any distance:
+    // 1 − 2^-200 at 4 bits, whose approximation is exactly 1 until the working precision
+    // reaches 200 bits. The bounded loop settles for the approximation's flag long before.
+    #[test]
+    fn ziv_irrational_resolves_the_side_at_any_distance() {
+        let ctx: Context<mode::HalfEven> = Context::new(4);
+        let exact = F::ONE - (F::ONE >> 200);
+        let approx = |guard: usize| {
+            let wp = 4 + guard;
+            let a = if wp < 200 { F::ONE } else { exact.clone() };
+            Ok((a, F::ONE >> wp as isize))
+        };
+        assert_eq!(ctx.ziv_irrational(2, approx), Ok(Inexact(F::ONE, AddOne)));
+        assert!(LAST_ZIV_RETRIES.with(|c| c.get()) >= 6);
+        assert_eq!(ctx.ziv(2, approx), Ok(Exact(F::ONE)));
+        let (r1, r2) = ctx.ziv_pair_irrational(2, |guard| Ok((approx(guard)?, (F::ONE, F::ZERO))));
+        assert_eq!(r1, Ok(Inexact(F::ONE, AddOne)));
+        assert_eq!(r2, Ok(Exact(F::ONE)));
+    }
+
     // A radius astronomically larger than the value is rejected from the magnitudes alone: the
     // exact interval arithmetic would have to align the two, here across 10^12 digits.
     #[test]
@@ -692,7 +749,8 @@ mod tests {
         let r = ctx.ziv(2, |_| Ok((F::ONE, F::from(10u8))));
         assert_eq!(r, Err(FpError::ZivRetryLimitExceeded));
         // the pair variant reports it on both slots.
-        let (r1, r2) = ctx.ziv_pair(2, |_| Ok(((F::ONE, F::from(10u8)), (F::ONE, F::ZERO))));
+        let (r1, r2) =
+            ctx.ziv_pair_irrational(2, |_| Ok(((F::ONE, F::from(10u8)), (F::ONE, F::ZERO))));
         assert_eq!(r1, Err(FpError::ZivRetryLimitExceeded));
         assert_eq!(r2, Err(FpError::ZivRetryLimitExceeded));
     }
@@ -702,7 +760,8 @@ mod tests {
     fn ziv_pair_accepts_exact_first_attempt() {
         let ctx: Context<mode::HalfEven> = Context::new(10);
         LAST_ZIV_RETRIES.with(|c| c.set(usize::MAX));
-        let (r1, r2) = ctx.ziv_pair(4, |_| Ok(((F::ONE, F::ZERO), (F::from(2u8), F::ZERO))));
+        let (r1, r2) =
+            ctx.ziv_pair_irrational(4, |_| Ok(((F::ONE, F::ZERO), (F::from(2u8), F::ZERO))));
         assert!(matches!(r1, Ok(Exact(_))));
         assert!(matches!(r2, Ok(Exact(_))));
         assert_eq!(LAST_ZIV_RETRIES.with(|c| c.get()), 0);
@@ -713,7 +772,7 @@ mod tests {
     #[test]
     fn ziv_pair_retries_until_both_contained() {
         let ctx: Context<mode::HalfEven> = Context::new(4);
-        let (r1, r2) = ctx.ziv_pair(2, |guard| {
+        let (r1, r2) = ctx.ziv_pair_irrational(2, |guard| {
             let radius = F::ONE >> guard as isize;
             Ok(((F::ONE, F::ZERO), (F::ONE + (F::ONE >> 10), radius)))
         });
@@ -726,7 +785,7 @@ mod tests {
     #[test]
     fn ziv_pair_propagates_closure_error() {
         let ctx: Context<mode::HalfEven> = Context::new(10);
-        let (r1, r2) = ctx.ziv_pair::<2>(4, |_| Err(FpError::OutOfDomain));
+        let (r1, r2) = ctx.ziv_pair_irrational::<2>(4, |_| Err(FpError::OutOfDomain));
         assert_eq!(r1, Err(FpError::OutOfDomain));
         assert_eq!(r2, Err(FpError::OutOfDomain));
     }

@@ -378,7 +378,7 @@ fn test_unit_inexact_at_unlimited_precision_panics() {
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| e.downcast_ref::<String>().cloned())
-                .is_some_and(|s| s.contains("precision cannot be 0")),
+                .map_or(false, |s| s.contains("precision cannot be 0")),
         }
     }
     type F = FBig<HalfEven, 2>;
@@ -1043,5 +1043,143 @@ fn test_unit_functions_at_bottom_of_exponent_range() {
         check::<Up>(p);
         check::<Down>(p);
         check::<Zero>(p);
+    }
+}
+
+/// Next to an extremum the ×u sine and cosine are `±(1 − δ)` with `δ` of the order of the
+/// squared distance — never exactly `±1`. With an argument that carries more places than the
+/// context the approximation was exactly `±1` at the working precision and its `Exact` flag
+/// was passed on: `cos_pi(2 − 10⁻⁴⁰)` and `sin_pi(0.5 + 10⁻⁴⁰)` at 10 places were `Exact(1)`
+/// although `cos_pi(10⁻⁴⁰)` was `Inexact(1, AddOne)`.
+#[test]
+fn test_unit_next_to_extremum_is_inexact() {
+    type D = FBig<HalfEven, 10>;
+    let d = |s: &str| D::from_str(s).unwrap();
+    let ctx = Context::<HalfEven>::new(10);
+    let tiny = d("0.0000000000000000000000000000000000000001");
+    let near_two = d("1.9999999999999999999999999999999999999999");
+    let near_half = d("0.5000000000000000000000000000000000000001");
+    let near_one = d("1.0000000000000000000000000000000000000001");
+    let one_up = Ok(Inexact(D::ONE, AddOne));
+    let neg_one_up = Ok(Inexact(D::NEG_ONE, SubOne));
+    assert_eq!(ctx.cos_pi(tiny.repr(), None), one_up);
+    assert_eq!(ctx.cos_pi(near_two.repr(), None), one_up);
+    assert_eq!(ctx.sin_pi(near_half.repr(), None), one_up);
+    assert_eq!(ctx.cos_pi(near_one.repr(), None), neg_one_up);
+    assert_eq!(ctx.sin_pi((-near_half.clone()).repr(), None), neg_one_up);
+    assert_eq!(ctx.sin_cos_pi(near_two.repr(), None).1, one_up);
+    assert_eq!(ctx.sin_cos_pi(near_half.repr(), None).0, one_up);
+    let (s, c) = ctx.sin_cos_pi(near_half.repr(), None);
+    assert_eq!((s, c.clone()), (one_up.clone(), ctx.cos_pi(near_half.repr(), None)));
+    assert!(matches!(c, Ok(Inexact(..))));
+    // base 2: 2^64 − 1 in units of 2^63 is one unit short of two turns
+    let x = FBig::<HalfEven, 2>::from((1u128 << 64) - 1);
+    assert_eq!(
+        ctx.cos_unit(x.repr(), 1usize << 63, None),
+        Ok(Inexact(FBig::<HalfEven, 2>::ONE, AddOne))
+    );
+    // towards zero the value is the float just inside ±1
+    let down = Context::<Down>::new(10);
+    let nines = FBig::<Down, 10>::from_str("0.9999999999").unwrap();
+    assert_eq!(down.cos_pi(near_two.repr(), None), Ok(Inexact(nines.clone(), NoOp)));
+    assert_eq!(down.sin_pi(near_half.repr(), None), Ok(Inexact(nines, NoOp)));
+
+    // Every quadrant, mode and precision, at three distances `2^-j` from the extremum: just
+    // close enough for the result to round like `±(1 − tiny)` (the loop decides), and far
+    // closer (rounded directly). The result is `±(1 − δ)` with `0 < δ < 2^(5 − 2j)`, below a
+    // quarter of the last place, so it rounds like the exact `±(1 − 2^-(p + 5))`.
+    fn check<R: round::ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let hug = |negative: bool| {
+            let sig = (IBig::ONE << (p + 5)) - IBig::ONE;
+            let sig = if negative { -sig } else { sig };
+            Ok(FBig::<R, 2>::from_parts(sig, -(p as isize) - 5).with_precision(p))
+        };
+        for j in [p / 2 + 4, p, 3 * p] {
+            for half_turns in -4i32..=4 {
+                for side in [1i32, -1] {
+                    // cos_pi next to an integer n: (−1)^n
+                    let sig = (IBig::from(half_turns) << j) + IBig::from(side);
+                    let x = Repr::<2>::new(sig, -(j as isize));
+                    let tag = format!("p = {p}, j = {j}, n = {half_turns}, side = {side}");
+                    let odd = half_turns.rem_euclid(2) == 1;
+                    assert_eq!(ctx.cos_pi(&x, None), hug(odd), "cos_pi, {tag}");
+                    assert_eq!(ctx.sin_cos_pi(&x, None).1, hug(odd), "sin_cos_pi, {tag}");
+                    // sin_pi next to n + 1/2: (−1)^n
+                    let sig = (IBig::from(2 * half_turns + 1) << (j - 1)) + IBig::from(side);
+                    let x = Repr::<2>::new(sig, -(j as isize));
+                    assert_eq!(ctx.sin_pi(&x, None), hug(odd), "sin_pi, {tag}");
+                    assert_eq!(ctx.sin_cos_pi(&x, None).0, hug(odd), "sin_cos_pi, {tag}");
+                }
+            }
+        }
+    }
+    for p in [20usize, 50, 100, 500] {
+        check::<HalfEven>(p);
+        check::<HalfAway>(p);
+        check::<Up>(p);
+        check::<Down>(p);
+        check::<Zero>(p);
+    }
+}
+
+/// The `Rounding` flag says on which side of the returned value the true result lies, however
+/// close the two are. None of these functions has a representable (or halfway) result off its
+/// exact rows, so the loop goes on until it knows — it used to settle for the side of the
+/// approximation at about twice the precision (at once below 34 places): `tan_pi(1/4 + 10⁻¹⁰⁰)`
+/// at 10 places was `Exact(1)`, `sin_unit(30 + 10⁻¹⁰⁰, 360)` was `0.5` rounded *up*, and
+/// `sin` of π/2 to 100 places was `Exact(1)`.
+#[test]
+fn test_flag_next_to_a_representable_value() {
+    type D = FBig<HalfEven, 10>;
+    let d = |s: String| D::from_str(&s).unwrap();
+    let ctx = Context::<HalfEven>::new(10);
+    let half = D::from_str("0.5").unwrap();
+    for k in [40usize, 100, 300] {
+        // 1/4 ± 10^-k: tan_pi = 1 ± 2π·10^-k
+        let above = d(format!("0.25{}1", "0".repeat(k - 3)));
+        let below = d(format!("0.24{}9", "9".repeat(k - 3)));
+        assert_eq!(ctx.tan_pi(above.repr(), None), Ok(Inexact(D::ONE, NoOp)), "k = {k}");
+        assert_eq!(ctx.tan_pi(below.repr(), None), Ok(Inexact(D::ONE, AddOne)), "k = {k}");
+        assert_eq!(
+            ctx.tan_pi((-above.clone()).repr(), None),
+            Ok(Inexact(D::NEG_ONE, NoOp)),
+            "k = {k}"
+        );
+        // 30° ± 10^-k: sin = 1/2 ± (√3/2)·(π/180)·10^-k, and cos of 60° ∓ 10^-k likewise
+        let above = d(format!("30.{}1", "0".repeat(k - 1)));
+        let below = d(format!("29.{}9", "9".repeat(k - 1)));
+        assert_eq!(ctx.sin_unit(above.repr(), 360, None), Ok(Inexact(half.clone(), NoOp)));
+        assert_eq!(ctx.sin_unit(below.repr(), 360, None), Ok(Inexact(half.clone(), AddOne)));
+        let (s, _) = ctx.sin_cos_unit(above.repr(), 360, None);
+        assert_eq!(s, Ok(Inexact(half.clone(), NoOp)), "k = {k}");
+        let above = d(format!("60.{}1", "0".repeat(k - 1)));
+        let below = d(format!("59.{}9", "9".repeat(k - 1)));
+        assert_eq!(ctx.cos_unit(above.repr(), 360, None), Ok(Inexact(half.clone(), AddOne)));
+        assert_eq!(ctx.cos_unit(below.repr(), 360, None), Ok(Inexact(half.clone(), NoOp)));
+        // asin_unit(1/2 ± 10^-k) = 30° ± tiny
+        let above = d(format!("0.5{}1", "0".repeat(k - 2)));
+        let below = d(format!("0.4{}9", "9".repeat(k - 2)));
+        let thirty = D::from(30);
+        assert_eq!(ctx.asin_unit(above.repr(), 360, None), Ok(Inexact(thirty.clone(), NoOp)));
+        assert_eq!(ctx.asin_unit(below.repr(), 360, None), Ok(Inexact(thirty.clone(), AddOne)));
+        assert_eq!(
+            ctx.acos_unit(above.repr(), 360, None),
+            Ok(Inexact(D::from(60), AddOne)),
+            "k = {k}"
+        );
+    }
+
+    // the radian functions at an argument that is π/2 (or π) to far more places than the
+    // context: sin = 1 − δ, cos = −1 + δ with δ ~ 10^-200
+    for (p, wide) in [(10usize, 100usize), (10, 400), (40, 200)] {
+        let ctx = Context::<HalfEven>::new(p);
+        let pi = Context::<HalfEven>::new(wide).pi::<10>(None).value();
+        let half_pi: FBig<HalfEven, 10> = pi.clone() / 2;
+        let one = FBig::<HalfEven, 10>::ONE;
+        assert_eq!(ctx.sin(half_pi.repr(), None), Ok(Inexact(one.clone(), AddOne)), "p = {p}");
+        assert_eq!(ctx.cos(pi.repr(), None), Ok(Inexact(-one.clone(), SubOne)), "p = {p}");
+        assert_eq!(ctx.sin_cos(half_pi.repr(), None).0, Ok(Inexact(one.clone(), AddOne)));
+        assert_eq!(ctx.sin_cos(pi.repr(), None).1, Ok(Inexact(-one, SubOne)));
     }
 }
