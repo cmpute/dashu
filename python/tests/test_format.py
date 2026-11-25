@@ -191,6 +191,29 @@ def test_rational_negative_rounding_to_zero_keeps_sign():
     assert format(RBig(Fraction(-1, 1000)), ".2f") == format(DBig("-0.001"), ".2f") == "-0.00"
 
 
+def test_explicit_fill_with_leading_zero_width():
+    # after an explicit fill and alignment, a `0` is only the first digit of the width (as
+    # for float): the fill character and the alignment were replaced by zero-padding
+    cases = [
+        (1.5, "x<010.2f"), (1.5, "x>010.2f"), (1.5, "x^010.2f"), (-2.5, "*>010.1f"),
+        (-2.5, "*=+010.1f"), (-2.5, "0<010.1f"), (1.5, " >08.3e"), (1234.5, "_<012,.1f"),
+        (1.5, "x<0.2f"), (1.5, "x<00010.2f"),
+        # without an explicit fill the `0` is the zero-padding flag, whatever the alignment
+        (1.5, "<010.2f"), (-1.5, ">010.2f"), (-1.5, "^010.2f"), (-1.5, "010.2f"),
+        (-1.5, "=010.2f"), (1.5, "x<10.2f"),
+    ]
+    for value, spec in cases:
+        want = format(value, spec)
+        assert format(DBig(str(value)), spec) == want, (value, spec)
+        assert format(FBig(value), spec) == want, (value, spec)
+        assert format(RBig(value), spec) == want, (value, spec)
+    assert format(DBig("1.5"), "x<010.2f") == "1.50xxxxxx"
+    assert format(DBig("-2.5"), "*>010.1f") == "******-2.5"
+    # the hexadecimal presentation of FBig follows the same rule
+    assert format(FBig(-1.5), "x>012a") == "xxxxx-0x3p-1"
+    assert format(FBig(-1.5), "012a") == "-0x000003p-1"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

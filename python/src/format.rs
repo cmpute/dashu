@@ -35,9 +35,11 @@ pub fn parse(spec: &str) -> PyResult<Spec> {
 
     // [[fill]align]
     let mut fill = ' ';
+    let mut fill_given = false;
     let mut align = None;
     if n >= 2 && "<>=^".contains(chars[1]) {
         fill = chars[0];
+        fill_given = true;
         align = Some(chars[1]);
         i = 2;
     } else if n >= 1 && "<>=^".contains(chars[0]) {
@@ -59,10 +61,11 @@ pub fn parse(spec: &str) -> PyResult<Spec> {
         i += 1;
     }
 
-    // [0]
+    // [0]: the zero-padding flag, unless a fill character was given explicitly: then, as in
+    // CPython, the `0` is only the first digit of the width (`x<010` pads with `x` to 10)
     let mut zero = false;
     if i < n && chars[i] == '0' {
-        zero = true;
+        zero = !fill_given;
         i += 1;
     }
 
