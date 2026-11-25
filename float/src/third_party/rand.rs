@@ -44,8 +44,8 @@ use dashu_int::{
 /// (and [DBig][crate::DBig]).
 pub struct UniformFBig<R: Round, const B: Word> {
     pub(crate) sampler: Uniform01<B>,
-    pub(crate) scale: Repr<B>,
-    pub(crate) offset: Repr<B>,
+    pub(crate) low: Repr<B>,
+    pub(crate) high: Repr<B>,
     /// Used to distinguish between uniform distributions with different rounding modes;
     /// no actual effect on the sampling.
     pub(crate) _marker: PhantomData<R>,
@@ -100,28 +100,41 @@ impl<R: Round, const B: Word> UniformFBig<R, B> {
             precision
         };
         let precision = precision.max(low.repr().digits()).max(high.repr().digits());
-        // the exact width: rounding it could push the samples past `high`
-        let exact = Context::<mode::Down>::new(0);
-        let scale = exact.unwrap_fp(exact.sub(high.repr(), low.repr()));
         Self {
             sampler: sampler(precision),
-            scale: scale.into_repr(),
-            offset: low.repr().clone(),
+            low: low.repr().clone(),
+            high: high.repr().clone(),
             _marker: PhantomData,
         }
     }
 
     /// Draw a random [FBig] from this sampler's range.
     pub fn sample_fbig<BR: BitRng + ?Sized>(&self, rng: &mut BR) -> FBig<R, B> {
-        // `low + unit * (high - low)` is evaluated exactly and rounded down once. With `unit`
-        // in [0, 1) the exact value lies in [low, high), and rounding it down keeps it there:
-        // not below `low`, which is representable at this precision, and not above itself.
+        // The sample is the exact value of `low + unit * (high - low)`, rounded down once.
+        // With `unit` in [0, 1) the exact value lies in [low, high), and rounding it down keeps
+        // it there: not below `low`, which is representable at this precision, and not above
+        // itself.
+        //
+        // It is evaluated as `low * (1 - unit) + high * unit`: the two products are exact and
+        // short (the digits of a bound and of `unit`), and their sum is a single correctly
+        // rounded addition. The width `high - low` itself has as many digits as the exponents
+        // of the bounds are apart, and so would every sample before it is rounded.
         let unit: FBig<mode::Down, B> = self.sampler.sample01::<mode::Down, _>(rng);
         let context = unit.context();
         let exact = Context::<mode::Down>::new(0);
-        let scaled = exact.unwrap_fp(exact.mul(unit.repr(), &self.scale));
-        let sample = exact.unwrap_fp(exact.add(scaled.repr(), &self.offset));
-        let rounded = context.repr_round(sample.into_repr()).value();
+        let co_unit = exact.unwrap_fp(exact.sub(&Repr::one(), unit.repr()));
+        let low_part = exact.unwrap_fp(exact.mul(&self.low, co_unit.repr()));
+        let high_part = exact.unwrap_fp(exact.mul(&self.high, unit.repr()));
+        // (the sum may carry a guard digit; rounding down twice is rounding down once)
+        let sum = context.unwrap_fp(context.add(low_part.repr(), high_part.repr()));
+        let rounded = context.repr_round(sum.into_repr()).value();
+        // A zero sample is +0: the directed rounding would make an exact cancellation (or a
+        // product with a zero) a negative zero, which is not a sign that the range implies.
+        let rounded = if rounded.significand.is_zero() {
+            Repr::zero()
+        } else {
+            rounded
+        };
         FBig::new(rounded, context).with_rounding()
     }
 }

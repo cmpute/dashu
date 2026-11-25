@@ -375,3 +375,162 @@ macro_rules! test_uniform_errors {
 }
 test_uniform_errors!(test_uniform_errors_v09, "rand_v09", rand_v09);
 test_uniform_errors!(test_uniform_errors_v010, "rand_v010", rand_v010);
+
+/// A sample is the exact value of `low + unit * (high - low)` rounded down to the precision,
+/// where `unit` is what the unit sampler draws from the same random stream.
+#[test]
+fn test_uniform_matches_exact_formula() {
+    use dashu_float::round::mode::{Down, HalfAway, Zero};
+    use dashu_float::{round::Round, Context};
+
+    fn check<R: Round, const B: dashu_int::Word>(
+        seed: u64,
+        low: (i64, isize),
+        high: (i64, isize),
+        precision: usize,
+        closed: bool,
+    ) {
+        type F<R, const B: dashu_int::Word> = dashu_float::FBig<R, B>;
+        let low = F::<R, B>::from_parts(low.0.into(), low.1);
+        let high = F::<R, B>::from_parts(high.0.into(), high.1);
+        let effective = precision.max(low.repr().digits()).max(high.repr().digits());
+        let (range, unit) = if closed {
+            (
+                UniformFBig::new_inclusive(&low, &high, precision),
+                Uniform01::<B>::new_closed(effective),
+            )
+        } else {
+            (UniformFBig::new(&low, &high, precision), Uniform01::<B>::new(effective))
+        };
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut unit_rng = StdRng::seed_from_u64(seed);
+        let exact = Context::<Down>::new(0);
+        for _ in 0..40 {
+            let x: F<R, B> = rng.sample(&range);
+            let u: F<Down, B> = unit_rng.sample(&unit);
+            let width = exact.sub(high.repr(), low.repr()).unwrap().value();
+            let scaled = exact.mul(u.repr(), width.repr()).unwrap().value();
+            let sum = exact.add(scaled.repr(), low.repr()).unwrap().value();
+            let expected = sum.with_precision(effective).value();
+            assert_eq!(x.repr().significand(), expected.repr().significand());
+            if !x.repr().significand().is_zero() {
+                assert_eq!(x.repr().exponent(), expected.repr().exponent());
+            }
+            assert_eq!(x.precision(), effective);
+            assert!(!x.repr().is_neg_zero());
+        }
+    }
+
+    let bounds = [
+        ((-1, 0), (1, 0)),
+        ((0, 0), (2, 0)),
+        ((-9, 0), (6, 0)),
+        ((-11, 0), (0, 0)),
+        ((1, -30), (1, 0)),
+        ((1, -200), (3, 5)),
+        ((-7, 40), (5, -40)),
+        ((-123456789, -3), (-123456788, -3)),
+        ((99, 0), (101, 0)),
+        ((3, 300), (5, 300)),
+    ];
+    for (seed, (low, high)) in bounds.into_iter().enumerate() {
+        // the precisions include the four standard binary ones
+        for precision in [1usize, 2, 7, 20, 50, 100, 500] {
+            for closed in [false, true] {
+                check::<Zero, 2>(seed as u64, low, high, precision, closed);
+                check::<HalfAway, 10>(seed as u64, low, high, precision, closed);
+                check::<Down, 3>(seed as u64, low, high, precision, closed);
+            }
+        }
+    }
+}
+
+/// A sample that is zero is `+0`: neither bound of a range that contains zero is `-0`.
+#[test]
+fn test_uniform_zero_sample_is_positive() {
+    use dashu_float::round::mode::{Down, HalfAway, Zero};
+
+    let mut rng = StdRng::seed_from_u64(1);
+
+    // a range that straddles zero, at a precision where zero comes up often
+    let binary = UniformFBig::<Zero, 2>::new(&FBig::from(-1), &FBig::from(1), 1);
+    let decimal = UniformFBig::<HalfAway, 10>::new(&DBig::from(-1), &DBig::from(1), 1);
+    let directed = UniformFBig::<Down, 10>::new_inclusive(
+        &dashu_float::FBig::from(-2),
+        &dashu_float::FBig::from(2),
+        1,
+    );
+    let (mut binary_zeros, mut decimal_zeros, mut directed_zeros) = (0, 0, 0);
+    for _ in 0..500 {
+        let x = rng.sample(&binary);
+        assert!(!x.repr().is_neg_zero(), "{x}");
+        binary_zeros += x.repr().is_pos_zero() as usize;
+        let x = rng.sample(&decimal);
+        assert!(!x.repr().is_neg_zero(), "{x}");
+        decimal_zeros += x.repr().is_pos_zero() as usize;
+        let x = rng.sample(&directed);
+        assert!(!x.repr().is_neg_zero(), "{x}");
+        directed_zeros += x.repr().is_pos_zero() as usize;
+        let x: DBig = rng.gen_range(DBig::from(-1)..DBig::from(1));
+        assert!(!x.repr().is_neg_zero(), "{x}");
+    }
+    assert!(binary_zeros > 0 && decimal_zeros > 0 && directed_zeros > 0);
+
+    // ranges with zero at an end, and the single point zero
+    let d = |n: i32| DBig::from(n);
+    for (low, high) in [(0, 0), (-1, 0), (0, 1), (-3, 0)] {
+        let closed = UniformFBig::<HalfAway, 10>::new_inclusive(&d(low), &d(high), 5);
+        for _ in 0..200 {
+            let x = rng.sample(&closed);
+            assert!(!x.repr().is_neg_zero(), "[{low}, {high}] gave {x}");
+        }
+    }
+    let point = UniformFBig::<HalfAway, 10>::new_inclusive(&DBig::ZERO, &DBig::ZERO, 5);
+    assert!(rng.sample(&point).repr().is_pos_zero());
+    let x: DBig = rng.gen_range(DBig::ZERO..=DBig::ZERO);
+    assert!(x.repr().is_pos_zero());
+}
+
+/// The cost of a sample depends on the precision, not on how far apart the exponents of the
+/// bounds are: the exact width of `[B^-g, 1)` has `g` digits, and so had every sample before
+/// it was rounded.
+#[test]
+fn test_uniform_distant_exponents() {
+    use dashu_float::round::mode::Zero;
+
+    fn check<const B: dashu_int::Word>(rng: &mut StdRng, low_exp: isize, high_exp: isize) {
+        type F<const B: dashu_int::Word> = dashu_float::FBig<Zero, B>;
+        let low = F::<B>::from_parts(1.into(), low_exp);
+        let high = F::<B>::from_parts(1.into(), high_exp);
+        let neg_high = -low.clone();
+        let neg_low = -high.clone();
+        for precision in [10usize, 20, 50, 100, 500] {
+            let open = UniformFBig::new(&low, &high, precision);
+            let closed = UniformFBig::new_inclusive(&low, &high, precision);
+            let negative = UniformFBig::new(&neg_low, &neg_high, precision);
+            let straddling = UniformFBig::new(&neg_low, &high, precision);
+            for _ in 0..50 {
+                let x = rng.sample(&open);
+                assert!(x >= low && x < high);
+                assert!(x.repr().digits() <= precision);
+                let x = rng.sample(&closed);
+                assert!(x >= low && x <= high);
+                let x = rng.sample(&negative);
+                assert!(x >= neg_low && x < neg_high);
+                assert!(x.repr().digits() <= precision);
+                let x = rng.sample(&straddling);
+                assert!(x >= neg_low && x < high);
+            }
+        }
+    }
+
+    let mut rng = StdRng::seed_from_u64(1);
+    // the reported gaps, and gaps that no exact evaluation could ever materialize
+    check::<2>(&mut rng, -10_000_000, 0);
+    check::<10>(&mut rng, -1_000_000, 0);
+    check::<2>(&mut rng, isize::MIN / 2, 0);
+    check::<10>(&mut rng, isize::MIN / 2, 3);
+    check::<2>(&mut rng, -5, isize::MAX / 2);
+    check::<10>(&mut rng, isize::MIN / 4, isize::MAX / 4);
+    check::<3>(&mut rng, -1_000_000_000_000, 1_000_000_000_000);
+}
