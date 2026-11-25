@@ -29,22 +29,28 @@ use static_assertions::const_assert;
 /// the Karatsuba band (k = 72) and the recursion starts winning (measured
 /// 0.90x at 128 words, 0.67x at 320; see the `crossover_mulhigh` test).
 const THRESHOLD_SIMPLE_DEFAULT: usize = 96;
-// The recursive split needs l = n/4 >= 1 and 2*l + 2 <= n, which holds for every
-// n >= 6; the margin below keeps the recursion domain comfortably above that.
-const_assert!(THRESHOLD_SIMPLE_DEFAULT >= 8);
+const_assert!(THRESHOLD_SIMPLE_DEFAULT >= MIN_THRESHOLD_SIMPLE);
+
+/// Smallest usable value of the base-case threshold.
+///
+/// The recursive split needs l = n/4 >= 1 and 2*l + 2 <= n, which holds for every
+/// n >= 6; the margin keeps the recursion domain comfortably above that.
+/// Used to clamp runtime tuning values.
+pub(super) const MIN_THRESHOLD_SIMPLE: usize = 8;
 
 /// Environment-variable override for the base-case threshold.
 ///
 /// When the `tuning` feature is active the user may set
 /// `DASHU_THRESHOLD_MULHIGH_SIMPLE` to override the compile-time default.
+/// Values below [`MIN_THRESHOLD_SIMPLE`] are clamped to that constant.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_MULHIGH_SIMPLE") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::MIN_THRESHOLD_SIMPLE);
                 }
             }
         }

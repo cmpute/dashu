@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Split larger length into chunks of CHUNK_LEN..2 * CHUNK_LEN for memory locality.
-const CHUNK_LEN: usize = 1024;
+pub const CHUNK_LEN: usize = 1024;
 
 /// Max supported Smaller factor length.
 pub const MAX_SMALLER_LEN: usize = CHUNK_LEN;
