@@ -146,6 +146,56 @@
   low precision, and `sinh` / `cosh` and their ×π variants report an astronomically large
   argument as an overflow immediately.
 - `asinh` / `acosh` no longer run out of memory for huge arguments (from about `2^(2^40)`).
+- serde: in bases above 23 the finite number whose digits spell `inf` (24171 in base 36) is written as `inf@0` by the human-readable serializers of `Repr` and `FBig`; it was written as `inf`, which reads back as an infinity.
+- Fix `Repr::new` and `FBig::from_parts` reading a zero significand at exponent `-1`, `isize::MAX` or `isize::MIN` as `-0` / `+inf` / `-inf`: zero is `+0` at every exponent.
+- Fix a debug-build overflow panic in `NumHash` for a value with exponent `isize::MIN`.
+- Fix `quantize` returning a nonzero significand at the sentinel exponent `isize::MAX` (a factor of the base too small when the carry went beyond it): a result outside the exponent range now saturates like an overflowing multiplication.
+- Fix `Context::fma` / `FBig::fma` reporting the `Underflow` / `Overflow` of the product `a·b` when `c + a·b` is representable (`fma` returned `0` for `3 + 2^(isize::MIN - 2)`): the exponent range is checked on the rounded result.
+- Fix `+`, `-`, `*` between an unlimited-precision `FBig` (or `CachedFBig`) and an integer rounding the result to the number of digits of the integer (`12.34 + 1u8` was `10`): the result stays exact.
+- Fix `Context::rem` panicking on a zero divisor: it returns `Err(FpError::Indeterminate)`.
+- Fix `%`, `rem_euclid`, `div_euclid` and `Context::rem` running out of memory for a zero dividend and a divisor with a huge exponent.
+- Fix `Sum` returning a nonzero significand at the sentinel exponent, or the wrong saturation endpoint, when the sum overflows the exponent range: it now saturates like `+`, and partial sums may leave the range.
+- Fix `<< 0` / `>> 0` changing a value whose exponent is `isize::MAX` or `isize::MIN` (to an infinity, the largest finite value, or zero).
+- Fix `cbrt`/`nth_root` of a value with an exponent next to `isize::MIN`/`isize::MAX` (debug overflow panic, wrong exponent or significand in release builds).
+- Fix an even `nth_root` of `-0` reporting an out-of-domain error (a panic through `FBig::nth_root`); it is `+0`, as IEEE 754 defines rootn (`sqrt(-0)` remains `-0`).
+- Fix the rounding direction and flag of `powi` under `Up`/`Down` for a negative base with an odd exponent above `2^64`.
+- Fix `powf` panicking with "precision cannot be 0" for a trivially exact power (zero or unit exponent, zero or unit base) of unlimited-precision operands such as `FBig::try_from(0.0)`.
+- Fix `log10` not terminating under directed rounding for a power of ten whose logarithm exceeds `isize` (`log10(100^e)` with `|e| > isize::MAX / 2`).
+- `to_f32` / `to_f64` no longer panic for a decimal or hexadecimal number whose exponent does not fit an `isize` once scaled to base 2 (`1e3000000000000000000`); they saturate like other out-of-range values.
+- The scientific formats (`{:e}`, `{:E}`, `{:b}`, `{:o}`, `{:x}`) print the right exponent for a multi-digit significand next to `isize::MAX` instead of overflowing (a panic in debug builds, a negative exponent in release builds).
+- `{:.0}` prints `-0` for a negative zero under the `Up` and `Away` rounding modes (it printed `-1`).
+- `FBig::from_str` accepts a literal whose fractional trailing zeros take `cc - len(bbb)` below `isize::MIN` while the value itself is in range (`0.100e-9223372036854775806`).
+- `EstimatedLog2::log2_bounds` / `log2_est` return `+inf` for the infinities (they returned the `-inf` of a zero).
+- `FBig::ulp` / `ulp_lb` no longer return a too small value for a multi-digit significand next to the largest exponent.
+- `FBig::with_precision` (and `with_base_and_precision` to the same base) no longer returns an infinity under a rounding mode that rounds toward zero on that side: a result that overflows saturates the way an overflowing operation does.
+- serde: a nonzero number at a reserved exponent (`FBig::from_parts(2, isize::MAX - 1)`, or the saturated result of an overflow under an inward rounding mode) round-trips through the human-readable formats; it was written as a literal that the parser refuses.
+- serde: the struct form of `FBig` is rejected when the significand has more digits than `precision + 1`.
+- rkyv: a precision above `u32::MAX` is refused instead of being truncated to its low 32 bits (an error with rkyv 0.8, a panic with rkyv 0.7).
+- postgres: `ToSql` no longer refuses numbers with more than 16383 significant digits; a number too large for the format is `ConversionError::OutOfBounds`.
+- postgres: the encoded `dscale` never exceeds 16383, the largest scale the server accepts.
+- rand: `UniformFBig` (and rand's `Uniform` / `gen_range`) never returns a negative zero.
+- rand: the cost of a `UniformFBig` sample no longer grows with the distance between the exponents of the bounds.
+- num-order: `NumOrd` between floats of different bases no longer takes time and memory proportional to the exponents.
+- In an odd base, the transcendental functions no longer fail to return for a result within
+  about `B^-129` ulps of the midpoint of two floats under the round-to-nearest modes
+  (`acos_unit(3^-140, 2)`, `atan_unit(3^140, 2)`, `asinh(3^-100)` at 255 digits); the inverse
+  ×u functions next to a half-integer axis are rounded directly.
+- The trigonometric and hyperbolic functions report the `Rounding` flag of the true result
+  however close it lies to the returned value: `cos_pi(2 - 1e-40)`, `sin_pi(0.5 + 1e-40)`,
+  `tan_pi(0.25 + 1e-100)` or `sin` of π/2 to 100 digits are no longer `Exact(1)` at a lower
+  precision.
+- `sin_unit` / `tan_unit` (and `sin_pi`, `tan_pi`), `asin_unit`, `atan_unit` and `sinh_pi` of
+  an argument near the bottom of the exponent range return the representable result, or an
+  underflow with the sign of the result; `sin_pi` / `tan_pi` reported a positive underflow for
+  a negative argument, and `sinh_pi` / `sinh_cosh_pi` reported an overflow (`±inf`).
+- `atan` of an argument above about `B^(isize::MAX/3)`, and `atan2` of a ratio that large (or
+  beyond the exponent range), return the rounded `±π/2` (or `±π`) instead of an underflow.
+- `atanh(±1)` returns `±inf` at unlimited precision instead of panicking, and the docs no
+  longer claim a panic at `|x| = 1`.
+- The exact rows of `sin_unit`, `cos_unit`, `sin_cos_unit`, `tan_unit`, `asin_unit`,
+  `acos_unit`, `atan_unit` and `atan2_unit` (`0`, `±1`, and the table ratios that have a finite
+  expansion in the base) no longer panic at unlimited precision (`FBig::ONE.acos_unit(360)`).
+- `FBig::from_parts_const` applies `min_precision` to a zero significand (it returned a zero of unlimited precision).
 
 ### Change
 - Apply signs directly, avoid redundant absolute-value temporaries, and share quotient/remainder
@@ -195,6 +245,16 @@
   or an infinity with a nonzero precision) is serialized as the
   `(significand, exponent, precision)` struct instead of a string, so that the precision
   round-trips (`DBig::ONE` came back with precision 1). The deserializer accepts both forms.
+- `Repr::new(significand, exponent)` no longer rebuilds `-0` or an infinity from the parts returned by `Repr::into_parts`; use `Repr::neg_zero`, `Repr::infinity` and `Repr::neg_infinity`.
+- Dividing an unlimited-precision `FBig` by an integer (or an integer by it) panics like any other unlimited-precision division, instead of rounding the quotient to the number of digits of the integer.
+- Document that `%` panics on a zero divisor, and that the guard digit of a subtraction result is rounded away by the next operation (also `x + 0` or a one-element `Sum`), but by `with_precision` only for a smaller precision.
+- `powf` on a zero base now keeps the base's sign for an odd integer exponent, as `powi` and IEEE 754 `pow` do: `powf(-0, 3) = -0` and `powf(-0, -3) = -inf` (previously `+0` and `+inf`).
+- Infinities honor the width, fill, alignment, `+` and `0` flags in `Display` and the scientific formats (`{:+8}` gives `    +inf`).
+- serde: the human-readable form of a `Repr` with a large exponent is a literal with a scale (`"1@1000"`) instead of the positional form; a nonzero number at a reserved exponent is written as a struct, for `Repr` as well as `FBig`. Both forms are read.
+- postgres: a number that needs more than 16383 fractional digits is `ConversionError::OutOfBounds` (the limit was 65535), and the padding implied by a larger precision stops at 16383.
+- `FBig::atan2` / `FBig::atan2_unit` (and the `CachedFBig` mirrors) return the result at the
+  higher of the two operands' precisions, like the binary arithmetic operations; they used the
+  receiver's precision only.
 
 ## 0.6.2
 

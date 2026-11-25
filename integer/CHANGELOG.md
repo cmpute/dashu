@@ -24,6 +24,7 @@
 - `nth_root` now uses Newton's method with precision doubling: roots of a large (prime) order, which previously could take minutes or not terminate in practice, are immediate, and large cube and other small-order roots are several times faster.
 - (breaking) `IBig % uN`, the remainder of `IBig::div_rem(uN)` / `IBig::div_rem_assign(uN)` and `uN / IBig` (for an unsigned primitive `uN`) now return an `IBig` instead of `uN`. The result takes its sign from the `IBig` operand, so these operations used to panic whenever it was negative (e.g. `IBig::from(-1) % 2u32`).
 - The `num-integer` (`num-integer_v01`) feature now enables `num-traits` (`num-traits_v02`); it failed to compile when enabled on its own.
+- `num_integer::Integer::extended_gcd` for `UBig` documents that it panics when a Bézout coefficient is negative (the trait's coefficients are unsigned), with a message pointing at `gcd_ext`.
 
 ### Fix
 - Exclude NTT-only thresholds and scratch helpers on 16-bit word targets,
@@ -90,6 +91,12 @@
 - `num_integer::Integer::{gcd, gcd_lcm, extended_gcd}` for `UBig` and `IBig` return zero for `(0, 0)` instead of panicking.
 - `num_order::NumOrd` between `UBig`/`IBig` and `f32`/`f64`: zero compared as greater than positive floats below 0.5, and `IBig` values compared as greater than `+inf` and less than `-inf`.
 - `num_traits::Signed::abs_sub` for `IBig` returns `max(a - b, 0)` instead of `|a - b|`.
+- With the `tuning` feature, the `DASHU_THRESHOLD_*` overrides of the multiplication, squaring and short product (`high::mul_high`, `high::sqr_high`) thresholds are clamped to the range their algorithms support, as the division thresholds already were. Values that were too small (or, for `DASHU_THRESHOLD_SIMPLE_MUL`, too large) made products panic.
+- Fix a panic ("entered unreachable code") when multiplying or squaring operands beyond the largest transform size, i.e. more than `2^26 + 1` words in total with 32-bit words: such products are now split into pieces.
+- `num_integer::Integer::is_multiple_of` and `divides` for `UBig` and `IBig` return `self.is_zero()` for a zero divisor, as the trait defines, instead of panicking.
+- `<ConstDivisor as num_modular::Reducer<UBig>>::check` rejects values of one or two words that are not multiples of the normalization shift for moduli of three or more words (it accepted every such value).
+- `UBig::try_from(f32/f64)` (and `num_traits::FromPrimitive::from_f32/from_f64` for `UBig`) truncates a negative value in `(-1, 0)` to zero, like `IBig` and the primitive unsigned integers, instead of failing.
+- `UBig::pow` / `IBig::pow` panic for a power whose bit length overflows `usize` instead of returning a wrong value in release builds (`UBig::from(16u8).pow(1 << 62)` was 1).
 
 ### Add
 - 32-bit targets now have a word-crossing 20-bit packing width alongside

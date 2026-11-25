@@ -4,6 +4,7 @@
 
 ### Change
 - `static_fbig!` / `static_dbig!` produce a value with unlimited precision for every literal, as documented. Literals whose significand fits in 32 bits used to carry the precision of the literal.
+- A zero literal of `fbig!` / `dbig!` has the precision of its digits, like every other literal and like `from_str` (`dbig!(0.000)` has precision 4 and `dbig!(0)` precision 1; both used to have unlimited precision).
 
 ### Fix
 - `cbig!` / `static_cbig!`: decimal and octal integer coefficients are converted to base 2 exactly (`cbig!(9)` was 8, `cbig!(99)` was 98). A coefficient with `n` digits now gets as many bits of precision as the largest `n`-digit integer needs, so `cbig!(3 + 4i)` has precision 4 (was 3).
@@ -11,6 +12,8 @@
 - `rbig!` / `static_rbig!` accept `base N` without a denominator (`rbig!(a base 16)` failed to compile).
 - `rbig!` / `static_rbig!` reject two numbers that are not separated by `/` (`rbig!(1 - 2)` was -1/2) and repeated signs.
 - `ibig!` / `static_ibig!` reject repeated or mixed signs (`ibig!(--5)` was -5).
+- `cbig!` accepts an exponent with a sign in the imaginary coefficient (`cbig!(1 + 2e-3i)`, `cbig!(0x1p-2i)`), as `CBig::from_str` does.
+- `ubig!` / `ibig!` (and the static variants) reject a repeated `base` marker (`ubig!(5 base base 36)`).
 
 ## 0.6.0
 

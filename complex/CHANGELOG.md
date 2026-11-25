@@ -14,6 +14,12 @@
 - `Context::neg`, `conj`, `proj` and `mul_i` round to the context precision (and report `Inexact`) when it is narrower than the operand's.
 - The saturated `tan` / `tanh` endpoint reports the `Rounding` adjustment relative to the
   truncated significand (inherited from dashu-float's `near_one_endpoint`).
+- Complex division (`/`, `Context::div`, `Context::inv`, `Inverse`) is correctly rounded per component for every finite operand: the fallback to Smith's method for operands whose parts are far apart (or whose squared modulus leaves the exponent range) is gone.
+- `UniformCBig::new` accepts a box with a zero-width side (`low.re == high.re` or `low.im == high.im`): that part of every sample is the bound.
+- Human-readable serde writes the struct form for a value with an infinite part whenever the `a+bi` string would not read back as the same value at the same precision (bases above 23, or two infinite parts at a limited precision); a finite part next to an infinite one is now padded, so the precision round-trips.
+- `Context::add` / `Context::sub` (and the `+`/`-` operators) saturate a part that overflows on its own and keep the other part, like multiplication and division; `Err` is returned only when both parts overflow.
+- `CBig::fma` rounds at the largest precision of its three operands instead of the receiver's.
+- `Context::arg` / `CBig::arg` of a zero return `±0` (`+0 ± 0i`) or `±π` (`−0 ± 0i`) instead of `OutOfDomain` / a panic.
 
 ### Fix
 - `mul`/`sqr`/`fma` returned a wrong real part (and `Exact`) when the products nearly cancel; `fma` could lose the whole result.
@@ -43,6 +49,20 @@
 - `powf(0, w)` is `0` for `Re w > 0` (it was `OutOfDomain`); `powf` with an integer or dyadic-rational real exponent returns exact results exactly (`powf(i, 1)`, `powf(-1, 0.5)`) and no longer hangs when the result is exactly representable or a rounding tie.
 - serde: the struct form of `CBig` can be deserialized from formats that provide owned or
   transient field names (e.g. CBOR).
+- `mul`, `sqr` and `fma`: a single product leaving the exponent range no longer erases the part it belongs to (the real part of `(1 + s·i)²` was `0` for `s²` below the range); only a result outside the range over- or underflows.
+- `div` / `inv` with a large exponent spread between the operand parts tagged inexact results `Exact`, rounded the wrong way under directed modes, and returned overflow/underflow for quotients that are in range.
+- `AbsOrd::abs_cmp` took time proportional to the exponent gap between the parts of a value, and panicked when a squared part left the exponent range; it is now exact and prompt for all finite values.
+- `cos`, `cos_pi`, `sin_cos` and `sin_cos_pi` of a signed zero return the imaginary zero with the sign of `−sin x·sinh y` (`cos(+0 + 0i) = 1 − 0i`), as for the nonzero neighbours; it had the sign of the `cosh` table.
+- `tan`, `tanh` and `tan_pi` return `±1` (rounded from the correct side) instead of an overflow when `e^(2|Im z|)` is beyond the exponent range (`|Im z| ≥ 2^62` in base 2); a real part that underflows on its own no longer fails the whole result.
+- `exp` of a tiny argument (and of a purely real or purely imaginary one) returns promptly under the directed rounding modes; it used to need a working precision of about twice the exponent of the argument.
+- `log` of an argument next to the unit circle (`1 + i·2^-k`) returns promptly; `ln|z|` is computed from `x² + y² − 1` there, and the imaginary part is a single correctly rounded `atan2`.
+- Human-readable serde wrote a value with an infinite part as a string that reads back as a finite number in bases 24 to 36.
+- Human-readable serialization of a value with a large exponent no longer renders and re-parses a string as long as the exponent is large before choosing the struct form.
+- In an odd base, a part within about `B^-129` ulps of the midpoint of two floats is certified
+  under the round-to-nearest modes; such calls did not return (`asinh(3^-100)` at 255 digits).
+
+### Add
+- `CachedCBig::fma`, mirroring `CBig::fma`.
 
 ## 0.6.2
 

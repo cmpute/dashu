@@ -11,6 +11,13 @@
 - `UBig` has no `__isub__` any more: `n -= m` is `n = n - m`.
 - `pow(UBig, e, negative modulus)` returns an `IBig` when the result is negative instead of raising `ValueError`.
 - `CBig(1) == "1"` is `False` (strings are not parsed in comparisons).
+- `/` between integers (`UBig` / `IBig` / `int`) returns the exact quotient as an `RBig` instead of the quotient truncated toward zero (`UBig(7) / 2` was `3`).
+- `UBig` and `IBig` have no in-place operators any more: `n += m` (and `-=`, `*=`, `&=`, `|=`, `^=`, `<<=`, `>>=`) is `n = n + m` and binds a new object, so aliases and `set` members keep their value.
+- `%` on `RBig`, `FBig` and `DBig` is Python's floored modulo (the result has the sign of the divisor), as it already was for the integers (`RBig(5) % 3` was `-1`, `FBig(-5.0) % 3` was `-2`).
+- The module-level math functions take an exact operand (`int`, `UBig`, `IBig`, `RBig`, `Fraction`) at the default precision (`dashu.sqrt(2)` was `1`), and `hypot` / `atan2` / `powf` (also the `atan2` / `powf` methods) work at the larger precision of their two operands.
+- `IBig.to_chunks` of a negative number raises `OverflowError` instead of returning the chunks of its absolute value.
+- `trunc()` / `floor()` / `ceil()` / `round()` / `fract()` of `FBig` / `DBig`, `round(DBig, n)` and `zeroize()` keep the precision of the float where they returned a value of unlimited precision.
+- `format(CBig, spec)` rejects zero-padding and the `=` alignment, as Python's `complex` does.
 
 ### Fix
 - `del n[i]` / `del n[a:b]` on a `UBig` returned wrong values when a bit below the deleted range was set; deleting or assigning an empty slice with `stop < start` panicked.
@@ -27,6 +34,17 @@
 - `'g'` / `'G'` use the scientific notation as in Python.
 - The sign option and zero-padding work for the hexadecimal presentations of `FBig` (`'012a'` gives `-0x000003p-1`).
 - Zero-padding with grouping, and the `' '` sign with grouping or zero-padding, are laid out as for `float`.
+- `format(RBig, '.2f')` keeps the sign of a negative value that rounds to zero (`'-0.00'`).
+- `+ - * /` with an infinite `FBig` / `DBig` / `CBig` operand raise `ValueError`, and a float `0 / 0` raises `ZeroDivisionError`, instead of a Rust panic.
+- `.trunc()` / `.floor()` / `.ceil()` / `.round()` / `.fract()` / `.digits()` and `round(x, n)` of an infinity raise `ValueError`, and `.to_int()` raises `OverflowError`, instead of a Rust panic.
+- Transcendentals, roots and `/` on a value of unlimited precision (`with_precision(0)`) raise `ValueError` instead of a Rust panic.
+- `DBig(float('inf'))` is an infinity instead of raising `SyntaxError`.
+- `RBig.to_float(0)` / `RBig.to_decimal(0)` raise `ValueError` instead of a Rust panic.
+- `UBig` combined with a non-negative `int` of 2^63 or more gives a `UBig` (it gave an `IBig`).
+- `IBig.to_bytes(byteorder, False)` returns the unsigned encoding, without the extra sign byte (`IBig(200)` gave `b'\x00\xc8'`).
+- `format()` of `FBig` / `DBig` / `RBig` keeps an explicit fill character when the width starts with `0` (`'x<010.2f'`).
+- `format(CBig, spec)` applies the width, fill and alignment once to the whole number, and the `' '` sign option to the real part only.
+- `Words * n` raises `MemoryError` for a length that cannot be allocated, instead of a panic or an abort of the interpreter.
 
 ## 0.6.2
 

@@ -8,6 +8,7 @@
 - `Abs::abs` on `f32`/`f64` returns `+0.0` for `-0.0`.
 - `EstimatedLog2::log2_est` on `u128` no longer returns infinity for values that round to 2^128 as `f32`.
 - Without the `std` feature, `EstimatedLog2::log2_bounds` on `f32`/`f64` always brackets the exact logarithm (it could return two equal bounds above it, e.g. for `f32::from_bits(3)`).
+- Fix the documented bound of the remainder of `CubicRootRem::cbrt_rem`: `rem <= 3*root*root + 3*root` (it was stated as strict).
 
 ## 0.6.0
 

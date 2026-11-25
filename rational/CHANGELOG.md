@@ -6,6 +6,7 @@
 - With the alternate flag (`{:#}`), `in_expanded` now always prints a finite expansion in full, also when it is longer than the precision (`{:#.2}` of 1/8 is `0.125`, it was rounded to `0.13`). The precision only pads the output and sets the repetend detection budget in this mode.
 - `Display`, `Binary`, `Octal`, `LowerHex`, `UpperHex` and `in_radix` of a fraction apply the `+` flag, the width, the fill and the alignment to the fraction as a whole (`{:+}` of 1/2 is `+1/2`, it was `+1/+2`).
 - `RBig::simplest_from_float` determines the rounding interval from the rounding of `to_float` itself instead of `ErrorBounds::error_bounds`; numbers with unlimited precision are converted exactly.
+- The constructors of `rand::Uniform01` panic for a denominator limit that leaves no rational to choose from: below 1 for `new` and `new_open_closed`, below 2 for `new_closed` and `new_open`.
 
 ### Fix
 - `RBig::simplest_from_float` no longer panics for unlimited-precision floats under `mode::Down`/`mode::Up`, and returns a rational that rounds back to the float in odd bases.
@@ -32,6 +33,12 @@
 - `RBig::simplest_from_float` returns a number that rounds back to the float when its magnitude is a power of the base, and returns an included endpoint when it is the simplest.
 - `RBig::nearest`, `next_up` and `next_down` run in time logarithmic in the limit (they took time proportional to it for values close to a simple fraction), and `next_up` / `next_down` no longer trip a debug assertion for an integer with `limit = 1`.
 - Docs of `RBig::nearest`, `next_up` and `next_down`: the error bounds are inclusive, the denominator is at most `limit`, and the sign returned by `nearest` is that of `nearest - self`.
+- Deserializing an `RBig` / `Relaxed` from the struct form (binary serde formats) rejects a zero denominator instead of returning an invalid `RBig` or panicking.
+- `in_expanded` honours the width, the fill, the alignment and the `0` flag (`{:>10.2}` of 1/2 is `"      0.50"`), in the fixed, exact (`#`) and scientific formats.
+- With both the `#` and the `0` flags, `Binary` / `Octal` / `LowerHex` / `UpperHex` of a fraction put the padding zeros after the radix prefix (`{:#012x}` of 1/2 is `0x000001/0x2`, it was `000000x1/0x2`).
+- `NumHash` of a `Relaxed` whose numerator and denominator share the factor `2^127 - 1` agrees with the hash of its value (`Relaxed::from_parts(p, p)` hashes like 1).
+- Sampling from `Uniform01::new_open` with the limit 1 no longer loops forever, and `Uniform01::new_closed` with the limit 1 no longer returns 0 on every draw (both limits are rejected by the constructor).
+- Docs of `from_str_expanded` / `from_str_decimal`: the cost of a literal grows with its exponent, and an exponent too large for the memory panics.
 
 ## 0.6.0
 
