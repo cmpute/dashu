@@ -13,11 +13,13 @@ use pyo3::{
 
 use crate::{
     convert::{
-        conversion_error_to_py, convert_from_ibig, convert_from_ubig, extract_index,
-        parse_error_to_py, parse_signed_index, parse_to_ibig, parse_to_long, parse_to_ubig,
-        zero_division_error,
+        convert_from_ibig, convert_from_ubig, extract_index, parse_error_to_py, parse_signed_index,
+        parse_to_ibig, parse_to_long, parse_to_ubig, zero_division_error,
     },
-    float::{dpy_mod, fpy_mod},
+    float::{
+        dpy_add, dpy_div, dpy_mod, dpy_mul, dpy_rdiv, dpy_rsub, dpy_sub, fpy_add, fpy_div, fpy_mod,
+        fpy_mul, fpy_rdiv, fpy_rsub, fpy_sub,
+    },
     math::{ubig_gcd, ubig_gcd_ext},
     rational::rpy_mod,
     types::{DPy, FPy, IPy, PySign, PyWords, RPy, UPy, UniInput},
@@ -59,8 +61,12 @@ const ERRMSG_POW_EXP_TOO_LARGE: &str = "the exponent is too large";
 const ERRMSG_ZEROTH_ROOT: &str = "the 0th root is not defined";
 const ERRMSG_ILOG_ZERO: &str = "the logarithm of zero is not defined";
 
+/// Generate the arithmetic dispatchers of an integer type. Between integers and with a
+/// rational the Rust operator is applied; with a float or a decimal the integer is promoted
+/// to that type and the operator of the float (`$fpy_op` / `$dpy_op`, see `float.rs`) takes
+/// over, with its handling of infinities and of divisions by zero.
 macro_rules! impl_binops {
-    ($ty_variant:ident, $py_method:ident, $rs_method:ident) => {
+    ($ty_variant:ident, $py_method:ident, $rs_method:ident, $fpy_op:ident, $dpy_op:ident) => {
         fn $py_method(lhs: &$ty_variant, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
             use pyo3::IntoPyObjectExt;
             let obj = match rhs {
@@ -69,21 +75,23 @@ macro_rules! impl_binops {
                 UniInput::BUint(x) => $ty_variant((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::BInt(x) => IPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::OBInt(x) => IPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
-                UniInput::Float(x) => {
-                    let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
-                    FPy((&lhs.0).$rs_method(f)).into_py_any(py)?
+                other @ (UniInput::Float(_) | UniInput::BFloat(_)) => {
+                    $fpy_op(&FPy(FBig::from(lhs.0.clone())), other, py)?
                 }
-                UniInput::BFloat(x) => FPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
-                UniInput::BDecimal(x) => DPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
-                UniInput::OBDecimal(x) => DPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
+                other @ (UniInput::BDecimal(_) | UniInput::OBDecimal(_)) => {
+                    $dpy_op(&DPy(DBig::from(lhs.0.clone())), other, py)?
+                }
                 UniInput::BRational(x) => RPy((&lhs.0).$rs_method(&x.0)).into_py_any(py)?,
                 UniInput::OBRational(x) => RPy((&lhs.0).$rs_method(x)).into_py_any(py)?,
             };
             Ok(obj)
         }
     };
-    ($ty_variant:ident, $py_method:ident, $py_method_rev:ident, $rs_method:ident) => {
-        impl_binops!($ty_variant, $py_method, $rs_method);
+    (
+        $ty_variant:ident, $py_method:ident, $py_method_rev:ident, $rs_method:ident,
+        $fpy_op:ident, $dpy_op:ident, $fpy_rop:ident, $dpy_rop:ident
+    ) => {
+        impl_binops!($ty_variant, $py_method, $rs_method, $fpy_op, $dpy_op);
 
         fn $py_method_rev(
             lhs: UniInput<'_>,
@@ -97,13 +105,12 @@ macro_rules! impl_binops {
                 UniInput::BUint(x) => $ty_variant((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
                 UniInput::BInt(x) => IPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
                 UniInput::OBInt(x) => IPy(x.$rs_method(&rhs.0)).into_py_any(py)?,
-                UniInput::Float(x) => {
-                    let f = crate::utils::fbig_from_f64(x).map_err(conversion_error_to_py)?;
-                    FPy(f.$rs_method(&rhs.0)).into_py_any(py)?
+                other @ (UniInput::Float(_) | UniInput::BFloat(_)) => {
+                    $fpy_rop(other, &FPy(FBig::from(rhs.0.clone())), py)?
                 }
-                UniInput::BFloat(x) => FPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
-                UniInput::BDecimal(x) => DPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
-                UniInput::OBDecimal(x) => DPy(x.$rs_method(&rhs.0)).into_py_any(py)?,
+                other @ (UniInput::BDecimal(_) | UniInput::OBDecimal(_)) => {
+                    $dpy_rop(other, &DPy(DBig::from(rhs.0.clone())), py)?
+                }
                 UniInput::BRational(x) => RPy((&x.0).$rs_method(&rhs.0)).into_py_any(py)?,
                 UniInput::OBRational(x) => RPy(x.$rs_method(&rhs.0)).into_py_any(py)?,
             };
@@ -112,14 +119,14 @@ macro_rules! impl_binops {
     };
 }
 
-impl_binops!(UPy, upy_add, add);
-impl_binops!(UPy, upy_sub, upy_rsub, sub);
-impl_binops!(UPy, upy_mul, mul);
-impl_binops!(UPy, upy_div, upy_rdiv, div);
-impl_binops!(IPy, ipy_add, add);
-impl_binops!(IPy, ipy_sub, ipy_rsub, sub);
-impl_binops!(IPy, ipy_mul, mul);
-impl_binops!(IPy, ipy_div, ipy_rdiv, div);
+impl_binops!(UPy, upy_add, add, fpy_add, dpy_add);
+impl_binops!(UPy, upy_sub, upy_rsub, sub, fpy_sub, dpy_sub, fpy_rsub, dpy_rsub);
+impl_binops!(UPy, upy_mul, mul, fpy_mul, dpy_mul);
+impl_binops!(UPy, upy_div, upy_rdiv, div, fpy_div, dpy_div, fpy_rdiv, dpy_rdiv);
+impl_binops!(IPy, ipy_add, add, fpy_add, dpy_add);
+impl_binops!(IPy, ipy_sub, ipy_rsub, sub, fpy_sub, dpy_sub, fpy_rsub, dpy_rsub);
+impl_binops!(IPy, ipy_mul, mul, fpy_mul, dpy_mul);
+impl_binops!(IPy, ipy_div, ipy_rdiv, div, fpy_div, dpy_div, fpy_rdiv, dpy_rdiv);
 
 fn upy_bitand(lhs: &UPy, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
     use pyo3::IntoPyObjectExt;

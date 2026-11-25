@@ -49,7 +49,9 @@ UBig(3) - 5 == IBig(-2)   # UBig 相减得到负数时结果为 IBig
 （`{1.5: "x"}[FBig(1.5)]`、`5 in {UBig(5)}`）。
 
 除以零和对零取模的行为与 Python 一致：除数为整数或有理数的零时抛出 `ZeroDivisionError`
-（对浮点零取模 `%` 也是如此），而用 `/` 除以浮点零得到无穷。`pow(x, e, 0)` 抛出
+（对浮点零取模 `%` 也是如此），而用 `/` 除以浮点零得到无穷（`0 / 0` 抛出
+`ZeroDivisionError`）。无穷可以比较、取负和打印，但没有 NaN：操作数为无穷的算术运算和取整都会抛出
+`ValueError`。`pow(x, e, 0)` 抛出
 `ValueError`。`int(x)` 对所有类型都向零截断，`math.floor` / `math.ceil` / `math.trunc` /
 `round()` 对 `FBig`、`DBig` 和 `RBig` 都是精确的（`round()` 在恰好一半时远离零舍入）。
 

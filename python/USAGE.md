@@ -51,7 +51,9 @@ Equal numbers also **hash** equally, across the dashu types and with Python's `i
 (`{1.5: "x"}[FBig(1.5)]`, `5 in {UBig(5)}`).
 
 Division and modulo by zero follow Python: an integer or rational zero divisor raises
-`ZeroDivisionError` (as does `%` by a float zero), while `/` by a float zero gives an infinity.
+`ZeroDivisionError` (as does `%` by a float zero), while `/` by a float zero gives an infinity
+(and `0 / 0` raises `ZeroDivisionError`). An infinity can be compared, negated and printed, but
+there is no NaN: arithmetic and rounding with an infinite operand raise `ValueError`.
 `pow(x, e, 0)` raises `ValueError`. `int(x)` truncates toward zero for every type, and
 `math.floor` / `math.ceil` / `math.trunc` / `round()` are exact for `FBig`, `DBig` and `RBig`
 (`round()` rounds ties away from zero).

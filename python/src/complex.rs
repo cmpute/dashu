@@ -14,7 +14,7 @@ use dashu::float::FBig;
 use pyo3::{
     Bound, IntoPyObjectExt, Py, PyAny, PyResult,
     basic::CompareOp,
-    exceptions::{PyTypeError, PyValueError},
+    exceptions::{PyTypeError, PyValueError, PyZeroDivisionError},
     intern,
     prelude::*,
     types::{PyComplex, PyFloat, PyInt, PyString},
@@ -94,26 +94,61 @@ fn real_eq(re: &dashu::float::Repr<2>, real: UniInput<'_>) -> bool {
     }
 }
 
+/// Arithmetic with an infinite operand raises `ValueError`, as for the floats (the Rust
+/// operators panic on it).
+fn check_finite(lhs: &CBig, rhs: &CBig) -> PyResult<()> {
+    if lhs.is_infinite() || rhs.is_infinite() {
+        Err(PyValueError::new_err("arithmetic with infinity"))
+    } else {
+        Ok(())
+    }
+}
+fn cbig_add(lhs: &CBig, rhs: &CBig) -> PyResult<CBig> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.add(rhs))
+}
+fn cbig_sub(lhs: &CBig, rhs: &CBig) -> PyResult<CBig> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.sub(rhs))
+}
+fn cbig_mul(lhs: &CBig, rhs: &CBig) -> PyResult<CBig> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.mul(rhs))
+}
+/// The quotient of two complex numbers. A non-zero number divided by zero is an infinity,
+/// `0 / 0` raises `ZeroDivisionError` (it is indeterminate), and two operands of unlimited
+/// precision raise `ValueError` (the quotient has to be rounded to some precision).
+fn cbig_div(lhs: &CBig, rhs: &CBig) -> PyResult<CBig> {
+    check_finite(lhs, rhs)?;
+    if rhs.is_zero() && lhs.is_zero() {
+        return Err(PyZeroDivisionError::new_err("indeterminate form (0/0)"));
+    }
+    if !rhs.is_zero() {
+        limited_complex(dashu::complex::Context::max(lhs.context(), rhs.context()))?;
+    }
+    Ok(lhs.div(rhs))
+}
+
 macro_rules! impl_cpy_binops {
-    ($method:ident, $rs_method:ident) => {
+    ($method:ident, $op:ident) => {
         fn $method(lhs: &CPy, rhs: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<Py<PyAny>> {
             let rhs = to_cbig(rhs)?;
-            CPy((&lhs.0).$rs_method(&rhs)).into_py_any(py)
+            CPy($op(&lhs.0, &rhs)?).into_py_any(py)
         }
     };
-    ($method:ident, $rev_method:ident, $rs_method:ident) => {
-        impl_cpy_binops!($method, $rs_method);
+    ($method:ident, $rev_method:ident, $op:ident) => {
+        impl_cpy_binops!($method, $op);
         fn $rev_method(lhs: &Bound<'_, PyAny>, rhs: &CPy, py: Python<'_>) -> PyResult<Py<PyAny>> {
             let lhs = to_cbig(lhs)?;
-            CPy(lhs.$rs_method(&rhs.0)).into_py_any(py)
+            CPy($op(&lhs, &rhs.0)?).into_py_any(py)
         }
     };
 }
 
-impl_cpy_binops!(cpy_add, add);
-impl_cpy_binops!(cpy_sub, cpy_rsub, sub);
-impl_cpy_binops!(cpy_mul, mul);
-impl_cpy_binops!(cpy_div, cpy_rdiv, div);
+impl_cpy_binops!(cpy_add, cbig_add);
+impl_cpy_binops!(cpy_sub, cpy_rsub, cbig_sub);
+impl_cpy_binops!(cpy_mul, cbig_mul);
+impl_cpy_binops!(cpy_div, cpy_rdiv, cbig_div);
 
 /// Generate the complex unary cache-routed transcendentals as a dedicated `#[pymethods]`
 /// block.

@@ -232,6 +232,59 @@ def test_unlimited_precision_raises_instead_of_panicking():
     assert z.powi(2) == CBig(-3.0, 4.0) and z.norm() == 5
 
 
+def test_arithmetic_with_infinity_raises():
+    # + - * / with an infinite operand raise ValueError (as % and the transcendentals do)
+    # instead of a Rust panic, from either side and with any other number
+    import operator
+    import pytest
+    infinities = [FBig(float("inf")), FBig(float("-inf")), FBig(1.0) / 0.0, DBig(1) / 0,
+                  -(DBig(1) / 0), FBig(1e300).exp()]
+    for inf in infinities:
+        assert inf.is_infinite()
+        others = [1, -2, 2**70, 1.5, UBig(3), IBig(-3), RBig(2), type(inf)(2), inf, -inf]
+        for op in (operator.add, operator.sub, operator.mul, operator.truediv):
+            for other in others:
+                with pytest.raises(ValueError):
+                    op(inf, other)
+                # (an RBig on the left cannot take a float infinity either)
+                with pytest.raises(ValueError):
+                    op(other, inf)
+        # an infinity can still be compared, negated and printed
+        assert inf == inf and inf != -inf and abs(inf) > 10**100 and "inf" in str(inf)
+    for z in (CBig(float("inf"), 2.0), CBig(1.0, float("-inf"))):
+        for op in (operator.add, operator.sub, operator.mul, operator.truediv):
+            for other in (1, 2.5, CBig(1.0, 1.0), FBig(2.0), z):
+                with pytest.raises(ValueError):
+                    op(z, other)
+                with pytest.raises(ValueError):
+                    op(other, z)
+
+
+def test_zero_over_zero_raises():
+    # 0 / 0 is indeterminate: ZeroDivisionError (a Rust panic before), while x / 0 for a
+    # float x that is not zero stays an infinity
+    import pytest
+    for zero in (FBig(0.0), DBig(0), DBig("0.00"), FBig(0)):
+        for other in (type(zero)(0), 0, 0.0, UBig(0), IBig(0)):
+            with pytest.raises(ZeroDivisionError):
+                zero / other
+            with pytest.raises(ZeroDivisionError):
+                other / zero
+        assert (type(zero)(1) / zero).is_infinite()
+        assert zero / 2 == 0
+    for other in (CBig(0.0, 0.0), 0, 0.0):
+        with pytest.raises(ZeroDivisionError):
+            CBig(0.0, 0.0) / other
+        with pytest.raises(ZeroDivisionError):
+            other / CBig(0.0, 0.0)
+    assert (CBig(1.0, 0.0) / CBig(0.0, 0.0)).is_infinite()
+    # the quotient of two numbers of unlimited precision has no precision to round to
+    one, three = FBig(1.0).with_precision(0), FBig(3.0).with_precision(0)
+    with pytest.raises(ValueError):
+        one / three
+    assert (one / FBig(3.0)).precision() == 53
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

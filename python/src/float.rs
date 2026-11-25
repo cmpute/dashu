@@ -20,20 +20,78 @@ use crate::{
     types::{DPy, FPy, IPy, PySign, RPy, UniInput},
 };
 
+const ERRMSG_INFINITY: &str = "arithmetic with infinity";
+
+/// Arithmetic with an infinite operand raises `ValueError`, as the transcendentals and `%` do
+/// (the Rust operators panic on it). An infinity is a terminal value here, the result of an
+/// overflow or of a division by zero: it can be compared, negated and printed, but there is no
+/// NaN to stand for `inf - inf` or `inf * 0`, so no arithmetic is defined on it.
+fn check_finite<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyResult<()> {
+    if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
+        Err(PyValueError::new_err(ERRMSG_INFINITY))
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn float_add<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.add(rhs))
+}
+pub(crate) fn float_sub<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.sub(rhs))
+}
+pub(crate) fn float_mul<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    Ok(lhs.mul(rhs))
+}
+/// The quotient of two floats. A non-zero number divided by zero is an infinity, `0 / 0`
+/// raises `ZeroDivisionError` (it is indeterminate), and two operands of unlimited precision
+/// raise `ValueError` (the quotient has to be rounded to some precision).
+pub(crate) fn float_div<R: Round, const B: Word>(
+    lhs: &FBig<R, B>,
+    rhs: &FBig<R, B>,
+) -> PyResult<FBig<R, B>> {
+    check_finite(lhs, rhs)?;
+    let is_zero = |f: &FBig<R, B>| f.repr().significand().is_zero();
+    if is_zero(rhs) && is_zero(lhs) {
+        return Err(PyZeroDivisionError::new_err("indeterminate form (0/0)"));
+    }
+    if !is_zero(rhs) {
+        limited(Context::max(lhs.context(), rhs.context()))?;
+    }
+    Ok(lhs.div(rhs))
+}
+
 /// Generate forward (and optional reverse) arithmetic dispatchers that first coerce the
-/// operand to the wrapper's own type via the `into_*` helper, then apply the Rust operator.
+/// operand to the wrapper's own type via the `into_*` helper, then apply the operator
+/// (one of the `float_*` functions above).
 macro_rules! impl_float_binops {
-    ($ty:ident, $into:ident, $method:ident, $rs_method:ident) => {
-        fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    ($ty:ident, $into:ident, $method:ident, $op:ident) => {
+        pub(crate) fn $method(lhs: &$ty, rhs: UniInput<'_>, py: Python<'_>) -> PyResult<Py<PyAny>> {
             let rhs = rhs.$into()?;
-            $ty((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
+            $ty($op(&lhs.0, &rhs.0)?).into_py_any(py)
         }
     };
-    ($ty:ident, $into:ident, $method:ident, $rev_method:ident, $rs_method:ident) => {
-        impl_float_binops!($ty, $into, $method, $rs_method);
-        fn $rev_method(lhs: UniInput<'_>, rhs: &$ty, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    ($ty:ident, $into:ident, $method:ident, $rev_method:ident, $op:ident) => {
+        impl_float_binops!($ty, $into, $method, $op);
+        pub(crate) fn $rev_method(
+            lhs: UniInput<'_>,
+            rhs: &$ty,
+            py: Python<'_>,
+        ) -> PyResult<Py<PyAny>> {
             let lhs = lhs.$into()?;
-            $ty((&lhs.0).$rs_method(&rhs.0)).into_py_any(py)
+            $ty($op(&lhs.0, &rhs.0)?).into_py_any(py)
         }
     };
 }
@@ -53,7 +111,7 @@ fn float_rem<R: Round, const B: Word>(lhs: &FBig<R, B>, rhs: &FBig<R, B>) -> PyR
         return Err(PyZeroDivisionError::new_err("float modulo by zero"));
     }
     if lhs.repr().is_infinite() || rhs.repr().is_infinite() {
-        return Err(PyValueError::new_err("arithmetic with infinity"));
+        return Err(PyValueError::new_err(ERRMSG_INFINITY));
     }
     let rem = lhs.rem(rhs);
     if !rem.repr().significand().is_zero() && rem.repr().sign() != rhs.repr().sign() {
@@ -103,16 +161,16 @@ fn keep_precision<R: Round, const B: Word>(result: FBig<R, B>, source: &FBig<R, 
     }
 }
 
-impl_float_binops!(FPy, into_fpy, fpy_add, add);
-impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, sub);
-impl_float_binops!(FPy, into_fpy, fpy_mul, mul);
-impl_float_binops!(FPy, into_fpy, fpy_div, fpy_rdiv, div);
+impl_float_binops!(FPy, into_fpy, fpy_add, float_add);
+impl_float_binops!(FPy, into_fpy, fpy_sub, fpy_rsub, float_sub);
+impl_float_binops!(FPy, into_fpy, fpy_mul, float_mul);
+impl_float_binops!(FPy, into_fpy, fpy_div, fpy_rdiv, float_div);
 impl_float_mod!(FPy, into_fpy, fpy_mod, fpy_rmod);
 
-impl_float_binops!(DPy, into_dpy, dpy_add, add);
-impl_float_binops!(DPy, into_dpy, dpy_sub, dpy_rsub, sub);
-impl_float_binops!(DPy, into_dpy, dpy_mul, mul);
-impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, div);
+impl_float_binops!(DPy, into_dpy, dpy_add, float_add);
+impl_float_binops!(DPy, into_dpy, dpy_sub, dpy_rsub, float_sub);
+impl_float_binops!(DPy, into_dpy, dpy_mul, float_mul);
+impl_float_binops!(DPy, into_dpy, dpy_div, dpy_rdiv, float_div);
 impl_float_mod!(DPy, into_dpy, dpy_mod, dpy_rmod);
 
 /// Generate a `__richcmp__` dispatcher over every `UniInput` variant using `num_cmp`.
