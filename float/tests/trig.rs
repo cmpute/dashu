@@ -866,6 +866,7 @@ fn test_asin_acos_unit_half_row_is_exact() {
 /// range: `atan(3e3074457345618258583)` was `Err(Underflow)` (`0` through `FBig::atan`) where
 /// one less in the exponent gave 1.570796327. `atan2` of a huge or tiny ratio shares the path.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_atan_of_huge_argument() {
     let ctx = Context::<HalfAway>::new(10);
     let half_pi = DBig::from_str("1.570796327").unwrap();
@@ -1052,6 +1053,7 @@ fn test_unit_functions_at_bottom_of_exponent_range() {
 /// was passed on: `cos_pi(2 − 10⁻⁴⁰)` and `sin_pi(0.5 + 10⁻⁴⁰)` at 10 places were `Exact(1)`
 /// although `cos_pi(10⁻⁴⁰)` was `Inexact(1, AddOne)`.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_unit_next_to_extremum_is_inexact() {
     type D = FBig<HalfEven, 10>;
     let d = |s: &str| D::from_str(s).unwrap();

@@ -54,6 +54,7 @@ fn exp_of_zero_keeps_precision_and_zero_sign() {
 /// cost that does not grow with the exponent of the argument. (The directed modes used to
 /// need a working precision of twice that exponent: no answer within minutes at `2^-10⁷`.)
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn exp_of_tiny_argument() {
     use dashu_float::round::ErrorBounds;
     use helpers::reround;

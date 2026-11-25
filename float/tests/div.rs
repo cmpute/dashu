@@ -539,6 +539,7 @@ mod triage {
     /// memory (base 2 built the shifted dividend), and `rem_euclid` took minutes and
     /// gigabytes for a gap of 10^9.
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn test_rem_huge_exponent_gap() {
         fn check<R: Round, const B: Word>() {
             // B^e mod 7 by plain modular exponentiation
@@ -619,6 +620,7 @@ mod triage {
     /// of a zero (0, or -1 for `-0`) is not a scale, but it used to be aligned with the
     /// divisor's: `0 % 3·2^(isize::MAX/2)` ran out of memory (F94).
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn test_rem_zero_dividend_huge_divisor_exponent() {
         fn check<R: Round, const B: Word>() {
             for precision in [0usize, 20, 50, 100, 500] {

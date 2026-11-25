@@ -392,6 +392,8 @@ pub(crate) fn ratio_of_sums<R: Round, const B: Word>(
 }
 
 #[cfg(test)]
+// (the tests of astronomically distant exponents are compiled for 64-bit targets only)
+#[cfg_attr(not(target_pointer_width = "64"), allow(unused_imports, dead_code))]
 mod tests {
     use super::*;
 
@@ -401,9 +403,11 @@ mod tests {
         Repr::new(sig.into(), exp)
     }
 
+    #[cfg(target_pointer_width = "64")]
     const FAR: isize = 1 << 62;
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn sign_across_the_exponent_range() {
         let (one, big, tiny) = (r(1, 0), r(1, FAR + 10), r(1, -FAR - 10));
         // big² − big² + tiny² − 1: the leading products (beyond the range) cancel exactly
@@ -513,6 +517,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn sticky_rounding() {
         let one = r(1, 0);
         let value = |r: FpResult<FBig<_, 2>>| r.unwrap().value().into_repr();
@@ -558,6 +563,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn products_beyond_the_range() {
         let ctx = FloatCtxt::<mode::HalfEven>::new(53);
         let (one, big, tiny) = (r(1, 0), r(1, FAR + 10), r(1, -FAR - 10));

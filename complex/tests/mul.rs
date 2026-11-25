@@ -301,6 +301,7 @@ fn sqr_respects_directed_rounding() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn part_out_of_range_keeps_the_other_part() {
     // s·(1 + s·i) for s = 2^e far below the exponent range's square root: the imaginary part
     // s² underflows, the real part s is representable and must survive.
@@ -326,6 +327,7 @@ fn part_out_of_range_keeps_the_other_part() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn product_out_of_range_inside_a_part() {
     // A single product leaving the exponent range does not erase the part it belongs to: the
     // part is still the exact sum rounded once.
@@ -407,6 +409,7 @@ fn product_out_of_range_inside_a_part() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn astronomically_separated_addends_round_like_the_exact_sum() {
     // (2^E + i)(1 + i) = (2^E − 1) + (2^E + 1)i with E far beyond any materializable width: the
     // tiny addend only acts as a sticky bit.

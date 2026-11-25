@@ -9,7 +9,7 @@
 //! moderate they are formed outright and each part is one correctly-rounded real division.
 //! When the spread is large (or `|w|²` leaves the exponent range) the same value is found
 //! without them, from an approximate quotient and exact sign tests (see
-//! [`ratio_of_sums`](crate::wide::ratio_of_sums)) — a part that is in range is returned
+//! [`ratio_of_sums`]) — a part that is in range is returned
 //! whatever the size of the intermediates.
 
 use crate::cbig::CBig;

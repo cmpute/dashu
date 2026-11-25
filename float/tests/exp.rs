@@ -1,3 +1,7 @@
+// Several tests here need exponents beyond 32 bits and are compiled for 64-bit targets only;
+// their helpers and imports are then unused elsewhere.
+#![cfg_attr(not(target_pointer_width = "64"), allow(unused_imports, dead_code))]
+
 use dashu_base::Approximation::*;
 use dashu_float::{round::Rounding::*, DBig, FBig};
 use dashu_int::Word;
@@ -724,6 +728,7 @@ mod exp_range {
     };
     use dashu_int::{IBig, Word};
 
+    #[cfg(target_pointer_width = "64")]
     /// `exp(x)` from `exp(x/2)²`: the half argument is exact in an even base and its exponential
     /// sits in the middle of the exponent range, where it is computed with 40 extra digits; the
     /// square is rounded once, on the significands, and the exponents are added with a range
@@ -752,11 +757,13 @@ mod exp_range {
         }
     }
 
+    #[cfg(target_pointer_width = "64")]
     fn check<R: ErrorBounds, const B: Word>(p: usize, x: &Repr<B>) {
         let got = Context::<R>::new(p).exp(x, None);
         assert_eq!(got, exp_by_squaring::<R, B>(p, x), "exp({x:?}) at {p} digits");
     }
 
+    #[cfg(target_pointer_width = "64")]
     fn check_modes<const B: Word>(p: usize, x: &Repr<B>) {
         check::<mode::HalfEven, B>(p, x);
         check::<mode::Zero, B>(p, x);

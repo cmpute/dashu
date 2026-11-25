@@ -214,7 +214,7 @@ impl<R: Round> Context<R> {
     /// `z3` ([`Sign::Positive`] adds it, [`Sign::Negative`] subtracts).
     ///
     /// An infinite operand is a terminal value and is not accepted — it is rejected with
-    /// [`FpError::InfiniteInput`](dashu_float::FpError::InfiniteInput) (panicking at the
+    /// [`FpError::InfiniteInput`] (panicking at the
     /// convenience layer).
     pub fn fma<const B: Word>(
         &self,

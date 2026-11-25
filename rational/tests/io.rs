@@ -425,7 +425,13 @@ fn test_rbig_in_expanded_alternate_long_terminating() {
         for k in [63usize, 64, 65, 100, 127, 128, 129, 300] {
             let x = RBig::from_parts(1.into(), UBig::from(radix).pow(k));
             let printed = format!("{:#}", x.in_expanded(radix));
-            assert_eq!(printed.len(), 2 + k.max(64), "radix {radix}, k {k}: {printed}");
+            // (padded with zeros up to the default precision, one digit per bit of a `Word`)
+            let default_precision = dashu_int::Word::BITS as usize;
+            assert_eq!(
+                printed.len(),
+                2 + k.max(default_precision),
+                "radix {radix}, k {k}: {printed}"
+            );
             assert_eq!(RBig::from_str_expanded(&printed, radix).unwrap(), x, "{printed}");
 
             let relaxed = Relaxed::from_parts(3.into(), UBig::from(radix).pow(k) * 3u8);
@@ -444,8 +450,10 @@ fn test_rbig_in_expanded_alternate_long_terminating() {
     assert_eq!(format!("{:#.2}", rbig!(7).in_expanded(10)), "7.00");
     // without the alternate flag the output is rounded as before
     assert_eq!(format!("{:.2}", rbig!(1 / 8).in_expanded(10)), "0.13");
-    let x = RBig::from_parts(1.into(), UBig::from(10u8).pow(65));
-    assert_eq!(format!("{}", x.in_expanded(10)), format!("0.{}", "0".repeat(64)));
+    // (the default precision is one digit per bit of a `Word`)
+    let default_precision = dashu_int::Word::BITS as usize;
+    let x = RBig::from_parts(1.into(), UBig::from(10u8).pow(default_precision + 1));
+    assert_eq!(format!("{}", x.in_expanded(10)), format!("0.{}", "0".repeat(default_precision)));
 }
 
 #[test]

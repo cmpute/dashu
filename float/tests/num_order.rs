@@ -343,6 +343,7 @@ fn test_ord_with_float_extreme_exponent() {
 // Comparing two numbers of the same base scaled both by the full power of the base, so equal
 // (or merely close) values with a large exponent tried to allocate that power.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_ord_same_base_large_exponent() {
     use dashu_float::round::mode::{HalfAway, Zero};
     use dashu_int::IBig;
@@ -375,6 +376,7 @@ fn test_ord_same_base_large_exponent() {
 /// The order of two numbers in different bases with large exponents does not need the powers
 /// `B^|e|` themselves: it used to take time and memory proportional to the exponents.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_ord_cross_base_large_exponent() {
     use dashu_float::round::mode::{Down, Up, Zero};
     use dashu_int::IBig;

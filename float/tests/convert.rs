@@ -1342,6 +1342,7 @@ fn test_base_change_large_exponent() {
 // Exponents far too large for the power of the base to be written out are converted by
 // bracketing, in time that depends on the precision and not on the exponent.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_base_change_huge_exponent() {
     use dashu_float::round::mode::Down;
 
@@ -1434,6 +1435,7 @@ fn test_from_parts_zero_significand() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_to_float_exponent_beyond_binary_range() {
     use dashu_float::round::mode::Down;
 

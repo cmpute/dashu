@@ -906,7 +906,7 @@ fn test_error_bounds_preimage_probes() {
     use dashu_float::{Context, FBig, Repr};
     use dashu_int::IBig;
 
-    fn check<R: ErrorBounds, const B: u64>(sig: i64, exp: isize, p: usize) {
+    fn check<R: ErrorBounds, const B: dashu_int::Word>(sig: i64, exp: isize, p: usize) {
         let f: FBig<R, B> = FBig::from_repr(Repr::new(IBig::from(sig), exp), Context::new(p));
         let (lb, rb, incl_l, incl_r) = R::error_bounds(&f);
         let exact = |v: &FBig<R, B>| FBig::<R, B>::from_repr(v.repr().clone(), Context::new(0));

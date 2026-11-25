@@ -487,10 +487,13 @@ fn test_from_parts_const_matches_from_parts() {
     sweep::<36>();
 
     // the reported cases
-    let sig = 10u128.pow(38) + 1;
-    let c = DBig::from_parts_const(Sign::Positive, sig as DoubleWord, 0, None);
-    assert_eq!(c.precision(), 39);
-    assert_eq!(&c + DBig::ZERO, DBig::from_parts(IBig::from(sig), 0));
+    // (10^38 + 1 needs a 128-bit `DoubleWord`)
+    if DoubleWord::BITS == 128 {
+        let sig = 10u128.pow(38) + 1;
+        let c = DBig::from_parts_const(Sign::Positive, sig as DoubleWord, 0, None);
+        assert_eq!(c.precision(), 39);
+        assert_eq!(&c + DBig::ZERO, DBig::from_parts(IBig::from(sig), 0));
+    }
     assert_eq!(DBig::from_parts_const(Sign::Positive, 1230, 0, None).precision(), 4);
     assert_eq!(DBig::from_parts_const(Sign::Positive, 1200, 0, None).precision(), 4);
     assert_eq!(DBig::from_parts_const(Sign::Positive, 10, 0, None).precision(), 2);
@@ -1135,6 +1138,7 @@ fn test_format_width_is_exact() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_format_precision_tiny_value() {
     // A value far below the last printed digit is rounded from its sign alone, in constant
     // time and memory, whatever its exponent.

@@ -1,4 +1,7 @@
 //! Magnitude comparison (`AbsOrd`): exact for every pair of values, whatever the exponents.
+// Several tests here need exponents beyond 32 bits and are compiled for 64-bit targets only;
+// their helpers and imports are then unused elsewhere.
+#![cfg_attr(not(target_pointer_width = "64"), allow(unused_imports, dead_code))]
 
 use core::cmp::Ordering;
 use dashu_base::AbsOrd;
@@ -60,6 +63,7 @@ fn abs_cmp_matches_the_exact_squared_moduli() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn abs_cmp_with_parts_far_apart() {
     // The comparison does not align the two parts of a value: 10^E + i against 10^E + 2i is
     // decided by the small parts, for any E.

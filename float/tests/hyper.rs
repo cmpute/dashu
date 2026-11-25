@@ -268,6 +268,7 @@ fn test_tanh_saturation_flag() {
 /// memory. The working precision now covers the argument's integer digits, and an argument
 /// past the exponent range is reported as an overflow at once.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_sinh_cosh_pi_large_argument() {
     use dashu_float::FpError;
     for e in [30isize, 38, 45, 60] {
@@ -318,6 +319,7 @@ fn test_sinh_cosh_pi_large_argument() {
 /// compositions used to be formed regardless — `x² + 1` and `1 + (x + …)` aligned a unit
 /// against the argument digit for digit, and ran out of memory from `2^(2^40)` on.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn test_asinh_acosh_huge_argument() {
     type F = FBig<mode::HalfEven, 2>;
     for e in [

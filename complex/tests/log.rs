@@ -1,5 +1,8 @@
 //! Fixed regression cases for the complex logarithm: the rounding of `±π` at a negative zero
 //! and correct rounding of `ln|z|` next to the unit circle.
+// Several tests here need exponents beyond 32 bits and are compiled for 64-bit targets only;
+// their helpers and imports are then unused elsewhere.
+#![cfg_attr(not(target_pointer_width = "64"), allow(unused_imports, dead_code))]
 
 mod helpers;
 
@@ -124,6 +127,7 @@ fn log_near_unit_circle_is_correctly_rounded() {
 /// exponent of `y`. (The composition `ln(hypot(1, y))` used to need a working precision of
 /// twice that exponent: no answer within minutes at `y = 2^-(2^20)`.)
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn log_next_to_one() {
     // against the same call at a precision that resolves the displacement
     fn against_oracle<R: ErrorBounds, const B: Word>(p: usize, z: CBig<R, B>, depth: usize) {

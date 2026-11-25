@@ -67,7 +67,7 @@ impl Factored {
 
         let mut rest = B;
         let mut q: Word = 2;
-        while q <= 0xFFFF && q * q <= rest {
+        while q <= rest / q && (q as u64) <= 0xFFFF {
             if rest % q == 0 {
                 let mut multiplicity = 0;
                 while rest % q == 0 {

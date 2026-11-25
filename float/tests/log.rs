@@ -271,7 +271,13 @@ fn test_log2_bounds_large_exponent() {
             let (lb, ub) = DBig::from_parts(IBig::from(sig), exp).log2_bounds();
             assert!((lb as f64) < floor_log2 + 1.0, "exponent {exp}: lower {lb}");
             assert!((ub as f64) > floor_log2, "exponent {exp}: upper {ub}");
-            assert!(ub - lb <= 64.0);
+            // (without `std` the bounds on log2(10) are only good to about one part in a
+            // thousand, the documented 1/256 relative accuracy of the estimate)
+            if cfg!(feature = "std") {
+                assert!(ub - lb <= 64.0);
+            } else {
+                assert!((ub - lb) as f64 <= floor_log2 / 256.0);
+            }
         }
     }
     // a moderately large exponent, against the exact bit length of the integer
@@ -291,8 +297,14 @@ fn test_log2_bounds_large_exponent() {
         let slack = log2.abs() * 1e-14;
         assert!(lb as f64 <= log2 + slack, "{sig} * {B}^{exp}: lower {lb} > {log2}");
         assert!(ub as f64 >= log2 - slack, "{sig} * {B}^{exp}: upper {ub} < {log2}");
-        // tight: within a few f32 ulps of the true value
-        assert!((ub as f64 - lb as f64) <= 1e-2 + log2.abs() * 1e-6, "{sig} * {B}^{exp}");
+        // tight: within a few f32 ulps of the true value (with `std`; the bounds of the
+        // logarithm of the base are coarser without it, within the documented 1/256)
+        let width = if cfg!(feature = "std") {
+            1e-2 + log2.abs() * 1e-6
+        } else {
+            1e-2 + log2.abs() / 256.0
+        };
+        assert!((ub as f64 - lb as f64) <= width, "{sig} * {B}^{exp}");
     }
     for exp in [
         0isize,
@@ -301,10 +313,11 @@ fn test_log2_bounds_large_exponent() {
         16_777_217,
         16_777_285,
         (1 << 25) + 1,
-        (1 << 31) + 12345,
-        (1 << 40) + 1,
-        (1 << 53) + 1,
-        (1 << 60) + 12345,
+        isize::MAX / 2 + 12345,
+        // (the next three exceed a 32-bit exponent and are clamped to the largest one there)
+        ((1i64 << 40) + 1).min(isize::MAX as i64 - 1) as isize,
+        ((1i64 << 53) + 1).min(isize::MAX as i64 - 1) as isize,
+        ((1i64 << 60) + 12345).min(isize::MAX as i64 - 1) as isize,
         isize::MAX - 1,
     ] {
         for sign in [1, -1] {
@@ -737,7 +750,7 @@ fn test_log2_of_infinity() {
         assert_eq!(inf.log2_est(), f32::INFINITY);
     }
     // every finite value stays below it, and the zeros keep -inf
-    let big = FBin::from_parts(1.into(), 1 << 40);
+    let big = FBin::from_parts(1.into(), isize::MAX / 4);
     assert!(big.log2_bounds().1 < f32::INFINITY);
     for zero in [FBin::ZERO, -FBin::ZERO] {
         assert_eq!(zero.log2_bounds(), (f32::NEG_INFINITY, f32::NEG_INFINITY));

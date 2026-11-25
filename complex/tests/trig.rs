@@ -506,6 +506,7 @@ fn tan_saturated_imaginary_part_lies_on_the_right_side_of_one() {
 /// (`|y| ≥ 2^62` in base 2): the saturating part rounds from its side of `±1` and the other
 /// part underflows to a signed zero on its own, instead of the whole result being an overflow.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn tan_with_imaginary_part_beyond_the_exponent_range() {
     use dashu_float::round::ErrorBounds;
     use helpers::reround;

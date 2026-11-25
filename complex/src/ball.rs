@@ -837,6 +837,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn exactness_criteria() {
         // hypot: 3² + 4² = 5², but 1² + (2⁴⁰)² is not a square
         assert!(hypot_is_exact(&repr(5, 0), &repr(3, 0), &repr(4, 0), 10));

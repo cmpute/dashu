@@ -147,7 +147,7 @@ impl<R: ErrorBounds> Context<R> {
     /// Such a result always separates from the returned value once the radius is small
     /// enough, so the loop keeps going until the `Rounding` flag is proven, however close the
     /// result lies (see [`certified`](Self::certified)): the flag costs what the value costs
-    /// under a directed mode, where the same separation decides the value itself. [`ziv`]
+    /// under a directed mode, where the same separation decides the value itself. [`ziv`](Self::ziv)
     /// gives up on the flag at about twice the target precision — at once for a precision
     /// below the initial guard — which is not enough for an argument that carries more digits
     /// than the context (`cos_pi(2 − 10⁻⁴⁰)` at 10 digits was `Exact(1)`).
@@ -639,6 +639,7 @@ mod tests {
     // A radius astronomically larger than the value is rejected from the magnitudes alone: the
     // exact interval arithmetic would have to align the two, here across 10^12 digits.
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn contained_rejects_astronomical_radius() {
         let a = Repr::<2>::new(IBig::from(5), 1_000_000_000_000);
         let e = Repr::<2>::new(IBig::from(3), 2_000_000_000_000);

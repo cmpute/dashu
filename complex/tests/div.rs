@@ -1,6 +1,9 @@
 //! Division tests (`div`, `inv`, `div_real`): the numerators and the denominator are formed
 //! exactly and each part is a single correctly-rounded real division, so `z / z` is exactly `1`
 //! and the rounding direction and `Exact`/`Inexact` tag are those of the exact quotient.
+// Several tests here need exponents beyond 32 bits and are compiled for 64-bit targets only;
+// their helpers and imports are then unused elsewhere.
+#![cfg_attr(not(target_pointer_width = "64"), allow(unused_imports, dead_code))]
 
 use dashu_base::Approximation::*;
 use dashu_base::{Abs, Inverse};
@@ -117,6 +120,7 @@ fn infinite_operand_is_rejected_before_the_zero_checks() {
 }
 
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn reciprocal_near_the_exponent_range_limits() {
     // 1/(2^e·i) = −2^(−e)·i is representable although |z|² is not; `inv` and `1 / z` agree.
     type C = CBig<HalfEven, 2>;
@@ -211,6 +215,7 @@ fn wide_exponent_spread_is_correctly_rounded() {
 /// exponent spread: a part that is in range is returned, and a part that is not saturates on
 /// its own.
 #[test]
+#[cfg(target_pointer_width = "64")]
 fn quotient_in_range_with_intermediates_out_of_range() {
     fn check<R: Round>(p: usize) {
         let ctx = Context::<R>::new(p);
