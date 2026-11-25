@@ -22,6 +22,12 @@ let o = cbig!(0o3 + 0o4i);         // 3 + 4i
 assert_eq!(z, h);
 assert_eq!(z, b);
 assert_eq!(z, o);
+
+// either coefficient can have an exponent, with or without a sign
+let e = cbig!(1.5e2 + 2e-3i);      // 150 + 0.002i
+let x = cbig!(0x1p4 - 0x1p-2i);    // 16 - 0.25i
+assert_eq!(e, cbig!(1.5e2, 2e-3));
+assert_eq!(x, cbig!(0x1p4, -0x1p-2));
 ```
 
 The result's precision is the larger of the two coefficients' (the smaller-precision part is

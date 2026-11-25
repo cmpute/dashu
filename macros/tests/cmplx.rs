@@ -97,6 +97,31 @@ fn test_cbig_fractional_decimal() {
 }
 
 #[test]
+#[rustfmt::skip::macros(cbig, static_cbig)]
+fn test_cbig_signed_exponent() {
+    // A sign inside the literal can belong to an exponent, also in the imaginary coefficient
+    // (as in `CBig::from_str`); the pair form parses each coefficient on its own.
+    assert_eq!(cbig!(1 + 2e-3i), cbig!(1, 2e-3));
+    assert_eq!(cbig!(1 - 2e+3i), cbig!(1, -2e3));
+    assert_eq!(cbig!(1 + 0x1p-2i), cbig!(1, 0x1p-2));
+    assert_eq!(cbig!(0x1p-2i), cbig!(0, 0x1p-2));
+    assert_eq!(cbig!(-0x1p-2i), cbig!(0, -0x1p-2));
+    assert_eq!(cbig!(1e-5i), cbig!(0, 1e-5));
+    assert_eq!(cbig!(-1.5e+2 - 2.5e-1i), cbig!(-1.5e2, -2.5e-1));
+    assert_eq!(cbig!(0x1234p-4 - 0x5678p-8i), cbig!(0x1234p-4, -0x5678p-8));
+    assert_eq!(cbig!(1e-2 - i), cbig!(1e-2, -1));
+    assert_eq!(cbig!(1e-2 + i), cbig!(1e-2, 1));
+    assert_eq!(*static_cbig!(1 + 2e-3i), cbig!(1, 2e-3));
+
+    assert_eq!(cbig!(1 + 0x1p-2i).im().to_string(), "0.01");
+    assert_eq!(cbig!(0x1p-2i).re().to_string(), "0");
+
+    // `e` is a digit of a hexadecimal coefficient, not an exponent marker
+    assert_eq!(cbig!(0x1e - 3i), cbig!(0x1e, -3));
+    assert_eq!(cbig!(0x1e-3i).re().to_string(), "11110");
+}
+
+#[test]
 fn test_cbig_const() {
     const Z: CBig = cbig!(3 + 4i);
     assert_eq!(Z, cbig!(3 + 4i));
