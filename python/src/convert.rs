@@ -230,6 +230,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for UniInput<'py> {
     }
 }
 
+/// Build a decimal float from an `f64`. Base-10 floats have no direct `TryFrom<f64>`, so a
+/// finite one goes through the shortest scientific-notation string that round-trips the `f64`
+/// (which gives the precision of the result); an infinity is the infinity of that sign.
+fn dbig_from_f64(x: f64) -> PyResult<DBig> {
+    if x.is_infinite() {
+        return Ok(if x > 0.0 {
+            DBig::INFINITY
+        } else {
+            DBig::NEG_INFINITY
+        });
+    }
+    DBig::from_str(&format!("{:e}", x)).map_err(parse_error_to_py)
+}
+
 /// Raise the precision of an exactly converted number to `precision` (no rounding happens:
 /// the precision is only ever increased).
 fn exact_at_least(f: FBig, precision: usize) -> FBig {
@@ -356,12 +370,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(DPy(DBig::from(x.0.clone()))),
             Self::BInt(x) => Ok(DPy(DBig::from(x.0.clone()))),
             Self::OBInt(x) => Ok(DPy(DBig::from(x))),
-            // base-10 floats have no direct TryFrom<f64>; round-trip through the
-            // shortest scientific-notation string that f64 produces.
-            Self::Float(x) => {
-                let s = format!("{:e}", x);
-                DBig::from_str(&s).map(DPy).map_err(parse_error_to_py)
-            }
+            Self::Float(x) => dbig_from_f64(x).map(DPy),
             Self::BDecimal(x) => Ok(DPy(x.0.clone())),
             Self::OBDecimal(x) => Ok(DPy(x)),
             Self::BRational(x) => DBig::try_from(x.0.clone())
@@ -424,10 +433,7 @@ impl<'a> UniInput<'a> {
             Self::BUint(x) => Ok(DBig::from(x.0.clone())),
             Self::BInt(x) => Ok(DBig::from(x.0.clone())),
             Self::OBInt(x) => Ok(DBig::from(x)),
-            Self::Float(x) => {
-                let s = format!("{:e}", x);
-                DBig::from_str(&s).map_err(parse_error_to_py)
-            }
+            Self::Float(x) => dbig_from_f64(x),
             Self::BFloat(x) => Ok(x.0.to_decimal().value()),
             Self::BDecimal(x) => Ok(x.0.clone()),
             Self::OBDecimal(x) => Ok(x),

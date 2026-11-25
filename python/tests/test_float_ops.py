@@ -309,6 +309,26 @@ def test_methods_of_infinity_raise():
     assert FBig(2.5).digits() == 3 and round(DBig("1.2345"), 2) == DBig("1.23")
 
 
+def test_dbig_from_float_infinity():
+    # DBig(float('inf')) is the infinity of that sign, like FBig(float('inf')); it raised
+    # SyntaxError ("invalid digit for the given radix")
+    import pytest
+    for v in (float("inf"), float("-inf")):
+        d = DBig(v)
+        assert d.is_infinite() and d == FBig(v) and d == v and float(d) == v
+        assert d == (DBig(1) / 0 if v > 0 else DBig(-1) / 0)
+        assert str(d) == str(v)
+        # a float infinity mixed into decimal arithmetic is an infinite operand
+        with pytest.raises(ValueError):
+            DBig(1) + v
+        with pytest.raises(ValueError):
+            v * DBig(2)
+        assert (DBig(1) < v) == (1 < v)
+    with pytest.raises(ValueError):
+        DBig(float("nan"))
+    assert DBig(-0.0) == 0 and DBig(1.5).precision() == 2
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
