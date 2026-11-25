@@ -134,6 +134,13 @@ impl<const B: Word> Scaled<B> {
     }
 }
 
+/// Whether the finite `y` is an odd integer, decided on its representation: a normalized value
+/// with a positive exponent is a multiple of the base (so its parity is the base's, or the
+/// significand's when the base is odd), and one with a negative exponent is not an integer.
+fn is_odd_int<const B: Word>(y: &Repr<B>) -> bool {
+    y.is_int() && y.significand.bit(0) && (y.exponent == 0 || B % 2 == 1)
+}
+
 // Margin certifying a `powi` result is outside the finite range: the magnitude guard estimates the
 // result's log2 as `e · log2(base)` in f64, where `e` is up to `i64::MAX` and `isize::MAX as f64`
 // is itself rounded — together ~2^17 of f64 error near the boundary. A result whose log2 is within
@@ -713,7 +720,9 @@ impl<R: ErrorBounds> Context<R> {
     /// A non-integer exponent is correctly rounded via a Ziv loop. An integer-valued exponent
     /// delegates to [`powi`](Context::powi) (binary exponentiation), which also accepts a negative
     /// base — its sign is fixed by the exponent's parity — so `pow(-x, n)` is in domain here for
-    /// integer `n`. Both paths are correctly rounded.
+    /// integer `n`. Both paths are correctly rounded. A zero base follows the same rule:
+    /// `pow(-0, y)` is `-0` (or `-inf` for `y < 0`) when `y` is an odd integer, and `+0` (`+inf`)
+    /// for every other `y`.
     ///
     /// # Examples
     ///
@@ -756,16 +765,16 @@ impl<R: ErrorBounds> Context<R> {
             let repr = self.repr_round_ref(base);
             return self.finish_rounded(repr);
         } else if base.significand.is_zero() {
-            // With a *float* exponent the result on a zero base is the positive one — this
-            // matches the common float-pow convention (e.g. CPython: `(-0.0) ** y == 0.0`),
-            // which doesn't track the parity of the exponent:
-            //   pow(±0, y > 0) = +0,    pow(±0, y < 0) = +inf.
-            // For the sign-correct result (e.g. `pow(-0, odd) = -0`), use the integer-exponent
-            // [`powi`](Context::powi). Short-circuiting here also avoids the negative-base path.
+            // A zero base (IEEE 754 §9.2.1, as `powi` does for an integer exponent):
+            //   pow(±0, y) = ±0 for an odd integer y > 0, +0 for any other y > 0;
+            //   pow(±0, y) = ±inf for an odd integer y < 0, +inf for any other y < 0.
+            // The parity is read off the exponent's representation, so no integer is built.
+            // Short-circuiting here also avoids the negative-base path.
+            let sign = Sign::from(base.sign() == Sign::Negative && is_odd_int(exp));
             return Ok(Exact(if exp.sign() == Sign::Negative {
-                FBig::new(Repr::infinity(), *self)
+                FBig::new(Repr::infinity_with_sign(sign), *self)
             } else {
-                FBig::new(Repr::zero(), *self)
+                FBig::new(Repr::zero_with_sign(sign), *self)
             }));
         }
         if base.is_one() {
@@ -1736,8 +1745,8 @@ mod tests {
     #[test]
     fn test_powf_zero_base() {
         use crate::DBig;
-        // powf with a float exponent returns the *positive* result on a zero base
-        // (matching the common float-pow convention); use powi for the signed result.
+        // powf on a zero base keeps the base's sign only for an odd integer exponent (as powi
+        // does); every other exponent gives the positive result.
         let ctx = Context::<mode::HalfEven>::new(53);
         // powf(-0, 2.0) = +0 (NOT -0)
         let r = ctx

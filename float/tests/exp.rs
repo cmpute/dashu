@@ -1278,4 +1278,62 @@ mod pow_range {
             }
         }
     }
+
+    /// On a zero base `powf` follows IEEE 754 `pow`, and so agrees with `powi` for every
+    /// integer exponent: `pow(-0, y)` is `-0` (`-inf` for `y < 0`) when `y` is an odd integer
+    /// and `+0` (`+inf`) for any other `y`. Regression: `powf(-0, 3)` was `+0` and
+    /// `powf(-0, -3)` was `+inf` — the sign of the base was dropped whatever the exponent.
+    #[test]
+    fn test_powf_zero_base_sign() {
+        fn check<const B: Word>(p: usize) {
+            let ctx = Context::<mode::Zero>::new(p);
+            let zeros = [Repr::<B>::zero(), Repr::<B>::neg_zero()];
+            // integer exponents; the multiples of the base have a positive exponent of their own
+            let ints = (-7i32..=7).chain([9, -9, 10, -10, 27, -27, 30, -30, 1000001, -1000001]);
+            for k in ints.filter(|&k| k != 0) {
+                let y = Repr::<B>::new(k.into(), 0);
+                for base in &zeros {
+                    let negative = base.is_neg_zero() && k % 2 != 0;
+                    let got = ctx.powf(base, &y, None).unwrap();
+                    assert!(matches!(got, Exact(_)), "powf({base:?}, {k}) in base {B}");
+                    let got = got.value();
+                    if k > 0 {
+                        let want = Repr::<B>::zero_with_sign(Sign::from(negative));
+                        assert_eq!(got.repr(), &want, "powf({base:?}, {k}) in base {B}");
+                    } else {
+                        assert!(got.repr().is_infinite(), "powf({base:?}, {k}) in base {B}");
+                        assert_eq!(got.repr().sign(), Sign::from(negative), "powf({base:?}, {k})");
+                    }
+                    let by_powi = ctx.powi(base, k.into()).unwrap().value();
+                    assert_eq!(got.repr(), by_powi.repr(), "powf vs powi ({base:?}, {k})");
+                    assert_eq!(got.precision(), p);
+                }
+            }
+            // a non-integer exponent never carries the sign over (k/B is not an integer here)
+            for k in [1i32, 5, 7, -1, -5, -7] {
+                let y = Repr::<B>::new(k.into(), -1);
+                for base in &zeros {
+                    let got = ctx.powf(base, &y, None).unwrap().value();
+                    if k > 0 {
+                        assert!(got.repr().is_pos_zero(), "powf({base:?}, {k}/{B})");
+                    } else {
+                        assert!(got.repr().is_infinite(), "powf({base:?}, {k}/{B})");
+                        assert_eq!(got.repr().sign(), Sign::Positive, "powf({base:?}, {k}/{B})");
+                    }
+                }
+            }
+        }
+        for p in [20, 50, 100, 500] {
+            check::<2>(p);
+            check::<3>(p);
+            check::<10>(p);
+        }
+
+        // through the convenience API
+        let neg_zero = -FBig::<mode::HalfEven>::ZERO.with_precision(53).value();
+        let three = FBig::<mode::HalfEven>::from(3u8);
+        assert!(neg_zero.powf(&three).repr().is_neg_zero());
+        assert_eq!(neg_zero.powf(&-three), FBig::<mode::HalfEven>::NEG_INFINITY);
+        assert!(neg_zero.powf(&FBig::from(2u8)).repr().is_pos_zero());
+    }
 }
