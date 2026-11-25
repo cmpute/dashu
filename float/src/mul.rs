@@ -558,7 +558,12 @@ impl<R: Round> Context<R> {
     /// [`add`](Self::add)/[`mul`](Self::mul); dashu rejects infinite operands
     /// outright, so the IEEE-754 `inf·0` / `inf−inf` indeterminate forms do not
     /// arise). [`Overflow`](FpError::Overflow)/[`Underflow`](FpError::Underflow)
-    /// propagate from the product's exponent.
+    /// are judged on the rounded result, not on the product: a product below the
+    /// exponent range next to an ordinary `c` only decides the rounding direction, as
+    /// a tiny addend does in [`add`](Self::add). (At unlimited precision the exact
+    /// result is as wide as the distance between `c` and the product; when the
+    /// product is out of range and that distance is huge, its range error is
+    /// returned.)
     ///
     /// # Examples
     ///
@@ -613,31 +618,110 @@ impl<R: Round> Context<R> {
         // Exact product a·b. No operand shrinking (unlike Context::mul's 2p bound):
         // a cancellation between the product and c can expose arbitrarily low
         // product digits, so the full exact product is required for a correctly-
-        // rounded result. The `Repr` product saturates exponent overflow/underflow
-        // to the infinity/zero sentinels, so detect those as Context::mul does.
-        let prod = a * b;
-        let prod = if prod.is_infinite() {
-            return Err(FpError::Overflow(prod.sign()));
-        } else if prod.significand.is_zero() && !a.significand.is_zero() && !b.significand.is_zero()
-        {
-            return Err(FpError::Underflow(prod.sign()));
-        } else {
-            prod
-        };
+        // rounded result. Its exponent is kept wide: the product alone may lie outside
+        // the exponent range while `c + sign·(a·b)` does not.
+        let Repr {
+            significand: prod,
+            exponent: folded,
+        } = Repr::<B>::new(&a.significand * &b.significand, 0);
+        let prod = if sign == Negative { -prod } else { prod };
+        let prod_exponent = a.exponent as i128 + b.exponent as i128 + folded as i128;
+        if prod_exponent <= isize::MIN as i128 || prod_exponent >= isize::MAX as i128 {
+            return self.fma_wide(c, prod, prod_exponent);
+        }
 
         // Add c to sign·(a·b) with a single rounding. The product is exact, so the
         // only rounding is in the add step — the same path as Context::add/sub.
         // (Both the product and c are nonzero here.)
-        let signed_prod = if sign == Negative { prod.neg() } else { prod };
-        let sum = match c.exponent.cmp(&signed_prod.exponent) {
-            Ordering::Equal => self.repr_round(cancel_zero::<R, B>(
-                &c.significand + signed_prod.significand,
-                c.exponent,
-            )),
-            Ordering::Greater => self.repr_add_large_small(c.clone(), &signed_prod, Positive),
-            Ordering::Less => self.repr_add_small_large(c.clone(), &signed_prod, Positive),
+        let signed_prod = Repr {
+            significand: prod,
+            exponent: prod_exponent as isize,
         };
-        self.finish_rounded(sum)
+        self.finish_rounded(self.fma_sum(c.clone(), &signed_prod))
+    }
+
+    /// `c + prod` for nonzero operands, rounded once like [`add`](Self::add) rounds.
+    fn fma_sum<const B: Word>(&self, c: Repr<B>, prod: &Repr<B>) -> Rounded<Repr<B>> {
+        match c.exponent.cmp(&prod.exponent) {
+            Ordering::Equal => {
+                self.repr_round(cancel_zero::<R, B>(c.significand + &prod.significand, c.exponent))
+            }
+            Ordering::Greater => self.repr_add_large_small(c, prod, Positive),
+            Ordering::Less => self.repr_add_small_large(c, prod, Positive),
+        }
+    }
+
+    /// [`fma`](Self::fma) for a nonzero `c` and a nonzero product `prod · B^prod_exponent`
+    /// whose (normalized) exponent lies outside the `isize` range.
+    ///
+    /// An out-of-range product does not make the sum out of range: next to an ordinary `c`
+    /// an underflowing product only decides the rounding direction, and an overflowing one
+    /// can be cancelled by `c`. So the sum is formed in a frame whose exponents are shifted
+    /// to fit — an operand that lies far below the other one is first replaced by a unit of
+    /// its sign, close enough to keep the exponents within one frame and still far below
+    /// every rounding boundary — and the range is judged on the rounded result.
+    fn fma_wide<const B: Word>(
+        &self,
+        c: &Repr<B>,
+        prod: IBig,
+        prod_exponent: i128,
+    ) -> FpResult<FBig<R, B>> {
+        // what the product alone amounts to
+        let range_error = if prod_exponent > 0 {
+            FpError::Overflow(prod.sign())
+        } else {
+            FpError::Underflow(prod.sign())
+        };
+
+        // the widest exponent gap handled without a stand-in
+        const MAX_GAP: i128 = (isize::MAX / 2) as i128;
+        let (mut c_signif, mut c_exponent) = (c.significand.clone(), c.exponent as i128);
+        let (mut prod, mut prod_exponent) = (prod, prod_exponent);
+        let gap = (c_exponent - prod_exponent).abs();
+        if gap > MAX_GAP {
+            // The exact sum is as wide as the gap, which an unlimited precision would have
+            // to keep; and a stand-in needs the precision to be far smaller than the gap.
+            if !self.is_limited() || self.precision as i128 + 4 >= MAX_GAP {
+                return Err(range_error);
+            }
+            let (low, low_exponent, high_exponent) = if prod_exponent < c_exponent {
+                (&mut prod, &mut prod_exponent, c_exponent)
+            } else {
+                (&mut c_signif, &mut c_exponent, prod_exponent)
+            };
+            if gap > MAX_GAP + digit_len::<B>(low) as i128 {
+                // |low operand| < B^(high_exponent - MAX_GAP): only its sign matters
+                *low = IBig::from_parts(low.sign(), UBig::ONE);
+                *low_exponent = high_exponent - MAX_GAP;
+            }
+        }
+
+        let frame = c_exponent.min(prod_exponent) + (c_exponent - prod_exponent).abs() / 2;
+        let c = Repr {
+            significand: c_signif,
+            exponent: (c_exponent - frame) as isize,
+        };
+        let prod = Repr {
+            significand: prod,
+            exponent: (prod_exponent - frame) as isize,
+        };
+        let sum = self.fma_sum(c, &prod);
+
+        let value = sum.value_ref();
+        if value.significand.is_zero() {
+            return Ok(sum.map(|v| FBig::new(v, *self))); // an exact cancellation
+        }
+        let exponent = value.exponent as i128 + frame;
+        if exponent >= isize::MAX as i128 {
+            Err(FpError::Overflow(value.sign()))
+        } else if exponent <= isize::MIN as i128 {
+            Err(FpError::Underflow(value.sign()))
+        } else {
+            Ok(sum.map(|mut v| {
+                v.exponent = exponent as isize;
+                FBig::new(v, *self)
+            }))
+        }
     }
 }
 

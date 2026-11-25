@@ -424,4 +424,170 @@ mod triage {
         let got = ctx.fma(&repr::<2>(2, 0), &repr::<2>(3, 0), &repr::<2>(-6, 0), Sign::Positive);
         assert!(got.unwrap().value().repr().is_neg_zero());
     }
+
+    /// `fma` judges the exponent range on the rounded result `c + sign·(a·b)`, not on the
+    /// product: a product below the range next to an ordinary `c` only decides the rounding
+    /// direction (as a tiny addend does in `add`), and a product above the range can be
+    /// cancelled by `c`. It used to return the product's `Underflow` / `Overflow`, so
+    /// `FBig::fma` gave `0` for `3 + 2^(isize::MIN - 2)` (F16).
+    #[test]
+    fn test_fma_product_outside_exponent_range() {
+        const MIN: isize = isize::MIN;
+        const MAX: isize = isize::MAX;
+        type Operand = (i128, isize);
+
+        /// The same operation with the exponents of `a`, `b` moved by `-sa`, `-sb` (and
+        /// `c`'s by `-(sa + sb)`), which puts everything in range: the result is the same
+        /// up to the factor `B^(sa + sb)`, whose exponent decides the range error.
+        fn check_shifted<R: Round, const B: Word>(
+            precision: usize,
+            (a, b, c): (Operand, Operand, Operand),
+            (sa, sb): (isize, isize),
+            sign: Sign,
+        ) {
+            let ctx = Context::<R>::new(precision);
+            let shift = sa as i128 + sb as i128;
+            let got = ctx.fma(&repr::<B>(a.0, a.1), &repr(b.0, b.1), &repr(c.0, c.1), sign);
+            let c_shifted = isize::try_from(c.1 as i128 - shift).unwrap();
+            let (ra, rb) = (repr::<B>(a.0, a.1 - sa), repr::<B>(b.0, b.1 - sb));
+            let reference = ctx.fma(&ra, &rb, &repr(c.0, c_shifted), sign).unwrap();
+            let value = reference.value_ref().repr();
+            let exponent = value.exponent() as i128 + shift;
+            let expected = if value.significand().is_zero() {
+                Ok(reference)
+            } else if exponent >= MAX as i128 {
+                Err(FpError::Overflow(value.sign()))
+            } else if exponent <= MIN as i128 {
+                Err(FpError::Underflow(value.sign()))
+            } else {
+                Ok(reference.map(|v| {
+                    let signif = v.repr().significand().clone();
+                    FBig::from_repr(Repr::new(signif, exponent as isize), ctx)
+                }))
+            };
+            assert_eq!(got, expected, "fma({a:?}, {b:?}, {c:?}, {sign:?}) at {precision}");
+            if let Ok(v) = got {
+                let (v, e) = (v.value(), expected.unwrap().value());
+                assert_eq!(v.sign(), e.sign());
+                assert_eq!(v.precision(), precision);
+            }
+        }
+
+        fn check<R: Round, const B: Word>() {
+            for precision in [20usize, 50, 100, 500] {
+                let ctx = Context::<R>::new(precision);
+                let full = IBig::from(B).pow(precision) - IBig::ONE; // all the digits in use
+                let wider = IBig::from(B).pow(precision + 5) + IBig::ONE;
+                let cs = [
+                    repr::<B>(3, 0),
+                    repr::<B>(-3, 0),
+                    repr::<B>(7, -3),
+                    repr::<B>(1, 1000),
+                    Repr::<B>::new(full.clone(), -4),
+                    Repr::<B>::new(-full, 9),
+                    Repr::<B>::new(wider, -(precision as isize)),
+                ];
+                for sign in [Sign::Positive, Sign::Negative] {
+                    // a product far below the range next to an ordinary c: like adding
+                    // (or subtracting) the smallest value of the product's sign
+                    for (a, b) in [(1i128, 1i128), (-1, 1), (3, 7), (5, -9)] {
+                        let (x, y) = (repr::<B>(a, MIN / 2), repr::<B>(b, MIN / 2 - 2));
+                        let tiny = repr::<B>(a.signum() * b.signum(), MIN + 1);
+                        for c in &cs {
+                            let got = ctx.fma(&x, &y, c, sign);
+                            let reference = match sign {
+                                Sign::Positive => ctx.add(c, &tiny),
+                                Sign::Negative => ctx.sub(c, &tiny),
+                            };
+                            assert!(matches!(reference, Ok(Inexact(_, _))));
+                            assert_eq!(got, reference, "fma({x:?}, {y:?}, {c:?}, {sign:?})");
+                            let v = got.unwrap().value();
+                            assert_eq!(v.precision(), precision);
+
+                            if c.digits() > precision {
+                                continue; // not a value of this context
+                            }
+                            let fx = FBig::from_repr(x.clone(), ctx);
+                            let fy = FBig::from_repr(y.clone(), ctx);
+                            let fc = FBig::from_repr(c.clone(), ctx);
+                            assert_eq!(fx.fma(&fy, &fc, sign).repr(), v.repr());
+                        }
+                    }
+
+                    // a product below the range and a c just inside it: comparable
+                    // magnitudes, the sum is formed exactly and rounded
+                    let products = [
+                        (3i128, 1i128, 5i128),
+                        (7, -9, 5),
+                        (-1, 1, 1),
+                        (11, 13, -143),
+                    ];
+                    for c_exp in [MIN + 1, MIN + 2, MIN + 3, MIN + 30, MIN + 700] {
+                        for (a, b, c) in products {
+                            let operands = ((a, MIN / 2), (b, MIN / 2 - 2), (c, c_exp));
+                            check_shifted::<R, B>(precision, operands, (MIN / 2, MIN / 2), sign);
+                        }
+                    }
+
+                    // a product above the range and a c just inside it, which may cancel it
+                    let base = B as i128;
+                    let products = [
+                        (1i128, 1i128, 1 - base), // B^MAX - (B - 1)·B^(MAX - 1)
+                        (1, 1, base - 1),
+                        (1, -1, base * base - 1),
+                        (3, 7, -209),
+                        (-5, 9, 3),
+                    ];
+                    for c_exp in [MAX - 1, MAX - 2, MAX - 3, MAX - 40, MAX - 700] {
+                        for (a, b, c) in products {
+                            // exponents (MAX/2 + 1) + (MAX/2) = MAX
+                            let operands = ((a, MAX / 2 + 1), (b, MAX / 2), (c, c_exp));
+                            check_shifted::<R, B>(precision, operands, (MAX / 2, MAX / 2), sign);
+                            let operands = ((a, MAX / 2 + 1), (b, MAX / 2 + 3), (c, c_exp));
+                            check_shifted::<R, B>(precision, operands, (MAX / 2, MAX / 2), sign);
+                        }
+                    }
+
+                    // a product far above the range next to an ordinary c is an overflow
+                    // (far: more than `precision + 1` digits, so that no rounding of the sum
+                    // has an exponent in range)
+                    let (x, y) = (repr::<B>(3, MAX / 2 + 1), repr::<B>(-7, MAX / 2 + 1000));
+                    for c in &cs {
+                        let overflow = Err(FpError::Overflow(-sign));
+                        assert_eq!(ctx.fma(&x, &y, c, sign), overflow);
+                    }
+                }
+            }
+
+            // unlimited precision: the exact sum is as wide as the distance between c and
+            // the product, so a distant out-of-range product still reports its range error
+            let ctx = Context::<R>::new(0);
+            let (x, y, c) = (repr::<B>(1, MIN / 2), repr::<B>(1, MIN / 2 - 2), repr::<B>(3, 0));
+            let underflow = Err(FpError::Underflow(Sign::Positive));
+            assert_eq!(ctx.fma(&x, &y, &c, Sign::Positive), underflow);
+            // ... while a nearby one is added exactly
+            let (x, y) = (repr::<B>(1, MAX / 2 + 1), repr::<B>(1, MAX / 2));
+            let c = repr::<B>(1 - B as i128, MAX - 1);
+            let got = ctx.fma(&x, &y, &c, Sign::Positive).unwrap();
+            assert_eq!(got, Exact(FBig::from_repr(repr::<B>(1, MAX - 1), ctx)));
+        }
+        check::<mode::HalfEven, 2>();
+        check::<mode::HalfAway, 10>();
+        check::<mode::Zero, 2>();
+        check::<mode::Away, 10>();
+        check::<mode::Up, 10>();
+        check::<mode::Down, 2>();
+        check::<mode::Down, 3>();
+
+        // the reported case
+        let ctx = Context::<mode::HalfEven>::new(10);
+        let (a, b) = (repr::<2>(1, MIN / 2), repr::<2>(1, MIN / 2 - 2));
+        let three = FBig::<mode::HalfEven, 2>::from(3)
+            .with_precision(10)
+            .value();
+        let got = ctx.fma(&a, &b, three.repr(), Sign::Positive);
+        assert_eq!(got, Ok(Inexact(three.clone(), dashu_float::round::Rounding::NoOp)));
+        let (fa, fb) = (FBig::from_repr(a, ctx), FBig::from_repr(b, ctx));
+        assert_eq!(fa.fma(&fb, &three, Sign::Positive), three);
+    }
 }
