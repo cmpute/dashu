@@ -18,6 +18,9 @@ assert_eq!(a.precision(), 5);
 let b = dbig!(003.1200e-2); // 7 decimal digits
 assert_eq!(b.precision(), 7);
 assert_eq!(b.digits(), 3); // 312 only has 3 effective digits
+
+let z = dbig!(0.000); // a zero literal has the precision of its digits as well
+assert_eq!(z.precision(), 4);
 ```
 
 For numbers whose significands are small enough (fit in a [u32]),

@@ -255,7 +255,9 @@ impl<R: Round, const B: Word> FBig<R, B> {
     ///
     /// The precision will be inferred from significand (the lowest k such that `significand <= base^k`).
     /// If the `min_precision` is provided, then the higher one from the given and inferred precision
-    /// will be used as the final precision.
+    /// will be used as the final precision. A zero significand has no digits to infer a
+    /// precision from: the result is a zero with the precision `min_precision`, or with
+    /// unlimited precision if `min_precision` is `None`.
     ///
     /// # Examples
     ///
@@ -281,7 +283,12 @@ impl<R: Round, const B: Word> FBig<R, B> {
         min_precision: Option<usize>,
     ) -> Self {
         if significand == 0 {
-            return Self::ZERO;
+            // a zero has no digits to infer a precision from, so the requested one is used
+            // as it is (and the precision is unlimited when none is requested)
+            return match min_precision {
+                Some(prec) => Self::new(Repr::zero(), Context::new(prec)),
+                None => Self::ZERO,
+            };
         }
 
         // The precision default is the significand's base-`B` digit count; the normalized `Repr`

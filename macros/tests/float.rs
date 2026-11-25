@@ -9,7 +9,7 @@ type FBig = dashu_float::FBig;
 fn test_fbig() {
     // binary digits
     assert_eq!(fbig!(0), FBig::ZERO);
-    assert_eq!(fbig!(0).precision(), 0);
+    assert_eq!(fbig!(0).precision(), 1); // one digit, as for `FBig::from_str("0")`
     assert_eq!(fbig!(00001), FBig::ONE);
     assert_eq!(fbig!(00001).precision(), 5);
     assert_eq!(fbig!(-1.), FBig::NEG_ONE);
@@ -66,7 +66,7 @@ fn test_static_fbig() {
 #[test]
 fn test_dbig() {
     assert_eq!(dbig!(0), DBig::ZERO);
-    assert_eq!(dbig!(0).precision(), 0);
+    assert_eq!(dbig!(0).precision(), 1); // one digit, as for `DBig::from_str("0")`
     assert_eq!(dbig!(00001), DBig::ONE);
     assert_eq!(dbig!(00001).precision(), 5);
     assert_eq!(dbig!(-1.), DBig::NEG_ONE);
@@ -145,6 +145,37 @@ fn test_negative_zero() {
     // nonzero literals are unaffected
     assert_eq!(dbig!(-1.0), DBig::from_str("-1.0").unwrap());
     assert_eq!(fbig!(-1.0), FBig::from_str("-1.0").unwrap());
+}
+
+#[test]
+#[rustfmt::skip::macros(fbig, dbig)]
+fn test_zero_literal_precision() {
+    // the precision of a zero literal is the number of its digits, as for a nonzero
+    // literal and as for `from_str`
+    assert_eq!(dbig!(0.000).precision(), 4);
+    assert_eq!(dbig!(0.000).precision(), DBig::from_str("0.000").unwrap().precision());
+    assert_eq!(dbig!(0.001).precision(), 4);
+    assert_eq!(dbig!(0).precision(), DBig::from_str("0").unwrap().precision());
+    assert_eq!(dbig!(000).precision(), 3);
+    assert_eq!(dbig!(0.0e5).precision(), DBig::from_str("0.0e5").unwrap().precision());
+    assert_eq!(dbig!(+0.00).precision(), 3);
+    assert_eq!(fbig!(0.00).precision(), 3);
+    assert_eq!(fbig!(0.00).precision(), FBig::from_str("0.00").unwrap().precision());
+    assert_eq!(fbig!(0).precision(), FBig::from_str("0").unwrap().precision());
+    assert_eq!(fbig!(0x00p3).precision(), FBig::from_str("0x00p3").unwrap().precision());
+    assert_eq!(fbig!(0x00p3).precision(), 8);
+
+    // the value is still zero, also in const position
+    const D: DBig = dbig!(0.000);
+    const F: FBig = fbig!(0.00);
+    assert!(D.repr().is_pos_zero() && D.precision() == 4);
+    assert!(F.repr().is_pos_zero() && F.precision() == 3);
+
+    // so that arithmetic agrees with the parsed value
+    let parsed = (DBig::from_str("0.000").unwrap() + dbig!(1)) / dbig!(3);
+    let literal = (dbig!(0.000) + dbig!(1)) / dbig!(3);
+    assert_eq!(literal, parsed);
+    assert_eq!(literal.to_string(), "0.3333");
 }
 
 #[test]

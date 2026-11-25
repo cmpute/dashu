@@ -377,6 +377,31 @@ fn test_from_parts() {
     );
 }
 
+// A zero significand has no digits to infer a precision from, but a requested minimum
+// precision still applies to it (it used to be dropped: the result was `ZERO`, of unlimited
+// precision, so that the zero literal `dbig!(0.000)` lost its 4 digits of precision).
+#[test]
+fn test_from_parts_const_zero_precision() {
+    const D: DBig = DBig::from_parts_const(Sign::Positive, 0, -3, Some(4));
+    const F: FBin = FBin::from_parts_const(Sign::Negative, 0, 7, Some(20));
+    assert!(D.repr().is_pos_zero() && F.repr().is_pos_zero());
+    assert_eq!(D.precision(), 4);
+    assert_eq!(F.precision(), 20);
+    for precision in [1usize, 20, 50, 100, 500] {
+        let zero = FBin::from_parts_const(Sign::Positive, 0, 0, Some(precision));
+        assert_eq!(zero, FBin::ZERO);
+        assert_eq!(zero.precision(), precision);
+        // the same as for a nonzero significand with fewer digits than requested
+        let one = FBin::from_parts_const(Sign::Positive, 1, 0, Some(precision));
+        assert_eq!(one.precision(), precision);
+    }
+
+    // without a requested precision the zero has unlimited precision, as before
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 0, 0, None).precision(), 0);
+    assert_eq!(FBin::from_parts_const(Sign::Negative, 0, 2, None).precision(), 0);
+    assert_eq!(DBig::from_parts_const(Sign::Positive, 0, 0, Some(0)).precision(), 0);
+}
+
 // The const constructors agree with their heap counterparts on the value, the inferred
 // precision (the digit count of the significand as given, trailing zeros included) and the
 // saturation of the exponent. The const digit count used to be taken after the trailing zeros
