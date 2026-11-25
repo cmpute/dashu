@@ -113,18 +113,19 @@ impl<R: Round> Context<R> {
             panic_root_zeroth()
         }
         debug_assert!(n < isize::MAX as usize);
+        if x.significand.is_zero() {
+            // The root of ±0 is ±0, exactly, for every `n` — the sign is preserved as it is by
+            // `sqrt` (which `nth_root(2, ·)` must agree with). `-0` is a zero, not a negative
+            // number, so it is resolved before the domain check below. (It also must not reach
+            // the integer root: UBig::ZERO.nth_root(n) erroneously returns ONE.)
+            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
+        }
         let sign = x.sign();
         if sign == Sign::Negative && n % 2 == 0 {
             return Err(FpError::OutOfDomain);
         }
         if n == 1 {
             return self.finish_rounded(self.repr_round_ref(x));
-        }
-        if x.significand.is_zero() {
-            // UBig::ZERO.nth_root(n) erroneously returns ONE, so short-circuit here.
-            // An even root of -0 already errored above, so reaching here the sign is
-            // preserved: odd root of ±0 is ±0.
-            return Ok(Approximation::Exact(FBig::new(x.clone(), *self)));
         }
         // (after the exact shortcuts: a precision-0 zero such as `FBig::try_from(0.0)` or
         // `DBig::ZERO` has an exact root, as it does for `sqrt`)

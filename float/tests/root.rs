@@ -944,3 +944,37 @@ fn test_nth_root_extreme_exponents() {
         }
     }
 }
+
+/// The root of a zero is that zero for every `n`: `-0` is a zero, not a negative number.
+/// Regression: an even root of `-0` was reported as out of domain (a panic through
+/// `FBig::nth_root`), while `sqrt(-0)` and the odd roots returned `-0`.
+#[test]
+fn test_nth_root_of_negative_zero() {
+    fn check<const B: Word>(p: usize) {
+        let ctx = Context::<mode::HalfEven>::new(p);
+        for n in 1..=6 {
+            let got = ctx.nth_root(n, &Repr::<B>::neg_zero()).unwrap();
+            assert!(matches!(&got, Exact(v) if v.repr().is_neg_zero()), "nth_root({n}, -0)");
+            let got = ctx.nth_root(n, &Repr::<B>::zero()).unwrap();
+            assert!(matches!(&got, Exact(v) if v.repr().is_pos_zero()), "nth_root({n}, +0)");
+        }
+        // the square root agrees
+        assert_eq!(ctx.nth_root(2, &Repr::<B>::neg_zero()), ctx.sqrt(&Repr::<B>::neg_zero()));
+    }
+    for p in [0, 20, 50, 100, 500] {
+        check::<2>(p);
+        check::<10>(p);
+    }
+
+    // the reported calls
+    let z: FBig = FBig::try_from(-0.0f64).unwrap();
+    assert!(z.repr().is_neg_zero());
+    assert!(z.sqrt().repr().is_neg_zero());
+    assert!(z.nth_root(2).repr().is_neg_zero());
+    assert!(z.nth_root(3).repr().is_neg_zero());
+    assert!((-DBig::ZERO).nth_root(4).repr().is_neg_zero());
+    assert!(DBig::ZERO.nth_root(4).repr().is_pos_zero());
+    // a negative number still has no even root
+    let got = Context::<mode::HalfEven>::new(5).nth_root(2, &Repr::<2>::new((-1).into(), -100));
+    assert_eq!(got, Err(dashu_float::FpError::OutOfDomain));
+}
