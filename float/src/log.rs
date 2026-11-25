@@ -30,6 +30,10 @@ fn const_extra_digits<const B: Word>(mag_bit_len: usize) -> usize {
 impl<const B: Word> EstimatedLog2 for Repr<B> {
     // currently a Word has at most 64 bits, so log2() < f32::MAX
     fn log2_bounds(&self) -> (f32, f32) {
+        // an infinity has a zero significand as well, but its magnitude is not zero
+        if self.is_infinite() {
+            return (f32::INFINITY, f32::INFINITY);
+        }
         if self.significand.is_zero() {
             return (f32::NEG_INFINITY, f32::NEG_INFINITY);
         }
@@ -65,6 +69,9 @@ impl<const B: Word> EstimatedLog2 for Repr<B> {
     }
 
     fn log2_est(&self) -> f32 {
+        if self.is_infinite() {
+            return f32::INFINITY;
+        }
         let logs = self.significand.log2_est();
         let logb = if B.is_power_of_two() {
             B.trailing_zeros() as f32
