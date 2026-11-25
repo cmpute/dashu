@@ -438,6 +438,35 @@ fn test_pow_unlimited_precision() {
         .powf(&dbig!(2.1).with_precision(0).unwrap());
 }
 
+/// The trivially exact powers need no precision: a zero or unit exponent, a zero or unit base.
+/// Regression: `powf` asserted a limited precision before its exact shortcuts, so
+/// `0^0` on the zeros made by `FBig::try_from(0.0)` (precision 0) panicked with "precision
+/// cannot be 0", while the same call on `FBig::from(0u8)` returned 1.
+#[test]
+fn test_powf_exact_shortcuts_unlimited_precision() {
+    type F = FBig<dashu_float::round::mode::HalfEven, 2>;
+    let one = F::from(1u8);
+    let p0 = F::try_from(0.0f64).unwrap();
+    let n0 = F::try_from(-0.0f64).unwrap();
+    let p0f = F::try_from(0.0f32).unwrap();
+    assert_eq!(p0.precision(), 0);
+    // the reported calls
+    assert_eq!(F::from(0u8).powf(&F::from(0u8)), one);
+    assert_eq!(F::from(5u8).powf(&p0), one);
+    assert_eq!(p0.powf(&p0), one);
+    assert_eq!(p0.powf(&n0), one);
+    assert_eq!(n0.powf(&p0), one);
+    assert_eq!(p0f.powf(&p0f), one);
+    assert_eq!(DBig::ZERO.powf(&DBig::ZERO), DBig::ONE);
+    // the other exact shortcuts: x^1, 0^y, 1^y
+    assert_eq!(F::ONE.powf(&F::ONE), one);
+    assert_eq!(F::NEG_ONE.powf(&F::ONE), F::NEG_ONE);
+    assert_eq!(p0.powf(&F::ONE), F::ZERO);
+    assert_eq!(p0.powf(&F::NEG_ONE), F::INFINITY);
+    assert_eq!(F::ONE.powf(&F::NEG_ONE), one);
+    assert_eq!(DBig::ONE.powf(&DBig::NEG_ONE), DBig::ONE);
+}
+
 #[test]
 #[should_panic]
 fn test_pow_inf() {

@@ -733,7 +733,8 @@ impl<R: ErrorBounds> Context<R> {
     ///
     /// # Panics
     ///
-    /// Panics if the precision is unlimited.
+    /// Panics if the precision is unlimited (unless the result is trivially exact: the exponent
+    /// is zero or one, or the base is zero or one).
     pub fn powf<const B: Word>(
         &self,
         base: &Repr<B>,
@@ -743,9 +744,9 @@ impl<R: ErrorBounds> Context<R> {
         if base.is_infinite() || exp.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        assert_limited_precision(self.precision);
-
-        // shortcuts
+        // Exact shortcuts first — they need no rounding, so they also cover unlimited precision
+        // (a zero made by `FBig::try_from(0.0)` carries precision 0), which everything below
+        // rejects.
         if exp.is_pos_zero() || exp.is_neg_zero() {
             // pow(x, ±0) = 1 for any base (IEEE 754 §9.2.1); `-0` is numerically zero, so it
             // must take the same shortcut as `+0` (otherwise a negative base falls through to
@@ -771,6 +772,7 @@ impl<R: ErrorBounds> Context<R> {
             // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
             return Ok(Exact(FBig::new(Repr::one(), *self)));
         }
+        assert_limited_precision(self.precision);
 
         // Integer-valued exponent: delegate to the integer-power kernel (binary exponentiation),
         // itself correctly rounded via its own Ziv loop. This sidesteps the `exp(y·ln x)`
