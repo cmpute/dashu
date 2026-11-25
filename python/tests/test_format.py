@@ -214,6 +214,39 @@ def test_explicit_fill_with_leading_zero_width():
     assert format(FBig(-1.5), "012a") == "-0x000003p-1"
 
 
+def test_complex_layout():
+    # the width, fill and alignment apply once to the whole `(re+imj)` text, and the ' ' sign
+    # option to the real part only, as for complex; they were applied to each part, which put
+    # padding inside the number ('(      3.00+     -4.00j)')
+    import pytest
+    parts = [(3.0, 4.0), (3.0, -4.0), (-3.0, 4.0), (-1234.75, -0.375), (0.0, 0.0)]
+    for re, im in parts:
+        z = CBig(re, im)
+        for sign in ("", "+", "-", " "):
+            for rest in (".2f", ".3e", ".1E", ",.1f", ".3g", ".1%"):
+                # each part is laid out like a float; the imaginary part always has a sign
+                body = "(" + format(re, sign + rest) + format(im, "+" + rest) + "j)"
+                if "%" not in rest:  # (complex has no '%' type)
+                    assert body == "(" + format(complex(re, im), sign + rest) + ")"
+                assert format(z, sign + rest) == body, (re, im, sign, rest)
+                for fill_align, width in (("", 26), (">", 26), ("<", 26), ("^", 27),
+                                          ("*>", 26), ("_^", 7), ("x<", "026")):
+                    got = format(z, f"{fill_align}{sign}{width}{rest}")
+                    # the whole text is padded like a string (right-aligned by default)
+                    want = format(body, f"{fill_align or '>'}{int(width)}")
+                    assert got == want, (re, im, fill_align, sign, width, rest)
+    assert format(CBig(3.0, 4.0), "10.2f") == "(3.00+4.00j)"
+    assert format(CBig(3.0, -4.0), "16.2f") == "    (3.00-4.00j)"
+    assert format(CBig(3.0, 4.0), " .2f") == "( 3.00+4.00j)"
+    assert format(CBig(3.0, -4.0), ">24.3e") == "  (3.000e+00-4.000e+00j)"
+    # zero-padding and '=' have no meaning for a complex number (as for complex)
+    for spec in ("010.2f", "=10.2f", "x=10.2f", "<010.2f"):
+        with pytest.raises(ValueError):
+            format(CBig(3.0, 4.0), spec)
+        with pytest.raises(ValueError):
+            format(complex(3.0, 4.0), spec)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

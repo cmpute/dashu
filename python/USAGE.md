@@ -155,6 +155,10 @@ format(CBig(3.0, 4.0), ".2f")                      # '(3.00+4.00j)'
 - **`RBig`** defaults to the exact fraction, e.g. `str(RBig(1) / 3) == '1/3'`; with a float
   presentation type the digits are those of the exact value, rounded once at the requested
   precision.
+- **`CBig`** prints as `(re+imj)`: the precision, type and grouping apply to each part, the
+  sign option to the real part, and the width, fill and alignment once to the whole text, as
+  for Python's `complex` (`format(CBig(3.0, -4.0), "*>16.2f") == '****(3.00-4.00j)'`).
+  Zero-padding and the `=` alignment are rejected, as `complex` does.
 
 ## Cross-type comparison
 

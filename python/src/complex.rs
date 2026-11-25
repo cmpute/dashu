@@ -250,12 +250,7 @@ impl CPy {
             return Ok(format!("{}", self.0));
         }
         let (re, im) = self.0.clone().into_parts();
-        let re_s = crate::format::format_fbig_decimal(&re, format_spec)?;
-        let mut im_s = crate::format::format_fbig_decimal(&im, format_spec)?;
-        if !(im_s.starts_with('-') || im_s.starts_with('+')) {
-            im_s = format!("+{im_s}");
-        }
-        Ok(format!("({re_s}{im_s}j)"))
+        crate::format::format_complex(&re, &im, format_spec)
     }
     fn __hash__(&self) -> isize {
         crate::hash::hash_complex(self.0.re(), self.0.im())

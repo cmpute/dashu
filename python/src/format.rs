@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 
 /// A parsed Python format spec: `[[fill]align][sign][#][0][width][grouping][.precision][type]`.
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct Spec {
     pub fill: char,
     pub align: Option<char>, // '<' '>' '=' '^'
@@ -140,7 +141,11 @@ impl Spec {
 
 /// Render a `DBig` (base-10 float) according to a parsed Python spec, including layout.
 pub fn format_dbig(d: &DBig, spec_str: &str) -> PyResult<String> {
-    let s = parse(spec_str)?;
+    format_dbig_with(d, &parse(spec_str)?)
+}
+
+/// Render a `DBig` according to an already parsed spec (see [`format_dbig`]).
+fn format_dbig_with(d: &DBig, s: &Spec) -> PyResult<String> {
     if !s.is_float_type() {
         let ty_str = if s.ty == '\0' {
             String::new()
@@ -159,12 +164,12 @@ pub fn format_dbig(d: &DBig, spec_str: &str) -> PyResult<String> {
         } else {
             "inf"
         };
-        return Ok(apply_layout(d.repr().sign() == Sign::Negative, "", body, false, &s));
+        return Ok(apply_layout(d.repr().sign() == Sign::Negative, "", body, false, s));
     }
 
     // Produce the unsigned (no sign policy) numeric body in decimal.
-    let (negative, body) = render_body(d, &s)?;
-    Ok(apply_layout(negative, "", &body, true, &s))
+    let (negative, body) = render_body(d, s)?;
+    Ok(apply_layout(negative, "", &body, true, s))
 }
 
 /// Render a base-2 `FBig` in one of the decimal presentation types.
@@ -179,14 +184,58 @@ pub fn format_dbig(d: &DBig, spec_str: &str) -> PyResult<String> {
 /// float is shown with the decimal digits that its binary precision is worth, as `to_decimal()`
 /// gives them.
 pub fn format_fbig_decimal(f: &FBig, spec_str: &str) -> PyResult<String> {
-    let s = parse(spec_str)?;
+    format_fbig_decimal_with(f, &parse(spec_str)?)
+}
+
+/// Render a base-2 `FBig` in decimal according to an already parsed spec (see
+/// [`format_fbig_decimal`]).
+fn format_fbig_decimal_with(f: &FBig, s: &Spec) -> PyResult<String> {
     let exact = s.prec.is_some() || matches!(s.ty, 'f' | 'F' | '%');
     let d = if exact || f.repr().is_infinite() || f.precision() == 0 {
         fbig_to_decimal_exact(f)
     } else {
         f.to_decimal().value()
     };
-    format_dbig(&d, spec_str)
+    format_dbig_with(&d, s)
+}
+
+/// Render a complex number with the real part `re` and the imaginary part `im` as
+/// `(re+imj)`, with both parts in one of the decimal presentation types.
+///
+/// As for Python's `complex`, the precision, the type and the grouping of the spec apply to
+/// each part, the sign option to the real part (the imaginary part always has its sign), and
+/// the width, fill and alignment once to the whole text. Zero-padding and the `=` alignment
+/// have no meaning for the two numbers of a complex and are rejected.
+pub fn format_complex(re: &FBig, im: &FBig, spec_str: &str) -> PyResult<String> {
+    let s = parse(spec_str)?;
+    if s.zero {
+        return Err(PyValueError::new_err(
+            "Zero padding is not allowed in complex format specifier",
+        ));
+    }
+    if s.align == Some('=') {
+        return Err(PyValueError::new_err(
+            "'=' alignment flag is not allowed in complex format specifier",
+        ));
+    }
+
+    let part = Spec {
+        fill: ' ',
+        align: None,
+        width: None,
+        ..s.clone()
+    };
+    let re = format_fbig_decimal_with(re, &part)?;
+    let im = format_fbig_decimal_with(im, &Spec { sign: '+', ..part })?;
+    let text = format!("({re}{im}j)");
+
+    let pad = s.width.unwrap_or(0).saturating_sub(text.chars().count());
+    let fill = |n: usize| std::iter::repeat_n(s.fill, n).collect::<String>();
+    Ok(match s.align.unwrap_or('>') {
+        '<' => format!("{text}{}", fill(pad)),
+        '^' => format!("{}{text}{}", fill(pad / 2), fill(pad - pad / 2)),
+        _ => format!("{}{text}", fill(pad)),
+    })
 }
 
 /// The exact decimal expansion of a base-2 float (see [`format_fbig_decimal`]).
