@@ -5,7 +5,7 @@
 ### Change
 - Use sign multiplication for the signed-zero square case and compare magnitudes without
   constructing redundant absolute-value temporaries in tests.
-- `Context::mul`, `sqr`, `fma`, `norm`, `div` and `inv` (and the `*`, `/` operators) are now correctly rounded per component: each part is the exact result rounded once. Division falls back to the previous near-correctly-rounded Smith's method only when the exponents of the operand parts are astronomically far apart or `|w|²` leaves the exponent range.
+- `Context::mul`, `sqr`, `fma`, `norm`, `div` and `inv` (and the `*`, `/` operators) are now correctly rounded per component: each part is the exact result rounded once.
 - A result part that leaves the exponent range now saturates on its own (signed infinity / signed zero) instead of discarding the other, representable part; the whole result still collapses to `∞ + 0i` / `0 + 0i` when both parts do.
 - `Display` in bases above 18 (where `i` is a digit) writes the imaginary term with an explicit `*i` suffix and an explicit coefficient (`2i*i`, `1*i`), and `FromStr` requires that suffix there.
 - `Display` with the `+` flag signs only the leading term (`+1+2i`), and width/fill apply to the real coefficient only.
@@ -14,7 +14,7 @@
 - `Context::neg`, `conj`, `proj` and `mul_i` round to the context precision (and report `Inexact`) when it is narrower than the operand's.
 - The saturated `tan` / `tanh` endpoint reports the `Rounding` adjustment relative to the
   truncated significand (inherited from dashu-float's `near_one_endpoint`).
-- Complex division (`/`, `Context::div`, `Context::inv`, `Inverse`) is correctly rounded per component for every finite operand: the fallback to Smith's method for operands whose parts are far apart (or whose squared modulus leaves the exponent range) is gone.
+- Complex division no longer uses Smith's method at all: `/`, `Context::div`, `Context::inv` and `Inverse` are correctly rounded per component for every finite operand, including operands whose parts are far apart or whose squared modulus leaves the exponent range.
 - `UniformCBig::new` accepts a box with a zero-width side (`low.re == high.re` or `low.im == high.im`): that part of every sample is the bound.
 - Human-readable serde writes the struct form for a value with an infinite part whenever the `a+bi` string would not read back as the same value at the same precision (bases above 23, or two infinite parts at a limited precision); a finite part next to an infinite one is now padded, so the precision round-trips.
 - `Context::add` / `Context::sub` (and the `+`/`-` operators) saturate a part that overflows on its own and keep the other part, like multiplication and division; `Err` is returned only when both parts overflow.

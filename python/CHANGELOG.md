@@ -8,7 +8,6 @@
 - `CBig` arithmetic and comparison accept `UBig` / `IBig`.
 
 ### Change
-- `UBig` has no `__isub__` any more: `n -= m` is `n = n - m`.
 - `pow(UBig, e, negative modulus)` returns an `IBig` when the result is negative instead of raising `ValueError`.
 - `CBig(1) == "1"` is `False` (strings are not parsed in comparisons).
 - `/` between integers (`UBig` / `IBig` / `int`) returns the exact quotient as an `RBig` instead of the quotient truncated toward zero (`UBig(7) / 2` was `3`).
