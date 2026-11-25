@@ -944,3 +944,104 @@ fn test_atan_of_huge_argument() {
         check::<Zero>(p);
     }
 }
+
+/// `sin`/`tan` of `2π·x/u` and `asin`/`atan` scaled by `u/(2π)` are a constant times `x` for a
+/// tiny `x`, so near the bottom of the exponent range the result is the same significand as
+/// for an ordinary tiny `x`, at the exponent of the argument — or an underflow *with the sign
+/// of the result* once that leaves the range. They used to form the product at the working
+/// precision: an `x` within that many places of the bottom reported an underflow for a
+/// representable result, and `sin_pi` / `tan_pi` computed on `|x|` reported it as positive
+/// for a negative `x` (`FBig<Up>::sin_pi` then returned a positive number).
+#[test]
+fn test_unit_functions_at_bottom_of_exponent_range() {
+    // the reported inputs: -2^(isize::MIN + k) at 10 bits; π·2^k = 201·2^(k − 6) there
+    let ctx = Context::<HalfEven>::new(10);
+    for off in [1isize, 2, 6, 7, 100, 1000] {
+        for sign in [1, -1] {
+            let x = Repr::<2>::new(IBig::from(sign), isize::MIN + off);
+            let want = if off <= 6 {
+                Err(FpError::Underflow(x.sign()))
+            } else {
+                let v = FBig::from_parts(IBig::from(201 * sign), isize::MIN + off - 6);
+                Ok(Inexact(v, NoOp))
+            };
+            assert_eq!(ctx.sin_pi(&x, None), want, "sin_pi, off = {off}, sign = {sign}");
+            assert_eq!(ctx.tan_pi(&x, None), want, "tan_pi, off = {off}, sign = {sign}");
+            assert_eq!(ctx.sin_cos_pi(&x, None).0, want, "sin_cos_pi, off = {off}");
+        }
+    }
+    // rounding a negative underflow up gives -0, never a positive number
+    for off in [1isize, 100] {
+        let x =
+            FBig::<Up>::from_repr(Repr::new(IBig::from(-1), isize::MIN + off), Context::new(10));
+        for v in [x.sin_pi(), x.tan_pi(), x.sin_unit(360), x.tan_unit(360)] {
+            assert!(v.sign() == Sign::Negative, "off = {off}: {v:?}");
+        }
+    }
+
+    // Against the same significand at an ordinary tiny exponent (where the function is the
+    // same multiple of its argument to 4000 bits), on both sides of the exponent where the
+    // direct scaling takes over.
+    fn check<R: round::ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        let moved = |r: dashu_float::FpResult<FBig<R, 2>>, by: isize| {
+            r.map(|a| {
+                a.map(|v| {
+                    let (sig, exp) = v.into_repr().into_parts();
+                    FBig::<R, 2>::from_parts(sig, exp + by)
+                })
+            })
+        };
+        for e in [
+            isize::MIN + 2 * p as isize + 100,
+            isize::MIN + 3000,
+            isize::MIN / 2,
+            isize::MIN / 4 - 10,
+            isize::MIN / 4 + 10,
+        ] {
+            for m in [1i32, -1, 12345, -7] {
+                let x = Repr::<2>::new(IBig::from(m), e);
+                let x0 = Repr::<2>::new(IBig::from(m), -2000);
+                let by = e + 2000;
+                for u in [2usize, 7, 360] {
+                    let tag = format!("p = {p}, {m}·2^{e}, u = {u}");
+                    assert_eq!(
+                        ctx.sin_unit(&x, u, None),
+                        moved(ctx.sin_unit(&x0, u, None), by),
+                        "sin_unit, {tag}"
+                    );
+                    assert_eq!(
+                        ctx.tan_unit(&x, u, None),
+                        moved(ctx.tan_unit(&x0, u, None), by),
+                        "tan_unit, {tag}"
+                    );
+                    assert_eq!(
+                        ctx.asin_unit(&x, u, None),
+                        moved(ctx.asin_unit(&x0, u, None), by),
+                        "asin_unit, {tag}"
+                    );
+                    assert_eq!(
+                        ctx.atan_unit(&x, u, None),
+                        moved(ctx.atan_unit(&x0, u, None), by),
+                        "atan_unit, {tag}"
+                    );
+                }
+            }
+        }
+        // out of range: the sign of the result
+        for m in [3i32, -3] {
+            let x = Repr::<2>::new(IBig::from(m), isize::MIN + 1);
+            let under = Err(FpError::Underflow(x.sign()));
+            assert_eq!(ctx.sin_unit(&x, 360, None), under, "p = {p}");
+            assert_eq!(ctx.tan_unit(&x, 360, None), under, "p = {p}");
+            assert_eq!(ctx.asin_unit(&x, 2, None), under, "p = {p}");
+            assert_eq!(ctx.atan_unit(&x, 2, None), under, "p = {p}");
+        }
+    }
+    for p in [20usize, 50, 100, 500] {
+        check::<HalfEven>(p);
+        check::<Up>(p);
+        check::<Down>(p);
+        check::<Zero>(p);
+    }
+}

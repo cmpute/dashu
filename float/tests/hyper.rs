@@ -554,3 +554,61 @@ fn test_acosh_out_of_domain_panics() {
 fn test_atanh_out_of_domain_panics() {
     let _ = DBig::from_str("2").unwrap().atanh();
 }
+
+/// `sinh(π·x)` is `π·x` for a tiny `x`: near the bottom of the exponent range it is the
+/// significand of π at the exponent of the argument, or an underflow once that leaves the
+/// range. `sinh_pi(2^(isize::MIN + 10))` at 53 bits used to be `Err(Overflow)` — `+inf`
+/// through `FBig::sinh_pi` — because the underflow of the product `π·x`, formed at the
+/// working precision, was reported as the overflow of the exponentials.
+#[test]
+fn test_sinh_pi_at_bottom_of_exponent_range() {
+    use dashu_base::Approximation::Inexact;
+    use dashu_float::round::Rounding::NoOp;
+    use dashu_float::FpError;
+    type F = FBig<mode::HalfEven, 2>;
+    let ctx = Context::<mode::HalfEven>::new(53);
+    for sign in [1, -1] {
+        let x = Repr::<2>::new(IBig::from(sign), isize::MIN + 10);
+        let under = Err(FpError::Underflow(x.sign()));
+        assert_eq!(ctx.sinh_pi(&x, None), under);
+        assert_eq!(ctx.sinh(&x, None), under);
+        let (s, c) = ctx.sinh_cosh_pi(&x, None);
+        assert_eq!(s, under);
+        assert_eq!(c, Ok(Inexact(F::ONE, NoOp)));
+        let f = F::from_repr(x, ctx);
+        assert!(!f.sinh_pi().repr().is_infinite());
+        assert!(f.sinh_pi().repr().significand().is_zero());
+        assert!(!f.sinh_cosh_pi().0.repr().is_infinite());
+    }
+
+    // representable results: the digits of ±π·m, at every precision and mode
+    fn check<R: dashu_float::round::ErrorBounds>(p: usize) {
+        let ctx = Context::<R>::new(p);
+        for e in [
+            isize::MIN + p as isize + 10,
+            isize::MIN + 3000,
+            isize::MIN / 2,
+            isize::MIN / 4 - 10,
+            isize::MIN / 4 + 10,
+        ] {
+            for m in [1i32, -1, 12345, -7] {
+                let x = Repr::<2>::new(IBig::from(m), e);
+                let x0 = Repr::<2>::new(IBig::from(m), -2000);
+                let want = ctx.sinh_pi(&x0, None).map(|a| {
+                    a.map(|v| {
+                        let (sig, exp) = v.into_repr().into_parts();
+                        FBig::<R, 2>::from_parts(sig, exp + (e + 2000))
+                    })
+                });
+                assert_eq!(ctx.sinh_pi(&x, None), want, "p = {p}, {m}·2^{e}");
+                assert_eq!(ctx.sinh_cosh_pi(&x, None).0, want, "p = {p}, {m}·2^{e}");
+            }
+        }
+    }
+    for p in [20usize, 50, 100, 500] {
+        check::<mode::HalfEven>(p);
+        check::<mode::Up>(p);
+        check::<mode::Down>(p);
+        check::<mode::Zero>(p);
+    }
+}

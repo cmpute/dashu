@@ -20,7 +20,9 @@ use crate::{
     fbig::FBig,
     math::{
         cache::{reborrow_cache, ConstCache},
-        trig::{bottom_exp, even_negligible, odd_negligible, square_negligible, top_exp},
+        trig::{
+            bottom_exp, even_negligible, odd_negligible, square_negligible, top_exp, TinyScale,
+        },
         FpResult,
     },
     repr::{Context, Repr, Word},
@@ -230,6 +232,11 @@ impl<R: ErrorBounds> Context<R> {
             // far past the exponent range: no need to reduce an astronomically large argument
             return Err(FpError::Overflow(x.sign()));
         }
+        // at the bottom of the exponent range: `π·x`, placed at the exponent of `x` (forming
+        // `π·x` at the working precision underflows there, for a result that may not)
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Pi, reborrow_cache(&mut cache)) {
+            return r;
+        }
 
         // For huge |x| the exp composition overflows inside the closure and propagates;
         // sinh(±π·huge) = ±∞, so the sign follows x.
@@ -254,7 +261,7 @@ impl<R: ErrorBounds> Context<R> {
             };
             Ok(val.to_value_radius::<R>(&Context::<R>::new(wp)))
         })
-        .map_err(|_| FpError::Overflow(x.sign()))
+        .map_err(|_| odd_range_error(x))
     }
 
     /// Hyperbolic cosine of `x·π`, i.e. `cosh(x·π)`.
@@ -378,7 +385,7 @@ impl<R: ErrorBounds> Context<R> {
             Ok((sh.to_value_radius::<R>(&ctx), ch.to_value_radius::<R>(&ctx)))
         });
         (
-            sinh_r.map_err(|_| FpError::Overflow(x.sign())),
+            sinh_r.map_err(|_| odd_range_error(x)),
             cosh_r.map_err(|_| FpError::Overflow(Sign::Positive)),
         )
     }
@@ -891,6 +898,18 @@ impl<R: ErrorBounds, const B: Word> FBig<R, B> {
 /// digits as the argument has integer digits.
 fn exp_certainly_overflows<const B: Word>(x: &Repr<B>) -> bool {
     x.log2_bounds().0 > (usize::BITS + 7) as f32
+}
+
+/// The range error of `sinh(π·x)` when its loop fails: an overflow with the sign of `x` for
+/// an `|x| ≥ 1` (whichever intermediate left the range — `e^(−|t|)` underflows on the way to
+/// an overflowing `e^|t|`), an underflow with that sign for a fraction (`π·x` itself is below
+/// the range). The intermediate's own error carries neither.
+fn odd_range_error<const B: Word>(x: &Repr<B>) -> FpError {
+    if top_exp(x) < 0 {
+        FpError::Underflow(x.sign())
+    } else {
+        FpError::Overflow(x.sign())
+    }
 }
 
 /// Extra guard digits for the ×π hyperbolics: the integer digits of the argument.

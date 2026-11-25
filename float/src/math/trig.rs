@@ -25,7 +25,9 @@ use crate::{
 };
 use core::convert::TryFrom;
 use dashu_base::{
-    Abs, AbsOrd, Approximation::Exact, DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
+    Abs, AbsOrd,
+    Approximation::{Exact, Inexact},
+    DivRem, EstimatedLog2, RemEuclid, Sign, UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, IBig, UBig};
 
@@ -342,6 +344,18 @@ fn cos_zero_mid<const B: Word>(x: &Ball<B>, wp: usize) -> Ball<B> {
     one
 }
 
+/// The constant `c` of an odd function that is `c·x·(1 + O(x²))` for a tiny `x` (see
+/// [`Context::tiny_scaled`]).
+#[derive(Clone, Copy)]
+pub(crate) enum TinyScale {
+    /// `π`: `sinh_pi`.
+    Pi,
+    /// `2π/u`: `sin_unit`, `tan_unit`.
+    TwoPiOver(usize),
+    /// `u/(2π)`: `asin_unit`, `atan_unit`.
+    Over2Pi(usize),
+}
+
 /// `|x| = 1/2`, decided exactly: `2|x| = 1`. (Never true in an odd base, where `1/2` is not
 /// representable; the doubling is on the significand, so no precision is involved.)
 fn is_abs_half<const B: Word>(x: &Repr<B>) -> bool {
@@ -480,6 +494,60 @@ impl<R: ErrorBounds> Context<R> {
             return None;
         }
         self.round_near(&Repr::one(), dir, top.saturating_mul(2).saturating_add(slack))
+    }
+
+    /// The correctly rounded value of an odd function that is a constant multiple of its
+    /// argument up to a relative `O(x²)` — `sin`/`tan` of `2π·x/u`, `sinh(π·x)`, and
+    /// `asin`/`atan` scaled by `u/(2π)` — for an `x` in the bottom quarter of the exponent
+    /// range. `None` for any other `x`.
+    ///
+    /// There the relative correction is below `B^(isize::MIN/2 + 8)`, less than a last place
+    /// of any working precision, so the result is `c·m` (`m` the significand of `x`) widened by
+    /// an ulp and moved to the exponent of `x` — which is where the range is checked. Forming
+    /// `c·x` itself at the working precision would put the product's last place below the
+    /// exponent range for an `x` that is within that many digits of it, and report a
+    /// representable result as out of range (and with the sign of `|x|`).
+    pub(crate) fn tiny_scaled<const B: Word>(
+        &self,
+        x: &Repr<B>,
+        scale: TinyScale,
+        mut cache: Option<&mut ConstCache>,
+    ) -> Option<FpResult<FBig<R, B>>> {
+        if top_exp(x) >= isize::MIN / 4 {
+            return None;
+        }
+        let negative = x.sign() == Sign::Negative;
+        let abs = Repr::<B>::new(x.significand.clone().abs(), 0);
+        let rounded = self.ziv(10, |guard| {
+            let work = Context::<mode::HalfEven>::new(self.precision + guard);
+            let wp = work.precision;
+            let mut v = match scale {
+                TinyScale::Pi => pi_scaled_ball(&work, &abs, reborrow_cache(&mut cache))?,
+                TinyScale::TwoPiOver(u) => {
+                    let small = UnitReduced::Small(abs.clone());
+                    unit_argument_ball(&work, &small, u, reborrow_cache(&mut cache))?.0
+                }
+                TinyScale::Over2Pi(u) => {
+                    let m = Ball::from_rounded(work.repr_round_ref(&abs), wp);
+                    scale_unit(&work, &m, u, reborrow_cache(&mut cache))?
+                }
+            };
+            v.add_error(ulp_mag::<B>(&v.mid, wp));
+            let v = if negative { -v } else { v };
+            Ok(v.to_value_radius::<R>(&Context::<R>::new(wp)))
+        });
+        // back at the exponent of `x`, with the range check on the rounded value
+        let place = |v: FBig<R, B>| -> Result<FBig<R, B>, FpError> {
+            let (significand, exponent) = v.into_repr().into_parts();
+            let repr = Repr::new_wide(significand, exponent as i128 + x.exponent as i128)?;
+            Ok(FBig::new(repr, *self))
+        };
+        Some(rounded.and_then(|r| {
+            Ok(match r {
+                Exact(v) => Exact(place(v)?),
+                Inexact(v, rounding) => Inexact(place(v)?, rounding),
+            })
+        }))
     }
 
     /// `cos_unit` for a reduced argument next to a multiple of `u`: `cos(2π·r/u) = 1 − δ` with
@@ -890,6 +958,10 @@ impl<R: ErrorBounds> Context<R> {
 
         // every exact row is behind us: the rest needs a precision to round to
         assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `(2π/u)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::TwoPiOver(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
         // sin is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
@@ -1149,6 +1221,10 @@ impl<R: ErrorBounds> Context<R> {
 
         // every exact row is behind us: the rest needs a precision to round to
         assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `(2π/u)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::TwoPiOver(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
         // tan is odd: reduce and evaluate on |x|, apply the sign at the end.
         let reduced = reduce_unit_argument(x, u);
         let negative = x.sign() == Sign::Negative;
@@ -1231,6 +1307,10 @@ impl<R: ErrorBounds> Context<R> {
         }
         // every exact row is behind us: the rest needs a precision to round to
         assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `u/(2π)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Over2Pi(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
 
         self.ziv(50, |guard| {
             let work = Context::<mode::HalfEven>::new(self.precision + guard);
@@ -1373,6 +1453,10 @@ impl<R: ErrorBounds> Context<R> {
 
         // every exact row is behind us: the rest needs a precision to round to
         assert_limited_precision(self.precision);
+        // at the bottom of the exponent range: `u/(2π)·x`, placed at the exponent of `x`
+        if let Some(r) = self.tiny_scaled(x, TinyScale::Over2Pi(u), reborrow_cache(&mut cache)) {
+            return r;
+        }
         // A huge argument: `atan_unit(x) = ±(u/4 − δ)` with `0 < δ = u·atan(1/|x|)/(2π) < u/|x|`.
         if bottom_exp(x) > 0 {
             let delta_exp =
