@@ -846,11 +846,17 @@ macro_rules! ubig_float_conversions {
 
             fn try_from(value: $t) -> Result<Self, Self::Error> {
                 let (man, exp) = value.decode().map_err(|_| ConversionError::OutOfBounds)?;
-                let mut result: UBig = man.try_into()?;
+                // The fractional part is truncated (rounding towards zero) before the
+                // range check, so that a negative value in (-1, 0) converts to zero,
+                // as it does for the primitive unsigned integers.
+                let mut result = UBig::from(man.unsigned_abs());
                 if exp >= 0 {
                     result <<= exp as usize;
                 } else {
                     result >>= (-exp) as usize;
+                }
+                if man < 0 && !result.is_zero() {
+                    return Err(ConversionError::OutOfBounds);
                 }
                 Ok(result)
             }
