@@ -186,5 +186,5 @@ a re-report of B1.
 Run and passing: workspace tests with all features (debug and release); `dashu-base`
 and `dashu-int` with `force_bits="32"`; `cargo fmt --check`; clippy with
 `-D warnings`; no_std checks; rustdoc with `-D warnings`; the Python bindings
-(140 tests). Not run: MSRV 1.68, the Dylint lints, `mdbook build`, tests needing a
+(140 tests); `fuzz/run.sh -c 512` (all 179 MPFR/MPC/GMP jobs). Not run: MSRV 1.68, the Dylint lints, `mdbook build`, tests needing a
 live PostgreSQL server.
