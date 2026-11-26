@@ -1,8 +1,10 @@
+use core::cmp::Ordering;
+
 use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
-use dashu_base::{Approximation, ConversionError, DivRem, Gcd};
+use dashu_base::{Approximation, BitTest, ConversionError, DivRem, Gcd};
 use dashu_float::{
     round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
@@ -131,32 +133,151 @@ impl Repr {
         }
 
         let base = UBig::from_word(B);
-        let num_digits = self.numerator.ilog(&base);
-        let den_digits = self.denominator.ilog(&base);
-
-        let shift;
-        let (q, r) = if num_digits >= precision + den_digits {
-            shift = 0;
-            (&self.numerator).div_rem(&self.denominator)
+        // (`ilog` is the truncated logarithm, i.e. the number of digits minus one)
+        let num_digits = self.numerator.ilog(&base) + 1;
+        let den_digits = self.denominator.ilog(&base) + 1;
+        let sign = self.numerator.sign();
+        // 0 unless B is a power of two
+        let bits_per_digit = if B.is_power_of_two() {
+            B.trailing_zeros() as usize
         } else {
-            shift = (precision + den_digits) - num_digits;
-            if B == 2 {
-                (&self.numerator << shift).div_rem(&self.denominator)
-            } else {
-                (&self.numerator * base.pow(shift)).div_rem(&self.denominator)
-            }
+            0
         };
-        let rounded = if r.is_zero() {
-            Approximation::Exact(q)
+
+        // Scale the value to (hi + lo / B^k) / denominator · B^exponent, where `hi` spans exactly
+        // `precision + den_digits` digits. The truncated quotient q = hi / denominator then has
+        // `precision` or `precision + 1` digits, so at most one digit is left to drop when
+        // rounding. A narrow numerator is padded with zero digits (then k = 0 and lo = 0); the
+        // excess low digits of a wide one are split off into `lo`, which is kept as sticky digits
+        // so that no information is rounded away before the final (single) rounding step.
+        let (hi, lo, k, mut exponent) = if num_digits > precision + den_digits {
+            let k = num_digits - precision - den_digits;
+            let (_, num_mag) = self.numerator.clone().into_parts();
+            let (hi, lo) = if bits_per_digit > 0 {
+                let (lo, hi) = num_mag.split_bits(k * bits_per_digit);
+                (hi, lo)
+            } else {
+                num_mag.div_rem(&base.pow(k))
+            };
+            (hi, lo, k, k as isize)
         } else {
-            let adjust = R::round_ratio(&q, r, self.denominator.as_ibig());
-            Approximation::Inexact(q + adjust, adjust)
+            let shift = precision + den_digits - num_digits;
+            let hi = if bits_per_digit > 0 {
+                &self.numerator << (shift * bits_per_digit)
+            } else {
+                &self.numerator * base.pow(shift)
+            };
+            (hi.into_parts().1, UBig::ZERO, 0, -(shift as isize))
+        };
+        let (q, rem) = hi.div_rem(&self.denominator);
+
+        // The value is (q + N / D) · B^exponent with N = rem·B^k + lo and D = denominator·B^k
+        // (0 <= N < D). If the quotient is one digit too wide, drop that digit together with the
+        // fraction in a single step: with q = truncated·B + digit,
+        //     q + N / D = truncated + (digit·D + N) / (B·D).
+        // (Rounding the digit on its own first would double-round the value.)
+        // (`ilog` also builds the power B^log, which a power-of-two base doesn't need to pay for:
+        // its digit count follows from the bit length)
+        let q_digits = if B.is_power_of_two() {
+            (q.bit_len() + bits_per_digit - 1) / bits_per_digit
+        } else {
+            q.ilog(&base) + 1
+        };
+        debug_assert!(q_digits == precision || q_digits == precision + 1);
+        let dropped = q_digits > precision;
+        let (truncated, digit): (UBig, Word) = if dropped {
+            let (truncated, digit) = if bits_per_digit > 0 {
+                // the digit is the low bits of the quotient: mask it off and shift it out in place
+                let mut truncated = q;
+                let digit =
+                    truncated.as_words()[0] & (Word::MAX >> (Word::BITS as usize - bits_per_digit));
+                truncated >>= bits_per_digit;
+                (truncated, UBig::from_word(digit))
+            } else {
+                q.div_rem(&base)
+            };
+            exponent += 1;
+            (truncated, digit.try_into().expect("digit is below the base"))
+        } else {
+            (q, 0)
+        };
+
+        // The part below the truncated significand is digit·D + N over unit·D, where `unit` is
+        // the weight of the last kept digit (B if a digit was dropped, 1 otherwise). Compared
+        // with half of that unit:
+        //     2·(digit·D + N)  vs  unit·D      <=>      2·N  vs  factor·D,   factor = unit − 2·digit
+        // so the outcome is the sign of 2·N − factor·D. With N = rem·B^k + lo and
+        // D = denominator·B^k:
+        //     2·N − factor·D = B^k·(2·rem − factor·denominator) + 2·lo
+        // Since rem < denominator, a positive even factor leaves a deficit of at least two units
+        // in the bracket, beyond the reach of 2·lo < 2·B^k: the value is below the half. (In an
+        // even base the factor is always even or zero.) Otherwise the bracket decides: exactly
+        // zero is a tie, which a nonzero `lo` tips upwards, and one unit short can still be made
+        // up by the doubled sticky digits.
+        // The comparison lives in the closure so that the directed modes, which never ask for it,
+        // don't pay for it.
+        let half_test = || {
+            if dropped {
+                if digit == 0 {
+                    // below one unit, hence below half of it
+                    return Ordering::Less;
+                }
+                if digit > B - digit {
+                    // past the half by itself, regardless of the remainder
+                    return Ordering::Greater;
+                }
+            }
+            let factor = if dropped { B - digit * 2 } else { 1 };
+            if factor == 0 {
+                // at the half: an exact tie unless a remainder or sticky digits are left
+                return if rem.is_zero() && lo.is_zero() {
+                    Ordering::Equal
+                } else {
+                    Ordering::Greater
+                };
+            }
+            if factor % 2 == 0 {
+                return Ordering::Less;
+            }
+            let scaled = if factor == 1 {
+                None
+            } else {
+                Some(factor * &self.denominator)
+            };
+            let scaled_den = scaled.as_ref().unwrap_or(&self.denominator);
+            let twice_rem = &rem << 1;
+            match twice_rem.cmp(scaled_den) {
+                Ordering::Greater => Ordering::Greater,
+                // an exact tie unless the sticky digits are nonzero
+                Ordering::Equal => {
+                    if lo.is_zero() {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Greater
+                    }
+                }
+                Ordering::Less => {
+                    if &twice_rem + UBig::ONE == *scaled_den {
+                        // one unit short: only the sticky digits can turn it over
+                        (&lo << 1).cmp(&base.pow(k))
+                    } else {
+                        Ordering::Less
+                    }
+                }
+            }
         };
 
         let context = Context::<R>::new(precision);
-        rounded
-            .and_then(|n| context.convert_int(n))
-            .map(|f| f >> (shift as isize))
+        if rem.is_zero() && lo.is_zero() && digit == 0 {
+            // nothing is left below the significand: the value is represented exactly
+            let repr = FBigRepr::new(IBig::from_parts(sign, truncated), exponent);
+            Approximation::Exact(FBig::from_repr(repr, context))
+        } else {
+            let integer = IBig::from_parts(sign, truncated);
+            let adjust = R::round_low_part(&integer, sign, half_test);
+            let repr = FBigRepr::new(integer + adjust, exponent);
+            Approximation::Inexact(FBig::from_repr(repr, context), adjust)
+        }
     }
 }
 
@@ -236,7 +357,15 @@ mod tests {
     use super::*;
     use crate::RBig;
     use core::str::FromStr;
-    use dashu_float::{DBig, FBig};
+    use dashu_base::Approximation::{Exact, Inexact};
+    use dashu_float::{
+        round::{
+            mode::{Away, Down, HalfAway, HalfEven, Up, Zero},
+            Rounding,
+            Rounding::{AddOne, NoOp, SubOne},
+        },
+        DBig, FBig,
+    };
 
     #[test]
     fn test_rational_to_float_exact() {
@@ -274,5 +403,152 @@ mod tests {
         let r = RBig::from_parts(1.into(), 10u8.into());
         let res: Result<FBig, _> = r.try_into();
         assert!(matches!(res, Err(ConversionError::LossOfPrecision)));
+    }
+
+    /// An unreduced rational, so that the digit counts the conversion sees are the given ones.
+    fn repr(numerator: i64, denominator: u64) -> Repr {
+        Repr {
+            numerator: IBig::from(numerator),
+            denominator: UBig::from(denominator),
+        }
+    }
+
+    /// A float with the given value, flagged exact (`None`) or inexact with the adjustment
+    /// that was applied to the truncated significand.
+    fn rounded<R: Round, const B: Word>(
+        value: i64,
+        adjust: Option<Rounding>,
+    ) -> Rounded<FBig<R, B>> {
+        match adjust {
+            None => Exact(FBig::from(value)),
+            Some(adjust) => Inexact(FBig::from(value), adjust),
+        }
+    }
+
+    #[test]
+    fn test_rational_to_float_rounds_once() {
+        // The last digit and the remainder must be rounded in a single step. 6/11 = 0.5454…:
+        // the 17-digit quotient ends in …45 with a remainder left, so the result has to round
+        // up. Rounding the remainder to the quotient first stops exactly on the tie …4|5,
+        // which then went to even.
+        let r = RBig::from_parts(6.into(), 11u8.into());
+        let expected = FBig::<HalfEven, 10>::from_str("0.5454545454545455").unwrap();
+        assert_eq!(r.to_float::<HalfEven, 10>(16), Inexact(expected.clone(), AddOne));
+        assert_eq!(
+            RBig::from_parts((-6).into(), 11u8.into()).to_float::<HalfEven, 10>(16),
+            Inexact(-expected, SubOne)
+        );
+
+        // 123450.25 at 4 digits: the integer quotient is the tie 1234|50 itself
+        let r = RBig::from_parts(493801.into(), 4u8.into());
+        assert_eq!(
+            r.to_float::<HalfEven, 10>(4),
+            Inexact(FBig::<HalfEven, 10>::from_str("1.235e5").unwrap(), AddOne)
+        );
+
+        // 1010.0101…b at 2 bits lies between 1000b and 1100b, just above their midpoint 1010b
+        assert_eq!(
+            RBig::from_parts(31.into(), 3u8.into()).to_float::<HalfEven, 2>(2),
+            Inexact(FBig::<HalfEven, 2>::from_str("0x1.8p3").unwrap(), AddOne)
+        );
+        // 1001.0101…b at 3 bits lies between 1000b and 1010b, just above their midpoint 1001b
+        assert_eq!(
+            RBig::from_parts(28.into(), 3u8.into()).to_float::<HalfEven, 2>(3),
+            Inexact(FBig::<HalfEven, 2>::from_str("0x1.4p3").unwrap(), AddOne)
+        );
+    }
+
+    #[test]
+    fn test_rational_to_float_rounding_decision() {
+        // One input per outcome of comparing the dropped part with half a unit of the last kept
+        // digit, all at precision 1 in base 10. The numerator's top `precision + denominator`
+        // digits are divided by the denominator; a digit is dropped from the quotient when it
+        // is 10 or more, and the digits below the divided part are the sticky digits.
+        // (input, value under HalfEven, value under HalfAway)
+        let cases = [
+            // padded numerator, the quotient fits the precision
+            ((12, 8), (2, Some(AddOne)), (2, Some(AddOne))), // 1.5: an exact tie, odd digit
+            ((20, 8), (2, Some(NoOp)), (3, Some(AddOne))),   // 2.5: an exact tie, even digit
+            ((11, 8), (1, Some(NoOp)), (1, Some(NoOp))),     // 1.375
+            ((13, 8), (2, Some(AddOne)), (2, Some(AddOne))), // 1.625
+            ((16, 8), (2, None), (2, None)),                 // 2: exact
+            ((12, 5), (2, Some(NoOp)), (2, Some(NoOp))),     // 2.4: a fifth below the tie
+            ((13, 5), (3, Some(AddOne)), (3, Some(AddOne))), // 2.6: a fifth above
+            ((10, 5), (2, None), (2, None)),                 // 2: exact
+            // padded numerator, one digit of the quotient is dropped
+            ((19, 1), (20, Some(AddOne)), (20, Some(AddOne))), // 19: digit 9 is past the half on its own
+            ((11, 1), (10, Some(NoOp)), (10, Some(NoOp))),     // 11: digit 1 is far below the half
+            ((15, 1), (20, Some(AddOne)), (20, Some(AddOne))), // 15: an exact tie, odd
+            ((25, 1), (20, Some(NoOp)), (30, Some(AddOne))),   // 25: an exact tie, even
+            ((29, 2), (10, Some(NoOp)), (10, Some(NoOp))),     // 14.5: digit 4, remainder one half
+            ((31, 2), (20, Some(AddOne)), (20, Some(AddOne))), // 15.5: digit 5, a remainder is left
+            ((251, 10), (30, Some(AddOne)), (30, Some(AddOne))), // 25.1: digit 5, a remainder is left
+            ((30, 2), (20, Some(AddOne)), (20, Some(AddOne))),   // 15: digit 5, an exact tie
+            ((303, 10), (30, Some(NoOp)), (30, Some(NoOp))),     // 30.3: the dropped digit is 0
+            ((20, 2), (10, None), (10, None)),                   // 10: exact
+            ((99, 1), (100, Some(AddOne)), (100, Some(AddOne))), // 99: rounding up carries a digit
+            // wide numerator: the digits cut off are the sticky part
+            ((130, 2), (60, Some(NoOp)), (70, Some(AddOne))), // 65: an exact tie, even
+            ((131, 2), (70, Some(AddOne)), (70, Some(AddOne))), // 65.5: sticky digits tip the tie
+            ((125, 2), (60, Some(NoOp)), (60, Some(NoOp))),   // 62.5: no remainder, two below
+            ((250, 1), (200, Some(NoOp)), (300, Some(AddOne))), // 250: digit 5, an exact tie
+            ((257, 1), (300, Some(AddOne)), (300, Some(AddOne))), // 257: digit 5, sticky digits
+            ((247, 1), (200, Some(NoOp)), (200, Some(NoOp))), // 247: digit 4, out of reach
+            ((275, 1), (300, Some(AddOne)), (300, Some(AddOne))), // 275: digit 7, past the half
+            ((225, 1), (200, Some(NoOp)), (200, Some(NoOp))), // 225: digit 2
+            ((125, 5), (20, Some(NoOp)), (30, Some(AddOne))), // 25: a fifth below the tie, closed by the sticky digits
+            ((124, 5), (20, Some(NoOp)), (20, Some(NoOp))), // 24.8: a fifth below, not quite closed
+            ((126, 5), (30, Some(AddOne)), (30, Some(AddOne))), // 25.2: a fifth below, crossed
+            ((119, 5), (20, Some(NoOp)), (20, Some(NoOp))), // 23.8: far below, large sticky digits
+            ((2503, 10), (300, Some(AddOne)), (300, Some(AddOne))), // 250.3: digit 5, sticky digits
+            ((3005, 10), (300, Some(NoOp)), (300, Some(NoOp))), // 300.5: the dropped digit is 0
+        ];
+        for ((num, den), even, away) in cases {
+            let r = repr(num, den);
+            assert_eq!(
+                r.to_float::<HalfEven, 10>(1),
+                rounded::<HalfEven, 10>(even.0, even.1),
+                "{num}/{den} under HalfEven"
+            );
+            assert_eq!(
+                r.to_float::<HalfAway, 10>(1),
+                rounded::<HalfAway, 10>(away.0, away.1),
+                "{num}/{den} under HalfAway"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rational_to_float_rounding_modes() {
+        // 65.5 at 1 digit: the sticky digit settles the tie, so the result rounds away from
+        // zero under every mode that looks at the size of the dropped part
+        let r = RBig::from_parts(131.into(), 2u8.into());
+        let n = RBig::from_parts((-131).into(), 2u8.into());
+        assert_eq!(r.to_float::<HalfEven, 10>(1), rounded::<HalfEven, 10>(70, Some(AddOne)));
+        assert_eq!(r.to_float::<HalfAway, 10>(1), rounded::<HalfAway, 10>(70, Some(AddOne)));
+        assert_eq!(r.to_float::<Zero, 10>(1), rounded::<Zero, 10>(60, Some(NoOp)));
+        assert_eq!(r.to_float::<Away, 10>(1), rounded::<Away, 10>(70, Some(AddOne)));
+        assert_eq!(r.to_float::<Up, 10>(1), rounded::<Up, 10>(70, Some(AddOne)));
+        assert_eq!(r.to_float::<Down, 10>(1), rounded::<Down, 10>(60, Some(NoOp)));
+
+        // the same value negated: the directed modes follow the sign
+        assert_eq!(n.to_float::<Zero, 10>(1), rounded::<Zero, 10>(-60, Some(NoOp)));
+        assert_eq!(n.to_float::<Away, 10>(1), rounded::<Away, 10>(-70, Some(SubOne)));
+        assert_eq!(n.to_float::<Up, 10>(1), rounded::<Up, 10>(-60, Some(NoOp)));
+        assert_eq!(n.to_float::<Down, 10>(1), rounded::<Down, 10>(-70, Some(SubOne)));
+    }
+
+    #[test]
+    fn test_rational_to_float_odd_base() {
+        // In base 3 at precision 1, the numerator 11k₃ is split into 11₃ = 4 and the sticky
+        // digit k. The quotient 4 drops the digit 1, which is one third below the half, and
+        // leaves no remainder: the sticky digit alone decides.
+        let nine = || FBig::<HalfEven, 3>::from(9u8);
+        assert_eq!(repr(12, 1).to_float::<HalfEven, 3>(1), Inexact(nine(), NoOp)); // 110₃
+        assert_eq!(repr(13, 1).to_float::<HalfEven, 3>(1), Inexact(nine(), NoOp)); // 111₃
+        assert_eq!(
+            repr(14, 1).to_float::<HalfEven, 3>(1), // 112₃
+            Inexact(FBig::<HalfEven, 3>::from(18u8), AddOne)
+        );
     }
 }
