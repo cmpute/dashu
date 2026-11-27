@@ -4,7 +4,7 @@ use crate::{
     rbig::{RBig, Relaxed},
     repr::Repr,
 };
-use dashu_base::{Approximation, BitTest, ConversionError, DivRem, Gcd};
+use dashu_base::{Approximation, BitTest, ConversionError, DivRem, Gcd, UnsignedAbs};
 use dashu_float::{
     round::{ErrorBounds, Round, Rounded},
     Context, FBig, Repr as FBigRepr,
@@ -152,7 +152,7 @@ impl Repr {
         // so that no information is rounded away before the final (single) rounding step.
         let (hi, lo, k, mut exponent) = if num_digits > precision + den_digits {
             let k = num_digits - precision - den_digits;
-            let (_, num_mag) = self.numerator.clone().into_parts();
+            let num_mag = (&self.numerator).unsigned_abs();
             let (hi, lo) = if bits_per_digit > 0 {
                 let (lo, hi) = num_mag.split_bits(k * bits_per_digit);
                 (hi, lo)
@@ -167,7 +167,7 @@ impl Repr {
             } else {
                 &self.numerator * base.pow(shift)
             };
-            (hi.into_parts().1, UBig::ZERO, 0, -(shift as isize))
+            (hi.unsigned_abs(), UBig::ZERO, 0, -(shift as isize))
         };
         let (q, rem) = hi.div_rem(&self.denominator);
 
@@ -185,37 +185,20 @@ impl Repr {
         };
         debug_assert!(q_digits == precision || q_digits == precision + 1);
         let dropped = q_digits > precision;
-        let (truncated, digit): (UBig, Word) = if dropped {
-            let (truncated, digit) = if bits_per_digit > 0 {
-                // the digit is the low bits of the quotient: mask it off and shift it out in place
-                let mut truncated = q;
-                let digit =
-                    truncated.as_words()[0] & (Word::MAX >> (Word::BITS as usize - bits_per_digit));
-                truncated >>= bits_per_digit;
-                (truncated, UBig::from_word(digit))
-            } else {
-                q.div_rem(&base)
-            };
+        let (truncated, digit) = if dropped {
             exponent += 1;
-            (truncated, digit.try_into().expect("digit is below the base"))
+            q.div_rem(B)
         } else {
             (q, 0)
         };
 
-        // The part below the truncated significand is digit·D + N over unit·D, where `unit` is
-        // the weight of the last kept digit (B if a digit was dropped, 1 otherwise). Compared
-        // with half of that unit:
-        //     2·(digit·D + N)  vs  unit·D      <=>      2·N  vs  factor·D,   factor = unit − 2·digit
-        // so the outcome is the sign of 2·N − factor·D. With N = rem·B^k + lo and
-        // D = denominator·B^k:
+        // The part below the last kept digit is (digit·D + N) / (unit·D), where D = denominator·B^k,
+        // N = rem·B^k + lo and `unit` is B if a digit was dropped, else 1. Against half a unit:
+        //     2·N  vs  factor·D,   factor = unit − 2·digit
         //     2·N − factor·D = B^k·(2·rem − factor·denominator) + 2·lo
-        // Since rem < denominator, a positive even factor leaves a deficit of at least two units
-        // in the bracket, beyond the reach of 2·lo < 2·B^k: the value is below the half. (In an
-        // even base the factor is always even or zero.) Otherwise the bracket decides: exactly
-        // zero is a tie, which a nonzero `lo` tips upwards, and one unit short can still be made
-        // up by the doubled sticky digits.
-        // The comparison lives in the closure so that the directed modes, which never ask for it,
-        // don't pay for it.
+        // factor = 0: a tie iff N = 0. Even factor: below the half (rem < denominator, 2·lo < 2·B^k).
+        // Odd factor: the bracket decides; 2·lo settles a deficit of one unit.
+        // Evaluated lazily: the directed modes never need it.
         let half_test = || {
             if dropped {
                 if digit == 0 {
