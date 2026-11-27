@@ -2,11 +2,22 @@
 
 ## Unreleased
 
+### Add
+- `Context::div_int(numerator, denominator)`: the correctly rounded quotient of an integer by a
+  positive integer, under the context's precision and rounding mode. It is the integer-ratio
+  counterpart of `Context::div`, without converting the operands to floats first.
+
 ### Fix
 - Fix `atan2_unit` on the lower diagonals: for `|y| == |x|` with `y < 0`, the exact
   shortcut returned the two results swapped (`(-a, a)` gave -3/8 of a turn and
   `(-a, -a)` gave -1/8). The upper diagonals, the axes and all other inputs were
   unaffected, as was the radian `atan2`.
+- Fix `Context::div` next to the limits of the exponent range. A quotient is representable when
+  the exponent of its normalized form lies inside the range, but the division judged that from
+  intermediate exponents: a quotient that fits was reported as an overflow or an underflow when
+  the operands' exponents differ by more than the range holds (for example a small value divided
+  by one at the very bottom), and an overflow whose dividend is wider than the precision was
+  reported as an *underflow* when the dividend's exponent was negative.
 - Keep Rust 1.85 CI compatible with the PostgreSQL integration dependencies by
   pinning `sha2` to 0.11.0; 0.11.1 requires Rust 1.88.
 - Fix the short-division fast path of `Context::div`/`Context::inv`: the kernel's ulp
@@ -41,6 +52,13 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- The exact path of `Context::div`/`Context::inv` — now shared with `Context::div_int` — bounds
+  the dividend *before* dividing it: the quotient of a single division has exactly the precision
+  or one digit more, and the digits cut off a wide dividend take part in the rounding as sticky
+  digits. The dividend is no longer divided whole and padded afterwards (a second division), and
+  the fraction below the quotient is no longer materialized for the final comparison. Small
+  divisions are about twice as fast in base 2, and divisions by a far narrower divisor up to 35
+  times faster; no measured case got slower.
 - Multiplying by a short power of ten (up to 10^38 on 64-bit targets) is a single small
   multiplication instead of a multiplication by 5^n and a bit shift, which speeds up every
   base-10 operation that shifts a significand by a few digits (alignment, rounding, and the

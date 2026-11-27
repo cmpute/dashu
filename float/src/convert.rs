@@ -740,12 +740,12 @@ impl<R: Round> Context<R> {
             } else {
                 let den: Repr<NewB> =
                     Repr::new(Repr::<B>::BASE.pow(-repr.exponent as usize).into(), 0);
-                // `repr_div_any_width` bounds an over-wide dividend itself (exactly — the
+                // The division kernel bounds an over-wide dividend itself (exactly — the
                 // dropped low digits are kept as rounding information), so no pre-shrinking
                 // here: rounding the dividend before the division would lie about exactness
                 // and could break tie decisions.
                 let num: Repr<NewB> = Repr::new(repr.significand, 0);
-                match self.repr_div_any_width(num, den) {
+                match self.repr_div(num, den) {
                     Ok(v) => v.map(|r: Repr<NewB>| Repr {
                         significand: r.significand,
                         exponent: r.exponent,
