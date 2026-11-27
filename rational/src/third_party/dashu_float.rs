@@ -425,38 +425,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_rational_to_float_rounds_once() {
-        // The last digit and the remainder must be rounded in a single step. 6/11 = 0.5454…:
-        // the 17-digit quotient ends in …45 with a remainder left, so the result has to round
-        // up. Rounding the remainder to the quotient first stops exactly on the tie …4|5,
-        // which then went to even.
-        let r = RBig::from_parts(6.into(), 11u8.into());
-        let expected = FBig::<HalfEven, 10>::from_str("0.5454545454545455").unwrap();
-        assert_eq!(r.to_float::<HalfEven, 10>(16), Inexact(expected.clone(), AddOne));
-        assert_eq!(
-            RBig::from_parts((-6).into(), 11u8.into()).to_float::<HalfEven, 10>(16),
-            Inexact(-expected, SubOne)
-        );
-
-        // 123450.25 at 4 digits: the integer quotient is the tie 1234|50 itself
-        let r = RBig::from_parts(493801.into(), 4u8.into());
-        assert_eq!(
-            r.to_float::<HalfEven, 10>(4),
-            Inexact(FBig::<HalfEven, 10>::from_str("1.235e5").unwrap(), AddOne)
-        );
-
-        // 1010.0101…b at 2 bits lies between 1000b and 1100b, just above their midpoint 1010b
-        assert_eq!(
-            RBig::from_parts(31.into(), 3u8.into()).to_float::<HalfEven, 2>(2),
-            Inexact(FBig::<HalfEven, 2>::from_str("0x1.8p3").unwrap(), AddOne)
-        );
-        // 1001.0101…b at 3 bits lies between 1000b and 1010b, just above their midpoint 1001b
-        assert_eq!(
-            RBig::from_parts(28.into(), 3u8.into()).to_float::<HalfEven, 2>(3),
-            Inexact(FBig::<HalfEven, 2>::from_str("0x1.4p3").unwrap(), AddOne)
-        );
-    }
+    // The reported regressions (6/11, 493801/4, 31/3, …) are public-API cases and live in
+    // `tests/dashu_float.rs`; the tests below cover what only this module can steer.
 
     #[test]
     fn test_rational_to_float_rounding_decision() {
