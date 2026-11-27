@@ -2627,6 +2627,25 @@ mod tests {
                     .value(),
                 DBig::from_str("135").unwrap()
             );
+            // the rest of the table: the negative axes and the non-diagonal infinity rows.
+            // Infinities have no string spelling, so `row` takes the reprs directly.
+            let (inf, neg_inf) = (Repr::<10>::infinity(), Repr::<10>::neg_infinity());
+            let row = |a: &Repr<10>, b: &Repr<10>| {
+                mode_ctx.atan2_unit::<10>(a, b, u, None).unwrap().value()
+            };
+            assert_eq!(quarter("-1", "0"), DBig::from_str("-90").unwrap());
+            assert_eq!(quarter("-0", "-1"), DBig::from_str("-180").unwrap());
+            assert_eq!(row(&neg_inf, &inf), DBig::from_str("-45").unwrap());
+            assert_eq!(row(&neg_inf, &neg_inf), DBig::from_str("-135").unwrap());
+            assert_eq!(row(&inf, x("1").repr()), DBig::from_str("90").unwrap());
+            assert_eq!(row(&neg_inf, x("1").repr()), DBig::from_str("-90").unwrap());
+            assert_eq!(row(x("1").repr(), &neg_inf), DBig::from_str("180").unwrap());
+            assert_eq!(row(x("-1").repr(), &neg_inf), DBig::from_str("-180").unwrap());
+            // the signed-zero rows carry the sign of y; `+0 == −0` compares equal, so they
+            // are asserted by sign
+            assert!(quarter("-0", "1").repr().is_neg_zero(), "atan2_unit(−0, +x) is −0");
+            assert!(row(x("1").repr(), &inf).repr().is_pos_zero(), "atan2_unit(+y, +inf) is +0");
+            assert!(row(x("-1").repr(), &inf).repr().is_neg_zero(), "atan2_unit(−y, +inf) is −0");
             assert!(matches!(
                 mode_ctx.atan2_unit::<10>(x("0").repr(), x("0").repr(), u, None),
                 Err(FpError::OutOfDomain)
