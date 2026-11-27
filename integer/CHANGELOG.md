@@ -23,6 +23,11 @@
   fails loudly in release builds too.
 
 ### Fix
+- Fix `num_integer::Integer::div_floor` for `IBig` when the operands have opposite signs
+  and the truncated quotient is zero: `-1 / 2` returned `0` instead of `-1`, because the
+  adjustment was decided from the quotient's sign, which is never negative for zero. The
+  operand signs now decide, as `mod_floor` already did. This also fixes `div_mod_floor`,
+  `div_ceil`, and the ordering and rounding of `num_rational::Ratio<IBig>` in `(-1, 0)` (#126).
 - Exclude NTT-only thresholds and scratch helpers on 16-bit word targets,
   and avoid an unused mutable binding so tests compile with `-D warnings`.
 - Apply the Toom-4x2 dispatch length gates to the division/GCD scratch
