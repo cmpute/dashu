@@ -75,7 +75,9 @@ impl num_integer::Integer for IBig {
     #[inline]
     fn div_floor(&self, other: &Self) -> Self {
         let (q, r) = DivRem::div_rem(self, other);
-        if !r.is_zero() && q.sign() == Sign::Negative {
+        // A zero quotient (e.g. -1 / 2) is never negative, so the operand signs
+        // decide whether the floor lies below the truncated quotient.
+        if !r.is_zero() && self.sign() * other.sign() == Sign::Negative {
             q - IBig::ONE
         } else {
             q
@@ -167,5 +169,26 @@ mod tests {
         assert_eq!(IBig::from(-5).mod_floor(&IBig::from(3)), IBig::from(1));
         assert_eq!(IBig::from(5).mod_floor(&IBig::from(-3)), IBig::from(-1));
         assert_eq!(IBig::from(-5).mod_floor(&IBig::from(-3)), IBig::from(-2));
+    }
+
+    #[test]
+    fn ibig_floor_division_zero_quotient() {
+        // A zero quotient is never negative, so only the operand signs tell
+        // whether the floor lies below the truncated quotient.
+        assert_eq!(IBig::from(-1).div_floor(&IBig::from(2)), IBig::from(-1));
+        assert_eq!(IBig::from(1).div_floor(&IBig::from(-2)), IBig::from(-1));
+        assert_eq!(IBig::from(1).div_floor(&IBig::from(2)), IBig::ZERO);
+        assert_eq!(IBig::from(-1).div_floor(&IBig::from(-2)), IBig::ZERO);
+
+        assert_eq!(IBig::from(-1).div_mod_floor(&IBig::from(2)), (IBig::from(-1), IBig::from(1)));
+        assert_eq!(IBig::from(1).div_mod_floor(&IBig::from(-2)), (IBig::from(-1), IBig::from(-1)));
+        assert_eq!(IBig::from(1).div_mod_floor(&IBig::from(2)), (IBig::ZERO, IBig::from(1)));
+        assert_eq!(IBig::from(-1).div_mod_floor(&IBig::from(-2)), (IBig::ZERO, IBig::from(-1)));
+
+        // The default implementation derives the ceiling from div_mod_floor.
+        assert_eq!(IBig::from(-1).div_ceil(&IBig::from(2)), IBig::ZERO);
+        assert_eq!(IBig::from(1).div_ceil(&IBig::from(-2)), IBig::ZERO);
+        assert_eq!(IBig::from(1).div_ceil(&IBig::from(2)), IBig::from(1));
+        assert_eq!(IBig::from(-1).div_ceil(&IBig::from(-2)), IBig::from(1));
     }
 }
