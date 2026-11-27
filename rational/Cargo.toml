@@ -86,6 +86,10 @@ name = "dashu_float"
 required-features = ["dashu-float"]
 
 [[test]]
+name = "dashu_float_prop"
+required-features = ["dashu-float"]
+
+[[test]]
 name = "cmp"
 required-features = ["dashu-float"]
 

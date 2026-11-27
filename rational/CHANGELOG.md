@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fix
+- `RBig::to_float` / `Relaxed::to_float` no longer round twice. The quotient used to be rounded to
+  an integer first and to the requested precision afterwards; whenever the first rounding landed
+  on, or crossed, a midpoint of the second, the two compounded into an error of one unit in the
+  last digit (and a wrong `Rounding` flag). For example
+  `RBig::from_parts(6.into(), 11u8.into()).to_float::<HalfEven, 10>(16)` returned
+  `0.5454545454545454` instead of the correctly rounded `0.5454545454545455`. Both `HalfEven`
+  (for values just above a midpoint) and `HalfAway` — the `DBig` mode (for values just below one)
+  were affected, in every base: in a sample of random rationals with six-digit operands at 16
+  digits, 2.6% came out wrong, and the result even depended on whether the value was stored
+  reduced. The digits dropped from the quotient and the remainder now take part in a single
+  rounding step, for numerators of any width. The directed modes (`Zero`, `Away`, `Up`, `Down`)
+  were not affected.
+- `to_float` is also much faster when the numerator has far more digits than the requested
+  precision (up to about 100 times in base 2 in measurements): only the digits that can be kept
+  are divided, instead of the whole quotient.
+
 ## 0.6.0
 
 ### Change
