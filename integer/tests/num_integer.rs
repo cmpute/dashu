@@ -33,24 +33,23 @@ fn divisibility_and_signed_parity() {
 }
 
 // When |n| < |d| the truncated quotient is zero and carries no sign, so the floor
-// is decided by the operand signs alone. Cover single-word, double-word and multi-word
-// divisors under every sign combination.
+// is decided by the operand signs alone. The divisors range from one word to
+// several words on every supported word size, under every sign combination.
 #[test]
 fn floored_division_with_zero_quotient() {
-    let (word, medium, large) = (IBig::ONE << 64, IBig::ONE << 100, (IBig::ONE << 200) + 1u8);
     for (n, d) in [
         (IBig::from(-7), IBig::from(9u8)),
         (IBig::from(7), IBig::from(-9i8)),
         (IBig::from(-7), IBig::from(-9i8)),
         (IBig::from(7), IBig::from(9u8)),
-        (-IBig::ONE, word.clone()),
-        (IBig::ONE, -word.clone()),
-        (-IBig::ONE, -word.clone()),
-        (IBig::ONE, word),
-        (-medium.clone(), large.clone()),
-        (medium.clone(), -large.clone()),
-        (-medium.clone(), -large.clone()),
-        (medium, large),
+        (-IBig::ONE, IBig::ONE << 64),
+        (IBig::ONE, -(IBig::ONE << 64)),
+        (-IBig::ONE, -(IBig::ONE << 64)),
+        (IBig::ONE, IBig::ONE << 64),
+        (-(IBig::ONE << 100), (IBig::ONE << 200) + 1u8),
+        (IBig::ONE << 100, -((IBig::ONE << 200) + 1u8)),
+        (-(IBig::ONE << 100), -((IBig::ONE << 200) + 1u8)),
+        (IBig::ONE << 100, (IBig::ONE << 200) + 1u8),
     ] {
         let expected = if n.sign() != d.sign() {
             (-IBig::ONE, &d + &n)
