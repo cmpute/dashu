@@ -58,6 +58,28 @@ pub fn digit_len<const B: Word>(value: &IBig) -> usize {
     }
 }
 
+/// The largest exponent `e` such that `10^e` fits in a [DoubleWord].
+const MAX_EXP10: usize = {
+    let mut exp = 0;
+    let mut pow: DoubleWord = 1;
+    while let Some(next) = pow.checked_mul(10) {
+        pow = next;
+        exp += 1;
+    }
+    exp
+};
+
+/// `10^exp` as a [DoubleWord] (for `exp <= MAX_EXP10`).
+const fn pow10_dword(exp: usize) -> DoubleWord {
+    let mut pow: DoubleWord = 1;
+    let mut i = 0;
+    while i < exp {
+        pow *= 10;
+        i += 1;
+    }
+    pow
+}
+
 /// "Left shifting" in given radix, i.e. multiply by a power of radix
 #[inline]
 pub fn shl_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
@@ -67,6 +89,9 @@ pub fn shl_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
 
     match B {
         2 => value << exp,
+        // for a short shift, a multiplication by the constant is several times cheaper; for a
+        // long one, multiplying by 5^exp and shifting beats the full power (5^exp is 30% smaller)
+        10 if exp <= MAX_EXP10 => value * IBig::from(UBig::from_dword(pow10_dword(exp))),
         10 => (value * IBig::from(5).pow(exp)) << exp,
         b if b.is_power_of_two() => value << (exp * b.trailing_zeros() as usize),
         _ => value * base_as_ibig::<B>().pow(exp),
@@ -78,6 +103,7 @@ pub fn shl_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     if exp != 0 {
         match B {
             2 => *value <<= exp,
+            10 if exp <= MAX_EXP10 => *value *= UBig::from_dword(pow10_dword(exp)),
             10 => {
                 *value *= IBig::from(5).pow(exp);
                 *value <<= exp;

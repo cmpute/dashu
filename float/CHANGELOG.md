@@ -41,6 +41,10 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- Multiplying by a short power of ten (up to 10^38 on 64-bit targets) is a single small
+  multiplication instead of a multiplication by 5^n and a bit shift, which speeds up every
+  base-10 operation that shifts a significand by a few digits (alignment, rounding, and the
+  padding in division).
 - Apply signs directly, avoid redundant absolute-value temporaries, and share quotient/remainder
   work during trigonometric argument reduction; preserve the existing rounding boundaries.
 - Organize short-product and short-quotient checks into fixed regressions in
