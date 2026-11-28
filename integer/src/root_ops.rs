@@ -110,11 +110,8 @@ impl CubicRoot for IBig {
     type Output = IBig;
     #[inline]
     fn cbrt(&self) -> IBig {
-        let (sign, mag) = self.as_sign_repr();
-        if sign == Sign::Negative {
-            panic_root_negative()
-        }
-        IBig(mag.nth_root(3).with_sign(sign))
+        // an odd root of a negative number is real
+        self.nth_root(3)
     }
 }
 
@@ -133,7 +130,7 @@ mod repr {
         },
         root, shift, shift_ops,
     };
-    use dashu_base::{SquareRoot, SquareRootRem};
+    use dashu_base::{BitTest, SquareRoot, SquareRootRem};
 
     impl<'a> TypedReprRef<'a> {
         #[inline]
@@ -286,26 +283,56 @@ mod repr {
         (repr, n)
     }
 
-    /// Newton's method for the integer nth root of a non-composite n.
+    /// The integer nth root (`n > 2`) of a positive number.
     fn newton_nth_root(num: TypedReprRef<'_>, n: usize) -> Repr {
         debug_assert!(n > 2);
-        let nm1 = n - 1;
-        let mut guess = UBig::ONE << (num.bit_len() / n); // underestimate
-        let next = |x: &UBig| {
-            let y = UBig(num / x.pow(nm1).into_repr());
-            (y + x * nm1) / n
-        };
+        nth_root_ubig(&UBig(Repr::from_ref(num)), n).0
+    }
 
-        let mut fixpoint = next(&guess);
-        // first go up then go down, to ensure an underestimate
-        while fixpoint > guess {
-            guess = fixpoint;
-            fixpoint = next(&guess);
+    /// The integer nth root (`n > 2`) of a positive number, by Newton's method with
+    /// precision doubling.
+    ///
+    /// The root of the leading part of the number (dropping a multiple of `n` low bits)
+    /// is computed recursively and, scaled back, gives a starting point just above the root.
+    /// From an overestimate the Newton iteration decreases monotonically until it reaches
+    /// the floor of the root, and it converges quadratically once the relative error of the
+    /// estimate is below about `1/n`. The recursion therefore always keeps more than
+    /// `log2(n)` bits of the root, and a root this short is found bit by bit instead (a far
+    /// estimate would only improve by a factor `1 - 1/n` per iteration).
+    fn nth_root_ubig(num: &UBig, n: usize) -> UBig {
+        let bits = num.bit_len();
+        debug_assert!(n > 2 && bits > 0);
+        if bits <= n {
+            return UBig::ONE;
         }
-        while fixpoint < guess {
-            guess = fixpoint;
-            fixpoint = next(&guess);
+
+        // 2^(root_bits - 1) <= root < 2^root_bits
+        let root_bits = (bits - 1) / n + 1;
+        // an estimate with this many correct bits has a relative error of at most 1 / (2n)
+        let min_bits = (usize::BITS - n.leading_zeros()) as usize + 2;
+
+        if root_bits <= min_bits {
+            let mut root = UBig::ONE << (root_bits - 1);
+            for bit in (0..root_bits - 1).rev() {
+                let mut candidate = root.clone();
+                candidate.set_bit(bit);
+                if candidate.pow(n) <= *num {
+                    root = candidate;
+                }
+            }
+            return root;
         }
-        guess.0
+
+        // floor(root / 2^low_bits) is the root of floor(num / 2^(low_bits * n))
+        let low_bits = root_bits - min_bits.max(root_bits - root_bits / 2);
+        let high = nth_root_ubig(&(num >> (low_bits * n)), n);
+        let mut guess = (high + UBig::ONE) << low_bits; // strictly above the root
+        loop {
+            let next = (num / guess.pow(n - 1) + &guess * (n - 1)) / n;
+            if next >= guess {
+                return guess;
+            }
+            guess = next;
+        }
     }
 }

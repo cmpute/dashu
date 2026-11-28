@@ -553,3 +553,33 @@ fn test_bit_ops_ibig_primitive() {
     x ^= &0xff;
     assert_eq!(x, ibig!(0xff0));
 }
+
+#[test]
+fn test_trailing_ones_large() {
+    // more than two words
+    let one = UBig::ONE;
+    assert_eq!((&one << 128).trailing_ones(), Some(0));
+    assert_eq!(((&one << 128) + &one).trailing_ones(), Some(1));
+    assert_eq!(((&one << 128) + u64::MAX).trailing_ones(), Some(64));
+    assert_eq!(((&one << 200) + 7u8).trailing_ones(), Some(3));
+    assert_eq!(((&one << 192) - 2u8).trailing_ones(), Some(0));
+    assert_eq!(IBig::from(&one << 128).trailing_ones(), Some(0));
+    assert_eq!(IBig::from((&one << 200) + 7u8).trailing_ones(), Some(3));
+
+    // all words are filled with ones
+    for n in [128, 129, 191, 192, 193, 256, 1000, 1024] {
+        assert_eq!(UBig::ones(n).trailing_ones(), Some(n));
+        assert_eq!(IBig::from(UBig::ones(n)).trailing_ones(), Some(n));
+        assert_eq!((UBig::ones(n) + (&one << (n + 70))).trailing_ones(), Some(n));
+    }
+
+    for x in [
+        &one << 128,
+        (&one << 200) + 7u8,
+        UBig::ones(192),
+        UBig::ones(256),
+        UBig::ones(300) - (&one << 150),
+    ] {
+        assert_eq!(x.trailing_ones(), (&x + &one).trailing_zeros());
+    }
+}

@@ -1,5 +1,6 @@
 //! High-part squaring kernel.
 
+use super::mul::MIN_THRESHOLD_SIMPLE;
 #[cfg(test)]
 use crate::primitive::WORD_BITS_USIZE;
 use crate::{
@@ -25,20 +26,21 @@ use static_assertions::const_assert;
 /// Tuned together with the multiplication kernel's threshold: the recursion
 /// only pays off once its exact high block reaches the Karatsuba band.
 const THRESHOLD_SIMPLE_DEFAULT: usize = 96;
-const_assert!(THRESHOLD_SIMPLE_DEFAULT >= 8);
+const_assert!(THRESHOLD_SIMPLE_DEFAULT >= MIN_THRESHOLD_SIMPLE);
 
 /// Environment-variable override for the base-case threshold.
 ///
 /// When the `tuning` feature is active the user may set
 /// `DASHU_THRESHOLD_SQRHIGH_SIMPLE` to override the compile-time default.
+/// Values below [`MIN_THRESHOLD_SIMPLE`] are clamped to that constant.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_SQRHIGH_SIMPLE") {
-                if let Ok(v) = s.parse() {
-                    return v;
+                if let Ok(v) = s.parse::<usize>() {
+                    return v.max(super::MIN_THRESHOLD_SIMPLE);
                 }
             }
         }

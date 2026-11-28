@@ -254,9 +254,21 @@ impl RBig {
     /// For base-10 literals specifically, see the [`RBig::from_str_decimal`] alias. For
     /// `numerator/denominator` notation use [`RBig::from_str`] / [`RBig::from_str_radix`].
     ///
+    /// # Exponent size
+    ///
+    /// The result is an exact rational, so a nonzero literal with the exponent `±N` has a
+    /// numerator or a denominator of about `N` digits: the time and the memory needed are
+    /// proportional to the exponent, not to the length of the literal (`1e1000000000` is a
+    /// 400 MB integer). An exponent too large for the available memory fails like any other
+    /// huge integer computation, such as [`UBig::pow`](dashu_int::UBig::pow) (see Panics).
+    /// Bound the exponent before parsing a literal from an untrusted source.
+    ///
     /// # Panics
     ///
     /// Panics if `radix` is not in `2..=36`.
+    ///
+    /// Panics if the value has an exponent so large that its numerator or denominator
+    /// cannot be allocated (`1e999999999999`). A zero value is zero whatever its exponent is.
     ///
     /// # Errors
     ///

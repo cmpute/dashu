@@ -212,3 +212,106 @@ fn test_sqr() {
         assert_eq!(&(-a).sqr(), b);
     }
 }
+
+/// Operand word counts whose products go through the transform-based multiplication, including
+/// sizes where the transform coefficients straddle word boundaries (with 32-bit and 64-bit words).
+const LARGE_MUL_WORDS: [usize; 7] = [4000, 4001, 4050, 4096, 4097, 5000, 65537];
+
+#[test]
+fn test_sqr_two_pow_minus_d_large() {
+    use dashu_int::{UBig, Word};
+
+    // (2^n - d)^2 = 2^(2n) - d * 2^(n+1) + d^2
+    let ds = [
+        ubig!(1),
+        ubig!(2),
+        (ubig!(1) << 64) - ubig!(2),
+        ubig!(1) << 64,
+    ];
+    for words in LARGE_MUL_WORDS {
+        let n = words * Word::BITS as usize;
+        for d in &ds {
+            let a = (UBig::ONE << n) - d;
+            let expected = (UBig::ONE << (2 * n)) - (d << (n + 1)) + d * d;
+            assert!(a.sqr() == expected, "sqr, words = {words}, d = {d}");
+            assert!(&a * &a == expected, "mul, words = {words}, d = {d}");
+        }
+    }
+}
+
+#[test]
+fn test_mul_all_ones_large() {
+    use dashu_int::{UBig, Word};
+
+    // Pseudo-random words that are each all ones, zero or one (long carry chains).
+    fn words(len: usize) -> Vec<Word> {
+        let mut s: u64 = 1;
+        (0..len)
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                if s % 2 == 0 {
+                    Word::MAX
+                } else {
+                    (s as Word) & 1
+                }
+            })
+            .collect()
+    }
+
+    // a = 2^n - 1, so a * y = (y << n) - y
+    let check = |a_words: usize, y: &UBig| {
+        let n = a_words * Word::BITS as usize;
+        let a = (UBig::ONE << n) - UBig::ONE;
+        let expected = (y << n) - y;
+        assert!(&a * y == expected, "a_words = {a_words}, y = {y:?}");
+        assert!(y * &a == expected, "a_words = {a_words}, y = {y:?}");
+    };
+    for len in LARGE_MUL_WORDS {
+        let x = UBig::from_words(&words(len));
+        check(len, &x);
+        check(len, &(&x - UBig::ONE));
+        check(len, &((UBig::ONE << (len * Word::BITS as usize)) - ubig!(2)));
+    }
+    // unbalanced operands (the transform of the short operand is reused across chunks of the
+    // long one)
+    check(2500, &UBig::from_words(&words(15000)));
+    check(4000, &UBig::from_words(&words(13000)));
+}
+
+/// Operands beyond the largest transform of the word size: with 32-bit words a single
+/// convolution takes operands of at most 2^26 + 1 words in total, so two operands of
+/// 2^25 + 1 words each (1 Gibit) have to be multiplied piecewise.
+///
+/// The splitting itself is covered by a unit test with short pieces; this runs the real
+/// sizes. It needs about 4 GiB of memory on a 64-bit host and a minute in a release build:
+///
+/// ```text
+/// RUSTFLAGS='--cfg force_bits="32"' cargo test --release -p dashu-int --test mul -- --ignored
+/// ```
+#[test]
+#[ignore = "takes several GiB of memory; run in release with 32-bit words on a 64-bit host"]
+fn test_mul_beyond_largest_transform() {
+    use dashu_int::{UBig, Word};
+
+    if Word::BITS != 32 || usize::BITS != 64 {
+        return;
+    }
+    let bits = 32usize << 25;
+
+    // the smallest operands that do not fit: sparse ...
+    let x = UBig::ONE << bits;
+    assert!(x.sqr() == UBig::ONE << (2 * bits));
+    let y = (UBig::ONE << bits) + UBig::ONE;
+    assert!(&x * &y == (UBig::ONE << (2 * bits)) + (UBig::ONE << bits));
+
+    // ... and dense: (2^p - 1)^2 = 2^(2p) - 2^(p+1) + 1
+    let p = bits + 37;
+    let x = (UBig::ONE << p) - UBig::ONE;
+    assert!(x.sqr() == (UBig::ONE << (2 * p)) - (UBig::ONE << (p + 1)) + UBig::ONE);
+    // (2^p - 1)(2^q - 3) = 2^(p+q) - 3*2^p - 2^q + 3
+    let q = bits + 32 * 1000 + 5;
+    let y = (UBig::ONE << q) - ubig!(3);
+    assert!(&x * &y == (UBig::ONE << (p + q)) - (ubig!(3) << p) - (UBig::ONE << q) + ubig!(3));
+}

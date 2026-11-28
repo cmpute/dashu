@@ -58,7 +58,7 @@ pub(crate) struct MontgomeryLargeRepr {
     pub(crate) modulus: Box<[Word]>,
     /// `-m^{-1} mod 2^(2*WORD_BITS)`, the double-word Montgomery constant. The single-word
     /// constant is just its low word (see [`MontgomeryLargeRepr::n0_word`]); REDC clears two
-    /// words per iteration via the addmul_2 kernel.
+    /// words per iteration via the fused multiply-subtract kernel.
     pub(crate) n0_dword: DoubleWord,
     /// `R^2 mod m` (where `R = 2^(WORD_BITS * s)`) — used to convert plain values into
     /// Montgomery form. The Montgomery form of 1 (`R mod m`) is derived from this on demand.

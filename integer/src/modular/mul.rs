@@ -78,13 +78,21 @@ impl<'a> Reduced<'a> {
     }
 }
 
+/// Temporary scratch space required for a multiplication (or a squaring, which
+/// [`mul_in_place`] switches to for equal operands) in a large ring.
 pub(crate) fn mul_memory_requirement(ring: &ConstLargeDivisor) -> Layout {
     let n = ring.normalized_divisor.len();
     memory::add_layout(
         memory::array_layout::<Word>(2 * n),
         memory::max_layout(
-            mul::memory_requirement_exact(2 * n, n),
-            div::memory_requirement_exact(2 * n, n),
+            // The leading zero words of the operands are trimmed before multiplying, so the
+            // product can have any shape with operands of at most n words — and the budget
+            // of a shorter, unbalanced product can exceed that of the full n by n one.
+            mul::memory_requirement_up_to_operand_len(n),
+            memory::max_layout(
+                sqr::memory_requirement_exact(n),
+                div::memory_requirement_exact(2 * n, n),
+            ),
         ),
     )
 }

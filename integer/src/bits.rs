@@ -600,8 +600,8 @@ mod repr {
     #[inline]
     const fn trailing_ones_large(words: &[Word]) -> usize {
         // Const equivalent to:
-        // let one_words = words.iter().position(|&word| word != Word::MAX).unwrap();
-        let mut one_words = 1;
+        // let one_words = words.iter().position(|&word| word != Word::MAX).unwrap_or(words.len());
+        let mut one_words = 0;
         while one_words < words.len() {
             if words[one_words] != Word::MAX {
                 break;
@@ -609,6 +609,10 @@ mod repr {
             one_words += 1;
         }
 
+        if one_words == words.len() {
+            // all the words are filled with ones
+            return one_words * WORD_BITS_USIZE;
+        }
         let one_bits = words[one_words].trailing_ones() as usize;
         one_words * WORD_BITS_USIZE + one_bits
     }

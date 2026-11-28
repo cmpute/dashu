@@ -157,3 +157,66 @@ fn mixed_rings_panic() {
 fn even_modulus_panics() {
     let _ = MontgomeryRepr::new(UBig::from(100u8));
 }
+
+/// Odd moduli with enough words for the sub-quadratic multiplication kernels.
+fn large_moduli() -> Vec<UBig> {
+    let ones = |words: usize| (UBig::ONE << (64 * words)) - UBig::ONE;
+    vec![
+        ones(145), // R mod m = 1: Montgomery forms keep their length
+        ones(146),
+        ones(172) - UBig::from(2u8),
+        (UBig::ONE << 3904) + UBig::ONE, // 62 words
+        (UBig::ONE << 4096) - UBig::from(159u8),
+        UBig::from(3u8).pow(10000), // 248 words
+        // a dense 145-word modulus
+        (UBig::from(0x9E3779B97F4A7C15u64).pow(145) >> 7)
+            | UBig::ONE
+            | (UBig::ONE << (64 * 145 - 1)),
+    ]
+}
+
+#[test]
+fn large_ring_operands_shorter_than_modulus() {
+    // The operands of a multiplication in a large ring can be much shorter than the
+    // modulus, and a shorter (unbalanced) product can need more scratch memory than the
+    // full-length one.
+    for m in large_moduli() {
+        let monty = MontgomeryRepr::new(m.clone());
+        let barrett = ConstDivisor::new(m.clone());
+        let m_words = (dashu_base::BitTest::bit_len(&m) + 63) / 64;
+        let y = &m - UBig::from(2u8);
+        let (my, by) = (monty.reduce(y.clone()), barrett.reduce(y.clone()));
+
+        let lens = (1..m_words).step_by(7).chain(90..=115).chain([m_words - 1]);
+        for words in lens.filter(|&w| w < m_words) {
+            let x = (UBig::ONE << (64 * words)) - UBig::from(3u8);
+            let (mx, bx) = (monty.reduce(x.clone()), barrett.reduce(x.clone()));
+            assert_eq!(mx.residue(), x, "monty reduce, {words} words");
+            assert_eq!(bx.residue(), x, "barrett reduce, {words} words");
+
+            let xy = (&x * &y) % &m;
+            assert_eq!((&mx * &my).residue(), xy, "monty mul, {words} words");
+            assert_eq!((&bx * &by).residue(), xy, "barrett mul, {words} words");
+            let mut acc = my.clone();
+            acc *= &mx;
+            assert_eq!(acc.residue(), xy, "monty mul_assign, {words} words");
+            let mut acc = by.clone();
+            acc *= &bx;
+            assert_eq!(acc.residue(), xy, "barrett mul_assign, {words} words");
+
+            let xx = (&x * &x) % &m;
+            assert_eq!(mx.sqr().residue(), xx, "monty sqr, {words} words");
+            assert_eq!(bx.sqr().residue(), xx, "barrett sqr, {words} words");
+            // multiplying a value by itself takes the squaring path
+            assert_eq!((&mx * &mx).residue(), xx, "monty self-mul, {words} words");
+            assert_eq!((&bx * &bx).residue(), xx, "barrett self-mul, {words} words");
+
+            if words % 16 == 0 {
+                let cube = (&xx * &x) % &m;
+                let three = UBig::from(3u8);
+                assert_eq!(mx.pow(&three).residue(), cube, "monty pow, {words} words");
+                assert_eq!(bx.pow(&three).residue(), cube, "barrett pow, {words} words");
+            }
+        }
+    }
+}

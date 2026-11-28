@@ -4,6 +4,7 @@ use core::mem;
 use dashu_base::{ExtendedGcd, Gcd};
 
 use crate::{
+    add,
     arch::word::{DoubleWord, SignedDoubleWord, SignedWord, Word},
     cmp::cmp_in_place,
     div,
@@ -340,6 +341,28 @@ fn lehmer_ext_step(
     (x_carry, y_carry)
 }
 
+/// Finish an in-place update `t += v` of a coefficient, where `v` has just been added into
+/// `t[..sum_len]` with a carry out of `carry`, and `t` had `old_len` significant words before
+/// the update (the words above them being zero). Returns the new number of significant words.
+///
+/// The previous value can be longer than the addend (e.g. when a quotient of 1 is applied to
+/// a shorter coefficient), in which case the carry continues into its upper words.
+fn settle_coeff_carry(t: &mut [Word], sum_len: usize, old_len: usize, carry: Word) -> usize {
+    if old_len > sum_len {
+        if add::add_word_in_place(&mut t[sum_len..old_len], carry) {
+            t[old_len] = 1;
+            old_len + 1
+        } else {
+            old_len
+        }
+    } else if carry > 0 {
+        t[sum_len] = carry;
+        sum_len + 1
+    } else {
+        locate_top_word_plus_one(&t[..sum_len])
+    }
+}
+
 /// Temporary memory required for extended gcd.
 pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
     // Required memory:
@@ -355,7 +378,9 @@ pub fn memory_requirement_ext_up_to(lhs_len: usize, rhs_len: usize) -> Layout {
             // single sampled split) is required because the Toom-4x2 band
             // makes the budget non-monotone in the split.
             mul::memory_chain_budget_envelope(rhs_len, rhs_len / 2),
-            mul::memory_chain_budget_envelope(lhs_len, lhs_len / 2),
+            // The coefficient update multiplies a quotient by a coefficient into the
+            // (lhs_len + 1)-word coefficient buffer.
+            mul::memory_chain_budget_envelope(lhs_len + 1, (lhs_len + 1) / 2),
         ),
     )
 }
@@ -420,12 +445,7 @@ pub fn gcd_ext_in_place(
                     &t1[..t1_len],
                 );
             }
-            if t_carry > 0 {
-                t0[qt1_len] = t_carry;
-                t0_len = qt1_len + 1;
-            } else {
-                t0_len = locate_top_word_plus_one(&t0[..qt1_len]);
-            }
+            t0_len = settle_coeff_carry(t0, qt1_len, t0_len, t_carry);
 
             // swap: (x, y) = (y, r)
             x = mem::replace(&mut y, r);
@@ -482,15 +502,11 @@ pub fn gcd_ext_in_place(
     // x_word = x % y; x /= y
     let y_word = *y.first().unwrap();
     let x_word = div::div_by_word_in_place(x, y_word);
-    t0_len = x.len() + t1_len;
-    debug_assert_zero!(mul::add_signed_mul(
-        &mut t0[..t0_len],
-        Sign::Positive,
-        x,
-        &t1[..t1_len],
-        &mut memory,
-    ));
-    t0_len = locate_top_word_plus_one(&t0[..t0_len]);
+    let xt1_len = x.len() + t1_len;
+    let t_carry =
+        mul::add_signed_mul(&mut t0[..xt1_len], Sign::Positive, x, &t1[..t1_len], &mut memory)
+            as Word;
+    t0_len = settle_coeff_carry(t0, xt1_len, t0_len, t_carry);
 
     // forward to single word gcd
     let (g_word, cx, cy) = x_word.gcd_ext(y_word);
