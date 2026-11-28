@@ -235,6 +235,37 @@ pub const fn ilog_exact(n: Word, base: Word) -> u32 {
     }
 }
 
+/// Return the largest number `r` such that both `a` and `b` are integer powers of `r`
+/// (i.e. `a = r^i` and `b = r^j` for some positive integers `i`, `j`), or 0 if no such
+/// common root above 1 exists. Two bases with a common root `r` are exactly the pairs
+/// for which every number with finitely many digits in one base also has finitely many
+/// digits in the other, at any exponent.
+///
+/// This runs the Euclidean algorithm on the exponents: `(r^i, r^j) -> (r^(i-j), r^j)`.
+// (currently only used by the num-order comparisons; drop the gate when the integer
+// logarithm kernels start using it)
+#[cfg(feature = "num-order")]
+pub const fn common_root(a: Word, b: Word) -> Word {
+    let (mut x, mut y) = (a, b);
+    if x < 2 || y < 2 {
+        return 0;
+    }
+    loop {
+        if x < y {
+            let t = x;
+            x = y;
+            y = t;
+        }
+        if y == 1 {
+            return x;
+        }
+        if x % y != 0 {
+            return 0;
+        }
+        x /= y;
+    }
+}
+
 /// `ceil(x) as usize` without `f64::ceil`, which is `std`-only on this crate's
 /// MSRV (the `f64` inherent methods only landed in `core` in Rust 1.85). Valid for
 /// non-negative `x` within `usize` range.
