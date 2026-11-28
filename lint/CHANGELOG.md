@@ -9,6 +9,9 @@
 - Add `manual_sign_from_bool`, `manual_sign_arithmetic`, `manual_is_multiple_of`,
   `manual_bit_test`, `manual_div_rem`, `redundant_abs`, and `prefer_sqr_cubic`.
 - Add opt-in `unfused_mul_add` advice, explicitly documenting its changed rounding semantics.
+- Add `redundant_big_conversion`: a computed primitive integer that is converted to a Dashu
+  integer only to be the right operand of `+`, `-`, `*` or `/`. Literals, tests, and the
+  operators whose result is the primitive are excluded.
 - Add UI snapshots and negative cases for type matching, const contexts, side effects,
   shadowing, and independent arithmetic tests; run UI tests in CI.
 - Initial `dashu-lints` crate (not a workspace member; builds against a pinned nightly, see

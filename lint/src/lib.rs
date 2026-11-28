@@ -8,6 +8,7 @@ extern crate rustc_middle;
 extern crate rustc_session;
 
 mod abs_ops;
+mod conversion;
 mod if_sign_mul;
 mod integer_ops;
 mod powers;
@@ -27,6 +28,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
         integer_ops::MANUAL_BIT_TEST,
         integer_ops::MANUAL_DIV_REM,
         abs_ops::REDUNDANT_ABS,
+        conversion::REDUNDANT_BIG_CONVERSION,
         powers::PREFER_SQR_CUBIC,
         powers::UNFUSED_MUL_ADD,
     ]);
@@ -34,6 +36,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
     lint_store.register_late_pass(|_| Box::new(sign_ops::SignOps));
     lint_store.register_late_pass(|_| Box::<integer_ops::IntegerOps>::default());
     lint_store.register_late_pass(|_| Box::new(abs_ops::AbsOps));
+    lint_store.register_late_pass(|_| Box::new(conversion::Conversion));
     lint_store.register_late_pass(|_| Box::<powers::Powers>::default());
 }
 
@@ -54,6 +57,7 @@ mod tests {
         integer_ops,
         abs_ops,
         powers,
+        redundant_big_conversion,
         test_exemptions,
         default_levels
     );
