@@ -23,6 +23,47 @@
   fails loudly in release builds too.
 
 ### Fix
+- Fix lost carries when a transform-based multiplication accumulates its per-prime residues
+  into the product: large products (beyond the plain kernels' reach) came out wrong. Operands
+  beyond the largest supported transform size are now split and multiplied piecewise instead
+  of hitting `unreachable!` (with 32-bit words this was reachable at ~2^26 words).
+- `mul_high`/`sqr_high` set the exactness (sticky) flag for the dropped low-by-middle cross
+  products: results rounded from them could be off by one ulp (visible as a wrong `DBig`
+  product).
+- `div_high` returns `None` instead of panicking (debug) or taking a wrong code path (release)
+  when the window's bit size does not fit `usize`.
+- Modular multiplication (`Reduced`, plain and Montgomery) and squaring of short residues
+  reserve enough scratch memory (short operands used to panic with an exhausted budget), and
+  `gcd_ext` reserves the full scratch for its coefficient update: it used to panic when the
+  operands share a large common factor, could drop a coefficient word, and could return
+  cofactors that do not satisfy the Bézout identity.
+- Reducing a double-word value by a `ConstDivisor` of a single normalized word no longer
+  breaks the underlying division's precondition (for moduli with the top bit set).
+- `Reducer<UBig>::check` rejects the modulus itself and non-normalized (unshifted) small
+  values for large moduli, and `add`/`dbl` reduce the sum properly: they used to return the
+  modulus instead of `0`. `Reduced::pow(0)` returns a valid residue in the ring modulo 1.
+- `nth_root` is fast for large orders: Newton's iteration no longer starts from an estimate
+  whose first step costs a division by a full-size `(n-1)`-th power.
+- `UBig::pow`/`IBig::pow` no longer wrap in release builds when the result's bit length
+  exceeds `usize` (`16.pow(1 << 62)` used to be `1`).
+- `UBig::try_from(f32/f64)` (and `num_traits` `FromPrimitive`) truncate towards zero like the
+  primitive unsigned integers: values in `(-1, 0]` convert to `0` instead of erroring, and
+  only values at or below `-1` are out of range.
+- `UBig::from_chunks` sizes its allocation from the chunk count correctly (it used to allocate
+  about 64 times too much and could run out of memory), and panics on a zero chunk size as
+  documented.
+- `to_f32`/`to_f64` report an honest `Exact` flag on 32-bit words (a rounded value used to be
+  labelled exact).
+- `ilog` rejects a zero self and a zero base with a panic instead of returning a meaningless
+  value.
+- Parsing rejects digit-less strings (a string of only underscores used to parse as `0`),
+  and `from_str_radix` with an unsupported radix returns `ParseError::UnsupportedRadix`
+  instead of panicking.
+- With the `tuning` feature, `DASHU_THRESHOLD_*` values outside the range the kernels support
+  are clamped (out-of-range values used to make multiplication, squaring and
+  `mul_high`/`sqr_high` panic).
+- The documented bound of `CubicRoot::cbrt_rem`'s remainder is inclusive, as the code treats
+  it.
 - Fix `num_integer::Integer::div_floor` for `IBig` when the operands have opposite signs
   and the truncated quotient is zero: `-1 / 2` returned `0` instead of `-1`, because the
   adjustment was decided from the quotient's sign, which is never negative for zero. The

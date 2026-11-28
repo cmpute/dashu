@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Fix
+- Expanded-form literals (`from_str_expanded`) handle huge exponents: the exact value is built
+  for any representable exponent, and an exponent whose power-of-two part cannot be counted by
+  a `usize` reports an allocation failure instead of wrapping to `1` in release builds
+  (`16^(usize::MAX / 4 + 1)` used to be read as `1`).
 - `RBig::to_float` / `Relaxed::to_float` no longer round twice. The quotient used to be rounded to
   an integer first and to the requested precision afterwards; whenever the first rounding landed
   on, or crossed, a midpoint of the second, the two compounded into an error of one unit in the
