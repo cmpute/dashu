@@ -35,7 +35,7 @@ pub enum FpError {
 
     /// An indeterminate form, e.g. `0 / 0`. Only a *zero* divided by zero is
     /// indeterminate — a non-zero value divided by zero yields ±infinity, which is a
-    /// legitimate [`Exact`](dashu_base::Approximation::Exact) value rather than an error.
+    /// value flagged [`Inexact`](dashu_base::Approximation::Inexact) rather than an error.
     Indeterminate,
 
     /// The result magnitude is too large to represent as a finite number.
