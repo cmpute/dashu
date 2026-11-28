@@ -344,15 +344,14 @@ fn near_tie<const B: Word>() -> impl Strategy<Value = Case> {
             move |(random, (precision, s, offset, q, negative, exp_num, exp_den, span))| {
                 let base = UBig::from_word(B);
                 let k = base.pow(precision - 1) + (random % &span);
-                let numer =
-                    (&k + &k + UBig::ONE) * UBig::from(q) + UBig::from(offset.unsigned_abs());
+                let numer = (&k + &k + UBig::ONE) * q + offset.unsigned_abs();
                 let numer = if offset < 0 {
                     numer - UBig::from(2u8)
                 } else {
                     numer
                 };
                 let mut numer = signed(numer, negative);
-                let mut denom = UBig::from(2u8) * UBig::from(q);
+                let mut denom = UBig::from(2u8) * q;
                 if s >= 0 {
                     numer *= base.pow(s as usize);
                 } else {

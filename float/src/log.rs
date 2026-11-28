@@ -455,7 +455,7 @@ impl<R: Round> Context<R> {
             Ok(sum2)
         } else if B.is_power_of_two() {
             // ln(B) = log2(B)·ln(2) exactly, so both scale factors fold into one ln(2) term.
-            let k = IBig::from(s2) + IBig::from(e_base) * IBig::from(B.trailing_zeros());
+            let k = IBig::from(s2) + IBig::from(e_base) * B.trailing_zeros();
             if k.is_zero() {
                 return Ok(sum2);
             }
@@ -709,7 +709,7 @@ impl<R: ErrorBounds> Context<R> {
         if mag.is_power_of_two() && (x.exponent == 0 || B.is_power_of_two()) {
             let m = mag.trailing_zeros().unwrap(); // = log2(significand)
             let log2_b = B.trailing_zeros() as isize;
-            let k = IBig::from(m) + IBig::from(x.exponent) * IBig::from(log2_b);
+            let k = IBig::from(m) + IBig::from(x.exponent) * log2_b;
             return Ok(self.convert_int::<B>(k));
         }
 

@@ -63,6 +63,9 @@
   the fraction below the quotient is no longer materialized for the final comparison. Small
   divisions are about twice as fast in base 2, and divisions by a far narrower divisor up to 35
   times faster; no measured case got slower.
+- Primitive integers are passed to the operators of `UBig`/`IBig` directly where the result stays
+  a Dashu integer, instead of being converted first (enforced by the new
+  `redundant_big_conversion` house lint).
 - Multiplying by a short power of ten (up to 10^38 on 64-bit targets) is a single small
   multiplication instead of a multiplication by 5^n and a bit shift, which speeds up every
   base-10 operation that shifts a significand by a few digits (alignment, rounding, and the

@@ -1035,7 +1035,7 @@ impl<R: ErrorBounds> Context<R> {
                 if x.sign() == Sign::Positive {
                     IBig::from(u)
                 } else {
-                    IBig::from(2) * IBig::from(u)
+                    IBig::from(2) * u
                 },
                 6,
             );
@@ -1148,7 +1148,7 @@ impl<R: ErrorBounds> Context<R> {
         // The `k·π/8` angles as exact `k·u/8` ratios (shared by the infinity table and the
         // finite axis/diagonal rows below).
         let u8th = |k: i8| -> FpResult<FBig<R, B>> {
-            let num = IBig::from(u) * IBig::from(k.unsigned_abs());
+            let num = IBig::from(u) * k.unsigned_abs();
             exact_ratio::<R, B>(self, if k < 0 { -num } else { num }, 8)
         };
 

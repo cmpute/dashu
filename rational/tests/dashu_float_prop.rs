@@ -161,7 +161,7 @@ fn reference<const B: Word>(
     let representable = dropped.is_zero();
     let half = (&dropped << 1).cmp(&scaled_den);
     let adjust = rule(sign, truncated.bit(0), half, !representable);
-    (IBig::from_parts(sign, truncated) + IBig::from(adjust), s, representable, adjust)
+    (IBig::from_parts(sign, truncated) + adjust, s, representable, adjust)
 }
 
 // ---------------------------------------------------------------------------
@@ -359,14 +359,14 @@ fn near_tie<const B: Word>() -> impl Strategy<Value = (IBig, UBig, usize)> {
         .prop_map(move |(random, (precision, s, offset, q, negative, span))| {
             let base = UBig::from_word(B);
             let k = base.pow(precision - 1) + (random % &span);
-            let numer = (&k + &k + UBig::ONE) * UBig::from(q) + UBig::from(offset.unsigned_abs());
+            let numer = (&k + &k + UBig::ONE) * q + offset.unsigned_abs();
             let numer = if offset < 0 {
                 numer - UBig::from(2u8)
             } else {
                 numer
             };
             let mut numer = signed(numer, negative);
-            let mut denom = UBig::from(2u8) * UBig::from(q);
+            let mut denom = UBig::from(2u8) * q;
             if s >= 0 {
                 numer *= base.pow(s as usize);
             } else {

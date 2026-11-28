@@ -394,7 +394,7 @@ impl<R: Round> Context<R> {
         // the second window extends past the square's word length, plus
         // (n2 + 2) ulps from the short product.
         let square_err_shift = n2.saturating_sub(square_words) * Word::BITS as usize;
-        let err_ulps = (UBig::from(n + 2) << square_err_shift) + UBig::from(n2 + 2);
+        let err_ulps = (UBig::from(n + 2) << square_err_shift) + (n2 + 2);
         self.round_short_product(window, fs, exponent, dropped, sticky1 || sticky2, err_ulps)
     }
 }

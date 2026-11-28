@@ -91,7 +91,7 @@ pub fn shl_digits<const B: Word>(value: &IBig, exp: usize) -> IBig {
         2 => value << exp,
         // for a short shift, a multiplication by the constant is several times cheaper; for a
         // long one, multiplying by 5^exp and shifting beats the full power (5^exp is 30% smaller)
-        10 if exp <= MAX_EXP10 => value * IBig::from(UBig::from_dword(pow10_dword(exp))),
+        10 if exp <= MAX_EXP10 => value * pow10_dword(exp),
         10 => (value * IBig::from(5).pow(exp)) << exp,
         b if b.is_power_of_two() => value << (exp * b.trailing_zeros() as usize),
         _ => value * base_as_ibig::<B>().pow(exp),
@@ -103,7 +103,7 @@ pub fn shl_digits_in_place<const B: Word>(value: &mut IBig, exp: usize) {
     if exp != 0 {
         match B {
             2 => *value <<= exp,
-            10 if exp <= MAX_EXP10 => *value *= UBig::from_dword(pow10_dword(exp)),
+            10 if exp <= MAX_EXP10 => *value *= pow10_dword(exp),
             10 => {
                 *value *= IBig::from(5).pow(exp);
                 *value <<= exp;
