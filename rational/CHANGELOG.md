@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Fix
+- `NumOrd` orders a zero rational correctly against small positive floats (a zero used to rank
+  above every positive float below 1/2, because the magnitude estimate read its empty
+  significand as the value 1).
+- `log2_bounds` rounds the subtraction of the numerator's and denominator's bounds outwards, so
+  the returned interval always contains the true value (the plain `f32` subtraction used to be
+  able to round a bound past the true logarithm).
+- `NumHash` of a `Relaxed` value whose numerator and denominator share the hash modulus
+  `2^127 - 1` as a common factor matches the hash of its reduced value (the denominator inverse
+  used to be taken as 1 for a zero residue without reducing the numerator first).
+- `num_traits::Signed::abs_sub` for `RBig`/`Relaxed` returns the positive difference
+  `max(a - b, 0)`, as the trait documents, instead of the magnitude `|a - b|`, and
+  `num_traits::Pow<usize>` with an exponent above `isize::MAX` computes the power instead of
+  wrongly taking the reciprocal path.
 - `RBig::to_float` / `Relaxed::to_float` no longer round twice. The quotient used to be rounded to
   an integer first and to the requested precision afterwards; whenever the first rounding landed
   on, or crossed, a midpoint of the second, the two compounded into an error of one unit in the

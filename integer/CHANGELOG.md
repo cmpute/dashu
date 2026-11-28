@@ -23,6 +23,20 @@
   fails loudly in release builds too.
 
 ### Fix
+- `num_integer::Integer` on `UBig`/`IBig`: `gcd(0, 0)` returns `0` (the identity of gcd, for
+  folding over a sequence) instead of panicking, `extended_gcd(0, 0)` returns zero coefficients,
+  and `lcm` is non-negative for operands of mixed sign (it used to return a negative value).
+- num-integer: `is_multiple_of` with a zero divisor returns `self.is_zero()` instead of panicking,
+  and the `UBig` `extended_gcd` panic on coprime inputs is documented as inherent to the unsigned
+  coefficients (there is no correct value to return when a Bézout coefficient is negative).
+- The `num-integer` feature of `dashu-int` now enables `num-traits`: the `Integer` trait has
+  `Num` as a supertrait, so enabling `num-integer` alone failed to compile. CI covers the
+  feature standalone.
+- `num_traits::Signed::abs_sub` for `IBig` returns the positive difference `max(a - b, 0)`, as
+  the trait documents, instead of the magnitude `|a - b|`.
+- `NumOrd` between big integers and primitive floats: a zero integer now compares correctly
+  against small positive floats below 1/2 (it used to rank above them), and infinite floats are
+  ordered consistently in every direction.
 - Fix `num_integer::Integer::div_floor` for `IBig` when the operands have opposite signs
   and the truncated quotient is zero: `-1 / 2` returned `0` instead of `-1`, because the
   adjustment was decided from the quotient's sign, which is never negative for zero. The

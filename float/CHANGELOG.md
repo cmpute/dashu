@@ -8,6 +8,26 @@
   counterpart of `Context::div`, without converting the operands to floats first.
 
 ### Fix
+- `log2_bounds` stays valid for exponents beyond 2^24. The exponent used to be converted to `f32`
+  before being multiplied by `log2(base)`, and past 2^24 that conversion alone is off by whole
+  units, so the returned interval could exclude the true logarithm (e.g.
+  `971397245e16777285` reported an exact integer upper bound below the true value). The sum is
+  now formed in `f64` and narrowed outwards with a bound on what the `f64` operations lost.
+- `log2_bounds`/`log2_est` of an infinity return `+inf`. An infinity shares the zero significand
+  of a zero and used to get the zero's answer `-inf`.
+- `NumHash` no longer negates an `isize::MIN` exponent (a debug panic; reachable through a
+  non-canonical `Repr` with a nonzero significand at the reserved exponent).
+- `NumOrd` between floats of different bases no longer builds the powers of the bases (comparing
+  `1e-1000000000` with a binary float scaled both sides by the full power of their bases: 75 s
+  and 2.8 GB). Past a small exponent the comparison orders enclosures of the logarithms at a
+  growing precision; bases that are powers of one integer are compared exactly through the
+  difference of the exponents, and only values that can be equal fall back to scaled integers.
+- `NumOrd` against primitive floats orders a zero and extreme exponents correctly, and the
+  same-base comparison no longer breaks for large exponents.
+- `num_traits::Signed::abs_sub` for `FBig`/`DBig` returns the positive difference
+  `max(a - b, 0)`, as the trait documents, instead of the magnitude `|a - b|`. The
+  `num_traits::ToPrimitive` integer conversions return `None` for an infinite value instead of
+  panicking.
 - Fix `atan2_unit` on the lower diagonals: for `|y| == |x|` with `y < 0`, the exact
   shortcut returned the two results swapped (`(-a, a)` gave -3/8 of a turn and
   `(-a, -a)` gave -1/8). The upper diagonals, the axes and all other inputs were

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Fix
+- `FloatEncoding::encode` (the `f32`/`f64` encoder) rounds the magnitude once, at the unit in the
+  last place of the result (clamped at the smallest subnormal), so that every discarded bit takes
+  part in the rounding decision. It used to round a truncated significand first: a sticky bit was
+  ignored for wide mantissas, results in `(2^-150, 2^-149)` were flushed to zero, subnormals were
+  misrounded, and the minimum mantissa shifted past the word width.
+- `Abs::abs` on primitive floats returns `+0.0` for `-0.0` (it used to return the operand
+  unchanged, unlike IEEE `abs` and the standard `f64::abs`). NaN passes through unchanged as
+  before.
+- `AbsOrd::abs_cmp` on signed integers no longer panics for `iN::MIN` (the absolute value used
+  to overflow).
+- `log2_est` of a `u128` near `u128::MAX` returns a finite estimate again (the estimate used to
+  overflow to infinity), and the no-std `log2_bounds` for primitive floats always return an
+  interval that contains the true value.
+
 ## 0.6.0
 
 ### Add
