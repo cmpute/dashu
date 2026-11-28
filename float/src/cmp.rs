@@ -346,18 +346,6 @@ pub(crate) fn abs_cmp_scaled<const B1: Word, const B2: Word>(
 }
 
 #[cfg(feature = "num-order")]
-/// Unwrap a directed float operation whose result cannot fail: the operands are finite,
-/// the arguments of the logarithms are positive, and the magnitudes are those of an `isize`
-/// times a logarithm. (Local to the cross-base comparison: no other call site shares the
-/// precondition, and `Context::unwrap_fp` serves the different contract of saturating a
-/// possible error.)
-fn unwrap_directed<R: Round>(result: FpResult<FBig<R, 2>>) -> Repr<2> {
-    match result {
-        Ok(rounded) => rounded.value().into_repr(),
-        Err(_) => unreachable!(),
-    }
-}
-#[cfg(feature = "num-order")]
 /// Try to order the magnitudes of two finite nonzero numbers in different bases from
 /// enclosures of their logarithms at a working precision of `precision` bits:
 ///
@@ -373,6 +361,19 @@ pub(crate) fn abs_cmp_by_log<const B1: Word, const B2: Word>(
     precision: usize,
 ) -> Option<Ordering> {
     let (down, up) = (Context::<Down>::new(precision), Context::<Up>::new(precision));
+
+    // Unwrap a directed float operation whose result cannot fail here: the operands are
+    // finite, the arguments of the logarithms are positive, and the magnitudes are those of
+    // an `isize` times a logarithm. (This precondition is local to this function;
+    // `Context::unwrap_fp` is the shared unwrapper with the different contract of saturating
+    // a possible error.)
+    fn unwrap_directed<R: Round>(result: FpResult<FBig<R, 2>>) -> Repr<2> {
+        match result {
+            Ok(rounded) => rounded.value().into_repr(),
+            Err(_) => unreachable!(),
+        }
+    }
+
     // the enclosure of ln|significand| + exponent · ln(base)
     let log = |significand: &IBig, exponent: isize, base: Word| -> (Repr<2>, Repr<2>) {
         let magnitude = Repr::<2>::new(significand.clone().unsigned_abs().into(), 0);
