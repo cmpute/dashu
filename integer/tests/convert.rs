@@ -649,30 +649,3 @@ fn test_ubig_from_float_truncates() {
     assert!(UBig::try_from(f64::NEG_INFINITY).is_err());
     assert!(UBig::try_from(f64::INFINITY).is_err());
 }
-
-#[test]
-fn test_ubig_from_float_truncates() {
-    // the fractional part is dropped (rounding towards zero) before the sign is
-    // checked, so a negative value in (-1, 0) converts to zero, as in IBig and
-    // in the primitive unsigned integers
-    for f in [-0.0f64, -0.5, -0.25, -0.999, -1e-300, -f64::from_bits(1)] {
-        assert_eq!(UBig::try_from(f), Ok(ubig!(0)), "f = {}", f);
-        assert_eq!(IBig::try_from(f), Ok(ibig!(0)), "f = {}", f);
-    }
-    for f in [-0.0f32, -0.5, -0.999, -f32::from_bits(1)] {
-        assert_eq!(UBig::try_from(f), Ok(ubig!(0)), "f = {}", f);
-    }
-    assert_eq!(UBig::try_from(0.999f64), Ok(ubig!(0)));
-    assert_eq!(UBig::try_from(1.5f32), Ok(ubig!(1)));
-
-    // values at or below -1 stay out of bounds
-    for f in [-1.0f64, -1.5, -2.0, -1e30, f64::MIN] {
-        assert_eq!(UBig::try_from(f), Err(OutOfBounds), "f = {}", f);
-    }
-    for f in [-1.0f32, -1.5, f32::MIN] {
-        assert_eq!(UBig::try_from(f), Err(OutOfBounds), "f = {}", f);
-    }
-    assert!(UBig::try_from(f64::NAN).is_err());
-    assert!(UBig::try_from(f64::NEG_INFINITY).is_err());
-    assert!(UBig::try_from(f64::INFINITY).is_err());
-}
