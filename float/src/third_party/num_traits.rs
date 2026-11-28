@@ -70,23 +70,18 @@ impl<R: Round, const B: Word> num_traits::FromPrimitive for FBig<R, B> {
     }
 }
 
-/// The integer a float rounds to (with the rounding mode of its type), if it can possibly fit
-/// in a primitive integer: `None` for the infinities, and for magnitudes of 2^129 and beyond,
-/// which are out of range for every primitive type and which there is no point in writing out
-/// in full (the integer of a float with a huge exponent would not even fit in memory).
-fn primitive_int_candidate<R: Round, const B: Word>(f: &FBig<R, B>) -> Option<IBig> {
-    if f.repr.is_infinite() || f.repr.log2_bounds().0 > 129. {
-        None
-    } else {
-        Some(f.to_int().value())
-    }
-}
-
 macro_rules! impl_to_primitive_int {
     ($t:ty, $method:ident) => {
         #[inline]
         fn $method(&self) -> Option<$t> {
-            num_traits::ToPrimitive::$method(&primitive_int_candidate(self)?)
+            // `None` for the infinities, and for magnitudes of 2^129 and beyond, which are
+            // out of range for every primitive type and which there is no point in writing
+            // out in full (the integer of a float with a huge exponent would not even fit
+            // in memory). Smaller out-of-range values are `None` through the conversion.
+            if self.repr.is_infinite() || self.repr.log2_bounds().0 > 129. {
+                return None;
+            }
+            num_traits::ToPrimitive::$method(&self.to_int().value())
         }
     };
 }
