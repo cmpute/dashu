@@ -509,3 +509,57 @@ fn test_from_f64() {
     assert_eq!(UBig::try_from(1e30f64), Ok(ubig!(1000000000000000019884624838656)));
     assert_eq!(UBig::try_from(1e40f64), Ok(ubig!(10000000000000000303786028427003666890752)));
 }
+
+// The wide-mantissa sticky bit participates in the rounding decision: every low bit
+// below the round bit counts.
+
+#[test]
+fn test_to_float_sticky_bit_below_round_bit() {
+    let p = |k: usize| UBig::ONE << k;
+
+    // f64: the mantissa covers bits 199..=147 and the round bit is bit 146
+    let up = 2f64.powi(199) + 2f64.powi(147);
+    let down = 2f64.powi(199);
+    assert_eq!((p(199) + p(146) + p(145)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146) + p(144)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146) + p(0)).to_f64(), Inexact(up, Positive));
+    assert_eq!((p(199) + p(146)).to_f64(), Inexact(down, Negative));
+    assert_eq!((p(199) + p(147) + p(146)).to_f64(), Inexact(down + 2f64.powi(148), Positive));
+    assert_eq!((p(199) + p(145)).to_f64(), Inexact(down, Negative));
+    assert_eq!((p(199) + p(144)).to_f64(), Inexact(down, Negative));
+    assert_eq!(IBig::from(p(199) + p(145)).to_f64(), Inexact(down, Negative));
+    assert_eq!((-IBig::from(p(199) + p(146) + p(145))).to_f64(), Inexact(-up, Negative));
+
+    // f32: the mantissa covers bits 99..=76 and the round bit is bit 75
+    let up = 2f32.powi(99) + 2f32.powi(76);
+    let down = 2f32.powi(99);
+    for k in [74, 73, 72, 70, 64, 1, 0] {
+        assert_eq!((p(99) + p(75) + p(k)).to_f32(), Inexact(up, Positive), "k = {}", k);
+        assert_eq!((p(99) + p(k)).to_f32(), Inexact(down, Negative), "k = {}", k);
+    }
+    assert_eq!((p(99) + p(75)).to_f32(), Inexact(down, Negative));
+    assert_eq!((p(99) + p(76)).to_f32(), Exact(up));
+
+    // a single low bit at every position, for several sizes
+    for n in [65usize, 100, 129, 200, 566, 1000] {
+        let top = p(n - 1);
+        for k in 0..n - 1 {
+            let x = &top + p(k);
+            let exact64 = k + 53 >= n;
+            let f = x.to_f64();
+            assert_eq!(matches!(f, Exact(_)), exact64, "n = {}, k = {}", n, k);
+            let expected = if exact64 {
+                2f64.powi(n as i32 - 1) + 2f64.powi(k as i32)
+            } else {
+                2f64.powi(n as i32 - 1)
+            };
+            assert_eq!(f.value(), expected, "n = {}, k = {}", n, k);
+
+            if n <= 128 {
+                let exact32 = k + 24 >= n;
+                let f = x.to_f32();
+                assert_eq!(matches!(f, Exact(_)), exact32, "n = {}, k = {}", n, k);
+            }
+        }
+    }
+}
