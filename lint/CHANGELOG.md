@@ -23,6 +23,9 @@
 ### Change
 - Rename the crate directory from `dashu-lints/` to `lint/` (package name unchanged); update
   the workspace Dylint library path, CI working directories, and documentation links.
+- Pin Dylint 6.3.2 (CI install and `dylint_linting`/`dylint_testing` requirements) so the
+  Dylint driver clones rust-clippy via its renamed default branch `main`; 6.1.0 still checked
+  out `master` and failed to build since the branch was renamed.
 
 ### Fix
 - Keep example UI tests and lint implementation checks in their own CI job, separately

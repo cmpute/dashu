@@ -34,7 +34,7 @@ jobs:
             --component rustfmt \
             --component clippy
       - name: Install dylint
-        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.3.2 --locked
       - name: Check lint formatting
         working-directory: lint
         run: cargo fmt --all -- --check
@@ -57,7 +57,7 @@ jobs:
             --component llvm-tools-preview \
             --component rustfmt
       - name: Install Dylint
-        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+        run: cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.3.2 --locked
       - name: Check the workspace with house lints
         env:
           DYLINT_RUSTFLAGS: -D warnings

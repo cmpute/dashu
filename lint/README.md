@@ -63,7 +63,7 @@ Existing Clippy rules such as `redundant_clone` remain separate from the house l
 ## Run
 
 ```sh
-cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.1.0 --locked
+cargo +nightly-2026-04-16 install cargo-dylint dylint-link --version 6.3.2 --locked
 DYLINT_RUSTFLAGS="-D warnings" cargo +nightly-2026-04-16 dylint --all -- --workspace --exclude dashu-python --all-features --all-targets
 ```
 
