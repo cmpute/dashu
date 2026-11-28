@@ -235,7 +235,7 @@ macro_rules! impl_num_ord_with_float {
                     _ => {}
                 };
 
-                // step2.5: a zero (of either sign) against a nonzero float. The magnitude
+                // step3: a zero (of either sign) against a nonzero float. The magnitude
                 // estimate below reads a zero significand as the value 1, so it has to be
                 // answered here: the float has the same sign as `self` (step 1), and zero is
                 // below every positive number and above every negative one.
@@ -243,7 +243,7 @@ macro_rules! impl_num_ord_with_float {
                     return Some(sign * Ordering::Less);
                 }
 
-                // step3: test if the number is bigger than the max float value
+                // step4: test if the number is bigger than the max float value
                 // Here we don't use EstimatedLog2, since a direct comparison is not that expensive.
                 // We just need a quick way to determine if one number is much larger than the other.
                 // The bit length (essentially ⌊log2(x)⌋ + 1) is used instead here. It is computed
@@ -260,7 +260,7 @@ macro_rules! impl_num_ord_with_float {
                     return Some(sign * Ordering::Greater);
                 }
 
-                // step4: decode the float and compare the bits
+                // step5: decode the float and compare the bits
                 let (other_signif, other_exp) = other.decode().unwrap();
                 let other_log2 = other_signif.bit_len() as i128 + other_exp as i128;
                 if self_log2_lb > other_log2 {
@@ -269,7 +269,7 @@ macro_rules! impl_num_ord_with_float {
                     return Some(sign * Ordering::Less);
                 }
 
-                // step5: do the final comparison
+                // step6: do the final comparison
                 let (mut lhs, mut rhs) = (self.significand.clone(), IBig::from(other_signif));
                 if self.exponent < 0 {
                     shl_digits_in_place::<B>(&mut rhs, (-self.exponent) as usize);
