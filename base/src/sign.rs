@@ -17,6 +17,9 @@ pub trait Abs {
     type Output;
 
     /// Compute the absolute value.
+    ///
+    /// The absolute value of a negative zero (`-0.0` on the primitive floats) is `+0.0`,
+    /// as IEEE `abs` defines.
     fn abs(self) -> Self::Output;
 }
 

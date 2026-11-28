@@ -1,7 +1,7 @@
-//! Tests for the logarithm estimations on primitive types.
-//!
-//! The estimations have separate implementations with and without the `std`
-//! feature, run these tests under both configurations.
+// Tests for the logarithm estimations on primitive types.
+//
+// The estimations have separate implementations with and without the `std`
+// feature, run these tests under both configurations.
 
 use dashu_base::EstimatedLog2;
 

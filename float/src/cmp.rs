@@ -3,10 +3,21 @@ use core::cmp::Ordering;
 use dashu_base::{AbsOrd, EstimatedLog2, Sign};
 use dashu_int::{IBig, UBig};
 
+// the kernels below live behind the num-order gate, and so do their imports
+#[cfg(feature = "num-order")]
+use crate::error::FpResult;
+#[cfg(feature = "num-order")]
+use crate::repr::Context;
+#[cfg(feature = "num-order")]
+use crate::round::mode::{Down, Up};
+#[cfg(feature = "num-order")]
+use crate::utils::{common_root, ilog_exact};
+#[cfg(feature = "num-order")]
+use dashu_base::{BitTest, UnsignedAbs};
+
 use crate::{
     fbig::FBig,
-    repr::Repr,
-    repr::Word,
+    repr::{Repr, Word},
     round::Round,
     utils::{shl_digits, shl_digits_in_place},
 };
@@ -306,3 +317,165 @@ macro_rules! impl_abs_ord_with_method {
 }
 impl_abs_ord_with_method!(UBig, repr_cmp_ubig);
 impl_abs_ord_with_method!(IBig, repr_cmp_ibig);
+
+#[cfg(feature = "num-order")]
+/// Up to this many bits of `B1^|e1|` and `B2^|e2|` together, two numbers in different bases are
+/// compared by scaling both to integers, which is the fastest way while the powers are small.
+const EXACT_POWER_BITS_THRESHOLD: u128 = 4096;
+
+#[cfg(feature = "num-order")]
+/// Compare the magnitudes of two finite nonzero numbers in different bases by scaling them to
+/// integers. The cost is that of the powers `B1^|e1|` and `B2^|e2|`.
+pub(crate) fn abs_cmp_scaled<const B1: Word, const B2: Word>(
+    lhs: &Repr<B1>,
+    rhs: &Repr<B2>,
+) -> Ordering {
+    let mut left: IBig = lhs.significand.clone().unsigned_abs().into();
+    let mut right: IBig = rhs.significand.clone().unsigned_abs().into();
+    if lhs.exponent < 0 {
+        shl_digits_in_place::<B1>(&mut right, lhs.exponent.unsigned_abs());
+    } else {
+        shl_digits_in_place::<B1>(&mut left, lhs.exponent as usize);
+    }
+    if rhs.exponent < 0 {
+        shl_digits_in_place::<B2>(&mut left, rhs.exponent.unsigned_abs());
+    } else {
+        shl_digits_in_place::<B2>(&mut right, rhs.exponent as usize);
+    }
+    left.cmp(&right)
+}
+
+#[cfg(feature = "num-order")]
+/// Unwrap a directed float operation whose result cannot fail: the operands are finite,
+/// the arguments of the logarithms are positive, and the magnitudes are those of an `isize`
+/// times a logarithm.
+pub(crate) fn unwrap_directed<R: Round>(result: FpResult<FBig<R, 2>>) -> Repr<2> {
+    match result {
+        Ok(rounded) => rounded.value().into_repr(),
+        Err(_) => unreachable!(),
+    }
+}
+#[cfg(feature = "num-order")]
+/// Try to order the magnitudes of two finite nonzero numbers in different bases from
+/// enclosures of their logarithms at a working precision of `precision` bits:
+///
+/// `ln|s1| + e1·ln(B1)` against `ln|s2| + e2·ln(B2)`
+///
+/// Every operation is rounded outwards (the logarithm itself is correctly rounded in the
+/// directed modes), so the sign of the difference is certain when the enclosure excludes
+/// zero. `None` means that it does not: the numbers are equal, or closer than the precision
+/// tells apart.
+pub(crate) fn abs_cmp_by_log<const B1: Word, const B2: Word>(
+    lhs: &Repr<B1>,
+    rhs: &Repr<B2>,
+    precision: usize,
+) -> Option<Ordering> {
+    let (down, up) = (Context::<Down>::new(precision), Context::<Up>::new(precision));
+    // the enclosure of ln|significand| + exponent · ln(base)
+    let log = |significand: &IBig, exponent: isize, base: Word| -> (Repr<2>, Repr<2>) {
+        let magnitude = Repr::<2>::new(significand.clone().unsigned_abs().into(), 0);
+        let base = Repr::<2>::new(base.into(), 0);
+        let exponent = Repr::<2>::new(exponent.into(), 0);
+        let (base_lo, base_hi) =
+            (unwrap_directed(down.ln(&base, None)), unwrap_directed(up.ln(&base, None)));
+        // ln(base) > 0, so a negative exponent swaps the ends
+        let (scaled_lo, scaled_hi) = if exponent.sign() == Sign::Positive {
+            (
+                unwrap_directed(down.mul(&exponent, &base_lo)),
+                unwrap_directed(up.mul(&exponent, &base_hi)),
+            )
+        } else {
+            (
+                unwrap_directed(down.mul(&exponent, &base_hi)),
+                unwrap_directed(up.mul(&exponent, &base_lo)),
+            )
+        };
+        (
+            unwrap_directed(down.add(&unwrap_directed(down.ln(&magnitude, None)), &scaled_lo)),
+            unwrap_directed(up.add(&unwrap_directed(up.ln(&magnitude, None)), &scaled_hi)),
+        )
+    };
+    let (lhs_lo, lhs_hi) = log(&lhs.significand, lhs.exponent, B1);
+    let (rhs_lo, rhs_hi) = log(&rhs.significand, rhs.exponent, B2);
+
+    let diff_lo = unwrap_directed(down.sub(&lhs_lo, &rhs_hi));
+    if !diff_lo.significand.is_zero() && diff_lo.sign() == Sign::Positive {
+        return Some(Ordering::Greater);
+    }
+    let diff_hi = unwrap_directed(up.sub(&lhs_hi, &rhs_lo));
+    if !diff_hi.significand.is_zero() && diff_hi.sign() == Sign::Negative {
+        return Some(Ordering::Less);
+    }
+    None
+}
+
+#[cfg(feature = "num-order")]
+/// Compare the magnitudes of two finite nonzero numbers in different bases, in a time that
+/// does not grow with their exponents (other than through the size of the exponents
+/// themselves).
+pub(crate) fn abs_cmp_cross_base<const B1: Word, const B2: Word>(
+    lhs: &Repr<B1>,
+    rhs: &Repr<B2>,
+) -> Ordering {
+    // With small exponents, scaling to integers is the fastest.
+    let power_bits = |exponent: isize, base: Word| {
+        exponent.unsigned_abs() as u128 * (Word::BITS - base.leading_zeros()) as u128
+    };
+    let power_bits = power_bits(lhs.exponent, B1) + power_bits(rhs.exponent, B2);
+    if power_bits <= EXACT_POWER_BITS_THRESHOLD {
+        return abs_cmp_scaled(lhs, rhs);
+    }
+    let (lhs_bits, rhs_bits) = (lhs.significand.bit_len(), rhs.significand.bit_len());
+
+    // Bases that are powers of one integer `root` (2 and 8, 4 and 8): both numbers are an
+    // integer times a power of the root, and only the difference of those powers matters.
+    let root = common_root(B1, B2);
+    if root != 0 {
+        let (i, j) = (ilog_exact(B1, root) as i128, ilog_exact(B2, root) as i128);
+        // |lhs| / |rhs| = |s1| / |s2| · root^diff
+        let diff = i * lhs.exponent as i128 - j * rhs.exponent as i128;
+        // root^|diff| >= 2^|diff|, and a significand of n bits lies in [2^(n-1), 2^n)
+        if diff > rhs_bits as i128 {
+            return Ordering::Greater;
+        }
+        if -diff > lhs_bits as i128 {
+            return Ordering::Less;
+        }
+        let power = UBig::from_word(root).pow(diff.unsigned_abs() as usize);
+        let (left, right) =
+            (lhs.significand.clone().unsigned_abs(), rhs.significand.clone().unsigned_abs());
+        return if diff >= 0 {
+            (left * power).cmp(&right)
+        } else {
+            left.cmp(&(right * power))
+        };
+    }
+
+    // Otherwise the bases are multiplicatively independent, and the logarithms are compared
+    // at a growing precision. That settles every pair of unequal numbers eventually, but not
+    // two equal ones, so it is cut off where the numbers can still be equal.
+    //
+    // If |s1|·B1^e1 = |s2|·B2^e2, then e1·v_p(B1) - e2·v_p(B2) = v_p(s2) - v_p(s1) for every
+    // prime p, where the right side is at most m = max(bits(s1), bits(s2)) in magnitude. The
+    // bases being independent, there are two primes p and q for which the two equations are
+    // independent, and solving them bounds |e1| by m·(v_p(B2) + v_q(B2)) <= m·log2(B2), and
+    // |e2| likewise. So with an exponent beyond m·(bits of a word) the numbers differ, and the
+    // loop ends. Below that the powers are bounded in terms of the significands, and the
+    // comparison falls back to scaling to integers once the working precision is a sizable
+    // fraction of those integers (a logarithm costs many multiplications of its precision).
+    let max_bits = lhs_bits.max(rhs_bits);
+    let max_exponent = lhs.exponent.unsigned_abs().max(rhs.exponent.unsigned_abs());
+    let can_be_equal = max_exponent as u128 <= max_bits as u128 * Word::BITS as u128;
+    let precision_limit = (power_bits + max_bits as u128) / 64;
+
+    let mut precision = 96;
+    loop {
+        if let Some(order) = abs_cmp_by_log(lhs, rhs, precision) {
+            return order;
+        }
+        precision = precision.saturating_mul(2);
+        if can_be_equal && precision as u128 > precision_limit {
+            return abs_cmp_scaled(lhs, rhs);
+        }
+    }
+}

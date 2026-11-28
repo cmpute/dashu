@@ -9,8 +9,8 @@
   ignored for wide mantissas, results in `(2^-150, 2^-149)` were flushed to zero, subnormals were
   misrounded, and the minimum mantissa shifted past the word width.
 - `Abs::abs` on primitive floats returns `+0.0` for `-0.0` (it used to return the operand
-  unchanged, unlike IEEE `abs` and the standard `f64::abs`). NaN passes through unchanged as
-  before.
+  unchanged, unlike IEEE `abs` and the standard `f64::abs`). A NaN stays a NaN with its
+  payload, but its sign bit is cleared now as well.
 - `AbsOrd::abs_cmp` on signed integers no longer panics for `iN::MIN` (the absolute value used
   to overflow).
 - `log2_est` of a `u128` near `u128::MAX` returns a finite estimate again (the estimate used to

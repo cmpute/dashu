@@ -56,15 +56,12 @@ impl num_integer::Integer for UBig {
             self / Gcd::gcd(self, other) * other
         }
     }
-    /// Greatest common divisor and Bézout coefficients.
-    ///
-    /// # Panics
-    ///
-    /// The coefficients have the type [UBig] here, and `x * self + y * other == gcd`
-    /// has a solution without a negative coefficient only when the gcd is one of
-    /// the operands. This method panics for any other input (as the trait's
-    /// implementations for the primitive unsigned integers overflow); use
-    /// [ExtendedGcd::gcd_ext], which returns [IBig] coefficients, instead.
+    // rustdoc does not render doc comments on trait impl methods, so the panic condition
+    // is explained here in plain comments: the coefficients have the type UBig, and
+    // `x * self + y * other == gcd` has a solution without a negative coefficient only when
+    // the gcd is one of the operands. This method panics for any other input (as the
+    // trait's implementations for the primitive unsigned integers overflow); use
+    // `ExtendedGcd::gcd_ext`, which returns IBig coefficients, instead.
     #[inline]
     fn extended_gcd(&self, other: &Self) -> num_integer::ExtendedGcd<Self> {
         if self.is_zero() && other.is_zero() {

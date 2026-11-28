@@ -404,11 +404,10 @@ fn test_ord_cross_base_large_exponent() {
     }
 
     // The two binary neighbours of a decimal number, at the four standard precisions: they
-    // differ from it by less than one part in 2^precision. (The neighbours are constructed
-    // through `with_base_and_precision`, which is only trustworthy after the base-conversion
-    // fixes land; this loop is restored in that follow-up. On the tree without them, the
-    // conversion of extreme exponents is wrong or does not terminate, so the loop is reduced
-    // to the one exponent range that the current conversion supports.)
+    // differ from it by less than one part in 2^precision. The neighbours are constructed
+    // through `with_base_and_precision`, whose current implementation is wrong or does not
+    // terminate for extreme exponents, so the loop covers only the exponent range it
+    // supports; the extreme rows belong with the base-conversion fixes.
     for precision in [20usize, 50, 100, 500] {
         for (signif, exp) in [(3i32, -5000isize), (7, 5000)] {
             let d = F::<Zero, 10>::from_parts(signif.into(), exp);

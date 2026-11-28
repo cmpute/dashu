@@ -1,4 +1,4 @@
-//! Tests for the sign related traits on primitive types.
+// Tests for the sign related traits on primitive types.
 
 use core::cmp::Ordering;
 use dashu_base::{Abs, AbsOrd};

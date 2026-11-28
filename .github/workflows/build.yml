@@ -71,7 +71,8 @@ jobs:
         if: matrix.rust != '1.68'
       - run: cargo check --workspace --features "std,num-order,serde,zeroize,rand,num-traits_v02"
         if: matrix.rust == '1.68'
-      # each third-party integration must build when it is the only feature enabled
+      # the composed num-integer feature must build when it is the only feature enabled
+      # (it now depends on num-traits; this is the dependency the check guards)
       - run: cargo check -p dashu-int --no-default-features --features num-integer
         if: matrix.rust != '1.68'
 

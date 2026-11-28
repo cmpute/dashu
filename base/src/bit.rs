@@ -6,7 +6,7 @@ use core::{cmp::Ordering, num::FpCategory};
 
 use crate::{
     Approximation::{self, *},
-    Sign::{self, *},
+    Sign,
 };
 
 /// Bit query for integers
@@ -175,27 +175,28 @@ macro_rules! encode_float {
         }
 
         const BITS: i32 = <$uint>::BITS as i32;
-        const DIGITS: i32 = <$float>::MANTISSA_DIGITS as i32;
+        const SIGNIFICAND_BITS: i32 = <$float>::MANTISSA_DIGITS as i32;
         // exponent of the least significant bit of subnormal numbers
-        const MIN_ULP_EXP: i32 = <$float>::MIN_EXP - DIGITS;
+        const MIN_ULP_EXP: i32 = <$float>::MIN_EXP - SIGNIFICAND_BITS;
 
-        let sign = Sign::from($mantissa < 0);
-        let sign_bit = (($mantissa < 0) as $uint) << (BITS - 1);
+        let negative = $mantissa < 0;
+        let sign = Sign::from(negative);
+        let sign_bit = (negative as $uint) << (BITS - 1);
         let man = $mantissa.unsigned_abs();
 
         // the magnitude lies in the range [2^(top_bit - 1), 2^top_bit)
         let top_bit = BITS - man.leading_zeros() as i32 + $exponent as i32;
         if top_bit > <$float>::MAX_EXP {
             return match sign {
-                Positive => Inexact(<$float>::INFINITY, Positive),
-                Negative => Inexact(<$float>::NEG_INFINITY, Negative),
+                Sign::Positive => Inexact(<$float>::INFINITY, Sign::Positive),
+                Sign::Negative => Inexact(<$float>::NEG_INFINITY, Sign::Negative),
             };
         }
 
         // the exponent of the unit in the last place of the result, and the number
         // of low bits of the mantissa that fall below it
-        let ulp_exp = if top_bit - DIGITS > MIN_ULP_EXP {
-            top_bit - DIGITS
+        let ulp_exp = if top_bit - SIGNIFICAND_BITS > MIN_ULP_EXP {
+            top_bit - SIGNIFICAND_BITS
         } else {
             MIN_ULP_EXP
         };
@@ -204,7 +205,7 @@ macro_rules! encode_float {
         // split the mantissa into the kept part and the discarded part, the
         // latter is compared with half of the unit in the last place.
         let (kept, discarded) = if shift <= 0 {
-            // at most DIGITS bits are kept, so the shift never overflows
+            // at most SIGNIFICAND_BITS bits are kept, so the shift never overflows
             (man << (-shift) as u32, None)
         } else if shift > BITS {
             (0, Some(Ordering::Less))
@@ -220,11 +221,11 @@ macro_rules! encode_float {
             (man >> shift, cmp)
         };
 
-        // The kept part has at most DIGITS bits. It is added to (rather than or-ed with) the
+        // The kept part has at most SIGNIFICAND_BITS bits. It is added to (rather than or-ed with) the
         // exponent field, so that the implicit top bit of a normal number increases the
         // exponent field from `ulp_exp - MIN_ULP_EXP` to its final value. For the same reason,
         // a carry from rounding up correctly moves to the next binade (or to infinity).
-        let bits = sign_bit | ((((ulp_exp - MIN_ULP_EXP) as $uint) << (DIGITS - 1)) + kept);
+        let bits = sign_bit | ((((ulp_exp - MIN_ULP_EXP) as $uint) << (SIGNIFICAND_BITS - 1)) + kept);
         match discarded {
             None => Exact(<$float>::from_bits(bits)),
             Some(cmp) => {
@@ -234,9 +235,9 @@ macro_rules! encode_float {
                     Ordering::Greater => true,
                 };
                 if round_up {
-                    Inexact(<$float>::from_bits(bits + 1), Positive * sign)
+                    Inexact(<$float>::from_bits(bits + 1), Sign::Positive * sign)
                 } else {
-                    Inexact(<$float>::from_bits(bits), Negative * sign)
+                    Inexact(<$float>::from_bits(bits), Sign::Negative * sign)
                 }
             }
         }

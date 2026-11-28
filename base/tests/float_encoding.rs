@@ -1,4 +1,4 @@
-//! Regression and oracle tests for [FloatEncoding::encode].
+// Regression and oracle tests for `FloatEncoding::encode`.
 
 use core::cmp::Ordering;
 use dashu_base::{
@@ -12,7 +12,13 @@ use dashu_base::{
 /// f64 to f32 rounds to nearest, ties to even.
 fn f32_reference(man: i32, exp: i16) -> Approximation<f32, Sign> {
     let exact = man as f64 * 2f64.powi(exp as i32);
-    assert!(exact.is_finite() && exact.abs() >= f64::MIN_POSITIVE);
+    assert!(
+        exact.is_finite() && exact.abs() >= f64::MIN_POSITIVE,
+        "the f64 reference for f32::encode({}, {}) is out of range: {}",
+        man,
+        exp,
+        exact
+    );
     let f = exact as f32;
     match (f as f64).partial_cmp(&exact).unwrap() {
         Ordering::Equal => Exact(f),

@@ -176,7 +176,7 @@ impl<R: Round, const B: Word> num_traits::Signed for FBig<R, B> {
         Abs::abs(self.clone())
     }
 
-    /// The positive difference: zero if `self <= other`, and `self - other` otherwise.
+    // the positive difference: zero if `self <= other`, and `self - other` otherwise
     #[inline]
     fn abs_sub(&self, other: &Self) -> Self {
         if self <= other {
