@@ -10,10 +10,11 @@ use core::fmt::{self, Display, Formatter};
 ///
 /// # Errors vs. special values
 ///
-/// Infinite *outputs* (e.g. `1/0 → +inf`, `ln(0) → -inf`) are **not** errors — they are
-/// legitimate [`Exact`](dashu_base::Approximation::Exact) values produced by operations whose mathematical result is genuinely
-/// infinite. Overflow and underflow are distinct: the mathematical result is finite, but its
-/// magnitude exceeds the representable exponent range. These are reported as
+/// Infinite *outputs* (e.g. `1/0 → +inf`, `ln(0) → -inf`) are **not** errors — operations whose
+/// mathematical result is genuinely infinite return that infinity as a value. Division by zero
+/// flags it [`Inexact`](dashu_base::Approximation::Inexact) with `Rounding::NoOp`, like the
+/// saturations below. Overflow and underflow are distinct: the mathematical result is finite, but
+/// its magnitude exceeds the representable exponent range. These are reported as
 /// [`Overflow`](FpError::Overflow) / [`Underflow`](FpError::Underflow), and converted to
 /// signed infinity / signed zero at the convenience layer via `Context::unwrap_fp` (or the
 /// `Repr`-level counterpart `Context::unwrap_fp_repr`). Because the true result was finite,

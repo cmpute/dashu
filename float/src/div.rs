@@ -485,7 +485,8 @@ impl<R: Round> Context<R> {
     /// dividend is bounded), behind the certified short-quotient fast path (see `div_short`).
     ///
     /// A zero divisor is an error only for callers that can report it ([`Self::div`]); here a
-    /// nonzero dividend yields the infinity as a value and `0 / 0` panics like a division by zero.
+    /// nonzero dividend yields the infinity — a value, flagged [`Approximation::Inexact`] — and
+    /// `0 / 0` panics like a division by zero.
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
         assert_limited_precision(self.precision);
@@ -499,8 +500,9 @@ impl<R: Round> Context<R> {
                 // 0/0 is indeterminate; callers that can signal it (Context::div) check first.
                 panic!("divisor must not be 0");
             }
-            // finite / 0 = ±inf (sign = XOR), returned as a value
-            return Ok(Approximation::Exact(Repr::infinity_with_sign(sign)));
+            // finite / 0 = ±inf (sign = XOR): a value, not an error, flagged inexact as every
+            // produced infinity is
+            return Ok(Approximation::Inexact(Repr::infinity_with_sign(sign), Rounding::NoOp));
         }
         if lhs.significand.is_zero() {
             // (a canonical zero has exponent 0 or −1, so the quotient's exponent stays in range)
@@ -881,8 +883,17 @@ impl<R: Round> Context<R> {
     /// let a = DBig::from_str("-1.234")?;
     /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(context.div(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("-0.18")?, NoOp)));
+    ///
+    /// // a finite value over a signed zero is the signed infinity, flagged inexact
+    /// assert_eq!(context.div(&a.repr(), &DBig::ZERO.repr()), Ok(Inexact(DBig::NEG_INFINITY, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Division by Zero
+    ///
+    /// A finite value over a signed zero yields the signed infinity (the XOR of their signs),
+    /// flagged [`Inexact`](dashu_base::Approximation::Inexact) with `Rounding::NoOp`: a value,
+    /// not an error. `0 / 0` is `Err(FpError::Indeterminate)`.
     ///
     /// # Euclidean Division
     ///
@@ -943,9 +954,10 @@ impl<R: Round> Context<R> {
     /// # Errors
     ///
     /// Like [`Self::div`], a zero numerator over a zero denominator is `Indeterminate`, a
-    /// nonzero numerator over zero yields the signed infinity as a value, and a result whose
-    /// exponent leaves the representable range is an error. The latter needs an astronomically
-    /// wide operand or precision.
+    /// nonzero numerator over zero yields the signed infinity — a value, flagged
+    /// [`Inexact`](dashu_base::Approximation::Inexact) with `Rounding::NoOp` — and a result
+    /// whose exponent leaves the representable range is an error. The latter needs an
+    /// astronomically wide operand or precision.
     ///
     /// # Panics
     ///
@@ -960,8 +972,12 @@ impl<R: Round> Context<R> {
             if numerator.is_zero() {
                 return Err(FpError::Indeterminate); // 0/0
             }
-            // nonzero / 0 = ±inf, returned as a value
-            return Ok(Approximation::Exact(FBig::new(Repr::infinity_with_sign(sign), *self)));
+            // nonzero / 0 = ±inf: a value, not an error, flagged inexact as every produced
+            // infinity is
+            return Ok(Approximation::Inexact(
+                FBig::new(Repr::infinity_with_sign(sign), *self),
+                Rounding::NoOp,
+            ));
         }
         if numerator.is_zero() {
             return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
@@ -1025,14 +1041,19 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
     /// assert_eq!(context.inv(&a.repr()), Ok(Inexact(DBig::from_str("-0.81")?, NoOp)));
+    ///
+    /// // the inverse of a signed zero is the signed infinity, flagged inexact
+    /// assert_eq!(context.inv(&DBig::ZERO.repr()), Ok(Inexact(DBig::INFINITY, NoOp)));
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// Like [`Self::div`], an infinite operand is an error and `0 / 0` is `Indeterminate`.
     #[inline]
     pub fn inv<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
         if f.is_infinite() {
             return Err(FpError::InfiniteInput);
         }
-        // inv(±0) = ±inf (produced as a value by repr_div)
+        // inv(±0) = ±inf: a value, not an error, flagged inexact (see `repr_div`)
         Ok(self
             .repr_div(Repr::one(), f.clone())?
             .map(|v| FBig::new(v, *self)))
@@ -1223,40 +1244,48 @@ mod tests {
     #[test]
     fn test_div_by_zero_is_infinity() {
         let ctx = Context::<mode::HalfEven>::new(53);
-        // finite / 0 = ±inf (a value, not an error); sign = XOR
-        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap().value();
-        assert!(pos.repr().is_infinite());
-        assert_eq!(pos.repr().sign(), Sign::Positive);
+        // finite / 0 = ±inf (sign = XOR): a value, not an error, flagged inexact
+        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap();
+        assert_eq!(pos.value_ref().precision(), 53);
+        assert_eq!(pos.map(FBig::into_repr), Inexact(Repr::infinity(), NoOp));
+        let neg = ctx.div::<2>(&r2(-1, 0), &Repr::<2>::zero()).unwrap();
+        assert_eq!(neg.map(FBig::into_repr), Inexact(Repr::neg_infinity(), NoOp));
 
-        let neg = ctx
-            .div::<2>(&r2(-1, 0), &Repr::<2>::zero())
-            .unwrap()
-            .value();
-        assert_eq!(neg.repr().sign(), Sign::Negative);
+        // 1 / -0 = -inf: the signed zero of the divisor decides
+        let neg2 = ctx.div::<2>(&r2(1, 0), &Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(neg2.map(FBig::into_repr), Inexact(Repr::neg_infinity(), NoOp));
+        let pos2 = ctx.div::<2>(&r2(-1, 0), &Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(pos2.map(FBig::into_repr), Inexact(Repr::infinity(), NoOp));
 
-        // 1 / -0 = -inf
-        let neg2 = ctx
-            .div::<2>(&r2(1, 0), &Repr::<2>::neg_zero())
-            .unwrap()
-            .value();
-        assert_eq!(neg2.repr().sign(), Sign::Negative);
-    }
-
-    #[test]
-    fn test_zero_over_zero_is_indeterminate() {
-        let ctx = Context::<mode::HalfEven>::new(53);
+        // every mode agrees: the quotient diverges in a fixed direction, nothing is rounded
         assert_eq!(
-            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
-            Err(FpError::Indeterminate)
+            Context::<mode::Zero>::new(7)
+                .div::<2>(&r2(1, 0), &Repr::<2>::zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Inexact(Repr::infinity(), NoOp))
+        );
+        assert_eq!(
+            Context::<mode::Down>::new(7)
+                .div::<2>(&r2(1, 0), &Repr::<2>::zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Inexact(Repr::infinity(), NoOp))
+        );
+        assert_eq!(
+            Context::<mode::Away>::new(7)
+                .div::<2>(&r2(1, 0), &Repr::<2>::neg_zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Inexact(Repr::neg_infinity(), NoOp))
         );
     }
 
     #[test]
     fn test_inv_zero_is_infinity() {
         let ctx = Context::<mode::HalfEven>::new(53);
-        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap().value();
-        assert!(r.repr().is_infinite());
-        assert_eq!(r.repr().sign(), Sign::Positive);
+        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap();
+        assert_eq!(r.value_ref().precision(), 53);
+        assert_eq!(r.map(FBig::into_repr), Inexact(Repr::infinity(), NoOp));
+        let r = ctx.inv::<2>(&Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(r.map(FBig::into_repr), Inexact(Repr::neg_infinity(), NoOp));
     }
 
     #[test]
@@ -1274,6 +1303,15 @@ mod tests {
         // 0 / 0 is indeterminate; the FBig layer panics.
         let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
         let _ = zero.clone() / zero;
+    }
+
+    #[test]
+    fn test_zero_over_zero_is_indeterminate() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        assert_eq!(
+            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
+            Err(FpError::Indeterminate)
+        );
     }
 
     // ---- exact-path kernel, through `Context::div_int` ----
@@ -1471,21 +1509,18 @@ mod tests {
         assert_eq!(zero, Exact(FBig::<mode::HalfEven, 10>::ZERO));
         assert_eq!(zero.value().precision(), 24);
 
-        // nonzero / 0 = ±inf (a value, not an error)
+        // nonzero / 0 = ±inf: a value, not an error, flagged inexact
         let (num, den) = ratio(5, 0);
         let pos = Context::<mode::HalfEven>::new(8)
             .div_int::<10>(&num, &den)
             .unwrap();
-        assert!(
-            matches!(pos, Exact(f) if f.repr().is_infinite() && f.repr().sign() == Sign::Positive)
-        );
+        assert_eq!(pos.value_ref().precision(), 8);
+        assert_eq!(pos.map(FBig::into_repr), Inexact(Repr::<10>::infinity(), NoOp));
         let (num, den) = ratio(-5, 0);
         let neg = Context::<mode::HalfEven>::new(8)
             .div_int::<10>(&num, &den)
             .unwrap();
-        assert!(
-            matches!(neg, Exact(f) if f.repr().is_infinite() && f.repr().sign() == Sign::Negative)
-        );
+        assert_eq!(neg.map(FBig::into_repr), Inexact(Repr::<10>::neg_infinity(), NoOp));
 
         // 0/0 is indeterminate
         let (num, den) = ratio(0, 0);

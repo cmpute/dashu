@@ -52,6 +52,10 @@
   finer final window than the plain `(n + 2) + (n2 + 2)` sum accounted for.
 
 ### Change
+- An infinity that a division produces is flagged `Inexact` with `Rounding::NoOp` instead of
+  `Exact`: the signed infinity of a finite value over zero from `Context::div`, `Context::inv` and
+  `Context::div_int`, and the one of a zero base with a negative exponent from `Context::powi`
+  and `Context::powf`. The values are unchanged.
 - The exact path of `Context::div`/`Context::inv` — now shared with `Context::div_int` — bounds
   the dividend *before* dividing it: the quotient of a single division has exactly the precision
   or one digit more, and the digits cut off a wide dividend take part in the rounding as sticky
