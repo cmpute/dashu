@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix
+- Documentation: the bound of `CubicRoot::cbrt_rem`'s remainder is stated as inclusive
+  (`rem <= 3 * root^2 + 3 * root`), as the code treats it.
+
 ## 0.6.0
 
 ### Add

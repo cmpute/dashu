@@ -52,6 +52,8 @@ const_assert!(THRESHOLD_NTT_SQR_DEFAULT > THRESHOLD_TOOM4_SQR_DEFAULT);
 /// `DASHU_THRESHOLD_NTT_SQR` to override the compile-time defaults. As for the
 /// multiplication thresholds, each value is clamped so that no kernel is entered
 /// below its minimum length, and the transform threshold is not below the Toom-4 one.
+/// Unlike the multiplication's schoolbook kernel, the squaring one has no length
+/// limit, so the base-case threshold carries no upper bound.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {

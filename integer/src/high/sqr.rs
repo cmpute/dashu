@@ -1,5 +1,6 @@
 //! High-part squaring kernel.
 
+use super::mul::MIN_THRESHOLD_SIMPLE;
 #[cfg(test)]
 use crate::primitive::WORD_BITS_USIZE;
 use crate::{
@@ -26,10 +27,6 @@ use static_assertions::const_assert;
 /// only pays off once its exact high block reaches the Karatsuba band.
 const THRESHOLD_SIMPLE_DEFAULT: usize = 96;
 const_assert!(THRESHOLD_SIMPLE_DEFAULT >= MIN_THRESHOLD_SIMPLE);
-
-// Smallest usable value of the base-case threshold (the split is the one of the
-// multiplication kernel, see there). Used to clamp runtime tuning values.
-use super::mul::MIN_THRESHOLD_SIMPLE;
 
 /// Environment-variable override for the base-case threshold.
 ///

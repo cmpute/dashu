@@ -1,5 +1,8 @@
 //! The runtime threshold overrides of the `tuning` feature select between algorithms;
 //! no value may make an operation fail or change its result.
+//!
+//! The tests set process-wide environment variables, so this file must contain
+//! exactly one `#[test]` function.
 
 #![cfg(feature = "tuning")]
 
@@ -108,7 +111,6 @@ fn check_high_products(lens: &[usize]) {
     }
 }
 
-// A single test function: it changes process-wide environment variables.
 #[test]
 fn test_threshold_overrides_never_fail() {
     // the Toom-4x2 kernel entered below its minimum length

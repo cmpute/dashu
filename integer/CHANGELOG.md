@@ -23,6 +23,10 @@
   fails loudly in release builds too.
 
 ### Fix
+- `IBig::cbrt` computes the cubic root of a negative number instead of panicking (an odd
+  root of a negative number is real; the base trait never promised a panic).
+- `trailing_ones` returns the correct count for values whose words are all ones beyond the
+  second word (it used to index past the buffer).
 - Fix lost carries when a transform-based multiplication accumulates its per-prime residues
   into the product: large products (beyond the plain kernels' reach) came out wrong. Operands
   beyond the largest supported transform size are now split and multiplied piecewise instead
@@ -57,8 +61,9 @@
 - `ilog` rejects a zero self and a zero base with a panic instead of returning a meaningless
   value.
 - Parsing rejects digit-less strings (a string of only underscores used to parse as `0`),
-  and `from_str_radix` with an unsupported radix returns `ParseError::UnsupportedRadix`
-  instead of panicking.
+  and `from_str_with_radix_default` returns `ParseError::UnsupportedRadix` for an
+  unsupported default radix (it used to be ignored, and a prefix could still rescue the
+  parse).
 - With the `tuning` feature, `DASHU_THRESHOLD_*` values outside the range the kernels support
   are clamped (out-of-range values used to make multiplication, squaring and
   `mul_high`/`sqr_high` panic).

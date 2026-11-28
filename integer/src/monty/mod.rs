@@ -6,7 +6,7 @@
 //! whenever the REDC is cheaper than the division.
 //!
 //! The operand product reuses the crate's fast multiplication (Karatsuba / Toom-3 / NTT); the
-//! reduction is a word-by-word REDC using the double-word "addmul_2" kernel. Each result is fully
+//! reduction is a word-by-word REDC using the double-word fused multiply-subtract kernel. Each result is fully
 //! reduced to the canonical range `[0, m)`.
 //!
 //! # When to use Montgomery vs Barrett

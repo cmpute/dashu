@@ -66,7 +66,10 @@ const_assert!(THRESHOLD_NTT_DEFAULT > THRESHOLD_TOOM4_MUL_DEFAULT);
 /// gates accepts every operand it is handed: a kernel is never entered below its
 /// `MIN_LEN` (nor the schoolbook kernel above its `MAX_SMALLER_LEN`), and the
 /// transform threshold is not below the Toom-4 one, as the scratch budgets rely on
-/// the transform taking the longest operands only.
+/// the transform taking the longest operands only. The two exceptions are
+/// `ntt_asym_min` and `ntt_asym_ratio`, which are taken unclamped: their uses
+/// combine them with saturating arithmetic, so an out-of-range value only skews
+/// the dispatch, it cannot overflow.
 mod threshold {
     #[inline]
     pub fn simple() -> usize {
@@ -110,7 +113,7 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_ASYM_MIN") {
-                if let Ok(v) = s.parse() {
+                if let Ok(v) = s.parse::<usize>() {
                     return v;
                 }
             }
@@ -123,7 +126,7 @@ mod threshold {
         #[cfg(feature = "tuning")]
         {
             if let Ok(s) = std::env::var("DASHU_THRESHOLD_NTT_ASYM_RATIO") {
-                if let Ok(v) = s.parse() {
+                if let Ok(v) = s.parse::<usize>() {
                     return v;
                 }
             }

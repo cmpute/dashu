@@ -5,6 +5,7 @@ use crate::{
     arch::word::{DoubleWord, Word},
     buffer::Buffer,
     div,
+    error::panic_allocate_too_much,
     helper_macros::debug_assert_zero,
     ibig::IBig,
     math, mul,
@@ -244,7 +245,7 @@ impl TypedReprRef<'_> {
     }
 
     fn to_chunks(self, chunk_bits: usize) -> Vec<Repr> {
-        assert!(chunk_bits > 0);
+        assert!(chunk_bits > 0, "chunk_bits must be positive");
         let chunk_count = math::ceil_div(self.bit_len(), chunk_bits);
 
         match self {
@@ -379,7 +380,7 @@ impl Repr {
     }
 
     fn from_chunks(chunks: &[&[Word]], chunk_bits: usize) -> Self {
-        assert!(chunk_bits > 0);
+        assert!(chunk_bits > 0, "chunk_bits must be positive");
 
         // the leading zero chunks don't contribute to the result
         let nonzero_chunks = chunks
@@ -393,10 +394,9 @@ impl Repr {
             // extra word is allocated for shifting. This is also enough for the sum
             // when the chunks overlap, because the sum of the lower chunks is less
             // than 2^(WORD_BITS * max_len) at the bit position of the top chunk.
-            let top_shift = match (chunks.len() - 1).checked_mul(chunk_bits) {
-                Some(shift) => shift,
-                None => crate::error::panic_allocate_too_much(),
-            };
+            let top_shift = (chunks.len() - 1)
+                .checked_mul(chunk_bits)
+                .unwrap_or_else(|| panic_allocate_too_much());
             let result_len = max_len + top_shift / WORD_BITS_USIZE + 1;
             let mut result = Buffer::allocate(result_len);
             result.push_zeros(result_len);

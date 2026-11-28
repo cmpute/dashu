@@ -619,9 +619,9 @@ fn test_to_f32_rounding_up_to_power_of_two() {
     );
 }
 
-// (The `test_to_float_sticky_bit_below_round_bit` suite from the upstream branch belongs to
-// the `FloatEncoding::encode` rewrite, which is merged separately; without that fix the
-// wide-mantissa sticky bit is dropped and these cases misround.)
+// TODO: restore the `test_to_float_sticky_bit_below_round_bit` suite once
+// `FloatEncoding::encode` rounds once at the result's ulp; with the current
+// encoder the wide-mantissa sticky bit is dropped and these cases misround.
 
 #[test]
 fn test_ubig_from_float_truncates() {

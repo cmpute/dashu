@@ -124,7 +124,7 @@ pub(crate) fn mul_memory_requirement(ring: &MontgomeryLargeRepr) -> Layout {
 ///
 /// Uses the double-word constant `n0_dword = -m^{-1} mod 2^(2*WORD_BITS)`: each iteration takes the
 /// low double word `t[i..i+2]`, forms `q = t[i..i+2] * n0_dword mod 2^(2*WORD_BITS)`, and adds
-/// `q * modulus` at position `i` via the addmul_2 kernel — which clears two words at once. After
+/// `q * modulus` at position `i` via the fused multiply-subtract kernel — which clears two words at once. After
 /// `s` words are cleared, `t[0..s]` is zero and the result — lying in `[0, 2m)` — occupies
 /// `t[s..2s+1]`. (When `s` is odd the final lone word is handled with the single-word path.)
 ///
@@ -137,7 +137,7 @@ pub(crate) fn redc_in_place(t: &mut [Word], ring: &MontgomeryLargeRepr) {
     debug_assert_eq!(t.len(), 2 * s + 1);
 
     let mut i = 0;
-    // Two words per iteration via the addmul_2 kernel (clears words i and i+1).
+    // Two words per iteration via the fused multiply-subtract kernel (clears words i and i+1).
     while i + 1 < s {
         let ti = double_word(t[i], t[i + 1]);
         let q = ti.wrapping_mul(n0_dword);

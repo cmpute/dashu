@@ -24,6 +24,11 @@ fn pow_shift(exp: usize, shift: usize) -> usize {
 impl UBig {
     /// Raises self to the power of `exp`.
     ///
+    /// # Panics
+    ///
+    /// Panics if the result is too large to be represented (its bit length
+    /// cannot be counted by a [usize]).
+    ///
     /// # Examples
     ///
     /// ```
@@ -50,6 +55,11 @@ impl UBig {
 
 impl IBig {
     /// Raises self to the power of `exp`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result is too large to be represented (its bit length
+    /// cannot be counted by a [usize]).
     ///
     /// # Examples
     ///
