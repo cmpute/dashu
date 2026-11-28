@@ -401,15 +401,14 @@ impl<R: ErrorBounds> Context<R> {
         }
 
         // Zero base (±0): a positive exponent gives ±0, a negative one ±inf; the sign follows |n|'s
-        // parity. The infinity is a division by zero, flagged inexact like every one that a
-        // division produces. Short-circuit before the magnitude pre-check (whose log2 estimate is
-        // meaningless for zero) and before the squaring chain (which can't start from zero).
+        // parity. Short-circuit before the magnitude pre-check (whose log2 estimate is meaningless
+        // for zero) and before the squaring chain (which can't start from zero).
         let odd = n.bit(0);
         if base.significand.is_zero() {
             let neg_sign = base.sign() == Sign::Negative && odd;
             if negative {
                 let sign = Sign::from(neg_sign);
-                return Ok(Inexact(FBig::new(Repr::<B>::infinity_with_sign(sign), *self), NoOp));
+                return Ok(Exact(FBig::new(Repr::<B>::infinity_with_sign(sign), *self)));
             }
             let repr = if neg_sign {
                 Repr::<B>::neg_zero()
@@ -571,12 +570,11 @@ impl<R: ErrorBounds> Context<R> {
             //   pow(±0, y > 0) = +0,    pow(±0, y < 0) = +inf.
             // For the sign-correct result (e.g. `pow(-0, odd) = -0`), use the integer-exponent
             // [`powi`](Context::powi). Short-circuiting here also avoids the negative-base path.
-            // (The infinity is a division by zero, flagged inexact like every one that a division
-            // produces.)
-            return Ok(match exp.sign() {
-                Sign::Negative => Inexact(FBig::new(Repr::infinity(), *self), NoOp),
-                Sign::Positive => Exact(FBig::ZERO),
-            });
+            return Ok(Exact(if exp.sign() == Sign::Negative {
+                FBig::new(Repr::infinity(), *self)
+            } else {
+                FBig::ZERO
+            }));
         }
         if base.is_one() {
             // pow(1, y) = 1 for any finite y (exp is finite here — infinities were rejected above).
@@ -1422,30 +1420,26 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_base_negative_exponent_is_inexact_infinity() {
-        // powi(±0, n) and powf(±0, y) with a negative exponent are divisions by zero: their
-        // infinity is flagged inexact like the one of `Context::div`, whatever the exponent
+    fn test_zero_base_negative_exponent_is_exact_infinity() {
+        // powi(±0, n) and powf(±0, y) with a negative exponent are divisions by zero. Like every
+        // result that is infinite by mathematics, their infinity is `Exact`: `Inexact` is for a
+        // finite result that overflows.
         let ctx = Context::<mode::HalfEven>::new(9);
         let flag = |r: FpResult<FBig<mode::HalfEven, 2>>| r.map(|r| r.map(FBig::into_repr));
+        let (pos, neg) = (Repr::<2>::zero(), Repr::<2>::neg_zero());
         let (inf, ninf) = (Repr::<2>::infinity(), Repr::<2>::neg_infinity());
-        for (base, odd_sign) in [
-            (Repr::<2>::zero(), inf.clone()),
-            (Repr::<2>::neg_zero(), ninf.clone()),
-        ] {
-            // (-0)^(-odd) = -inf; an even exponent makes the sign positive
-            assert_eq!(flag(ctx.powi(&base, IBig::from(-1))), Ok(Inexact(odd_sign.clone(), NoOp)));
-            assert_eq!(flag(ctx.powi(&base, IBig::from(-3))), Ok(Inexact(odd_sign, NoOp)));
-            assert_eq!(flag(ctx.powi(&base, IBig::from(-2))), Ok(Inexact(inf.clone(), NoOp)));
-            // powf returns the positive result on a zero base
-            assert_eq!(
-                flag(ctx.powf(&base, &Repr::new(IBig::from(-3), 0), None)),
-                Ok(Inexact(inf.clone(), NoOp))
-            );
-            assert_eq!(
-                flag(ctx.powf(&base, &Repr::new(IBig::from(-3), -1), None)),
-                Ok(Inexact(inf.clone(), NoOp))
-            );
-        }
+        // (-0)^(-odd) = -inf; an even exponent makes the sign positive
+        assert_eq!(flag(ctx.powi(&pos, IBig::from(-1))), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powi(&pos, IBig::from(-3))), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-1))), Ok(Exact(ninf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-3))), Ok(Exact(ninf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-2))), Ok(Exact(inf.clone())));
+        // powf returns the positive result on a zero base
+        let (third, half) = (Repr::new(IBig::from(-3), -1), Repr::new(IBig::from(-1), 1));
+        assert_eq!(flag(ctx.powf(&pos, &third, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&pos, &half, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&neg, &third, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&neg, &half, None)), Ok(Exact(inf)));
     }
 
     #[test]

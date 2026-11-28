@@ -296,9 +296,7 @@ impl<const B: Word> core::ops::Neg for Ball<B> {
 }
 
 /// Unpack a kernel result: the rounded midpoint and its fresh error contribution — `0` when
-/// the kernel reports `Exact`, one work-ulp otherwise. An infinity the kernel produced (a
-/// division by a zero midpoint) has no ulp: its contribution is the whole-line radius, which
-/// asks the Ziv loop for a retry.
+/// the kernel reports `Exact`, one work-ulp otherwise.
 fn finish_mid<const B: Word>(
     rounded: Rounded<FBig<mode::HalfEven, B>>,
     prec: usize,
@@ -307,11 +305,7 @@ fn finish_mid<const B: Word>(
         Approximation::Exact(f) => (f.into_repr(), Mag::ZERO),
         Approximation::Inexact(f, _) => {
             let mid = f.into_repr();
-            let eps = if mid.is_infinite() {
-                Mag::INFINITY
-            } else {
-                ulp_mag(&mid, prec)
-            };
+            let eps = ulp_mag(&mid, prec);
             (mid, eps)
         }
     }
