@@ -1,16 +1,14 @@
 //! Property tests for the rounding-aware conversion from rationals to floats (`to_float`).
 //!
-//! The conversion promises correct rounding, so every result is checked against
+//! The conversion promises correct rounding, so every result is checked against an exact
+//! reference computed with integer arithmetic, stating each rounding mode's rule in its own
+//! terms: the value, the exactness flag and the reported rounding direction must all agree.
 //!
-//! * an exact reference computed with integer arithmetic, stating each rounding mode's rule in
-//!   its own terms — the value, the exactness flag and the reported rounding direction must all
-//!   agree — and
-//! * the float crate's division kernel, run on the same numerator and denominator.
-//!
-//! The reference truncates straight to the target digit count, whereas the implementation
-//! bounds its division to one guard digit and carries everything below it as sticky
-//! information. A double rounding — rounding the remainder before dropping the guard digit —
-//! therefore shows up as a disagreement; that was the defect reported in issue #125.
+//! The reference truncates straight to the target digit count, whereas the implementation (the
+//! float crate's division kernel) bounds its division to one guard digit and carries everything
+//! below it as sticky information. A double rounding — rounding the remainder before dropping
+//! the guard digit — therefore shows up as a disagreement; that was the defect reported in
+//! issue #125.
 
 use core::{cmp::Ordering, fmt};
 
@@ -163,14 +161,14 @@ fn reference<const B: Word>(
     let representable = dropped.is_zero();
     let half = (&dropped << 1).cmp(&scaled_den);
     let adjust = rule(sign, truncated.bit(0), half, !representable);
-    (IBig::from_parts(sign, truncated) + IBig::from(adjust), s, representable, adjust)
+    (IBig::from_parts(sign, truncated) + adjust, s, representable, adjust)
 }
 
 // ---------------------------------------------------------------------------
 // Checks
 // ---------------------------------------------------------------------------
 
-/// Check one conversion against the reference and against the division kernel.
+/// Check one conversion against the reference.
 fn verify<R: Round, const B: Word>(
     num: &IBig,
     den: &UBig,
@@ -198,15 +196,6 @@ fn verify<R: Round, const B: Word>(
         )));
     }
 
-    // The float crate's division kernel decides the same rounding from the two operands.
-    let dividend = FBigRepr::<B>::new(num.clone(), 0);
-    let divisor = FBigRepr::<B>::new(IBig::from_parts(Sign::Positive, den.clone()), 0);
-    let divided = context
-        .div(&dividend, &divisor)
-        .map_err(|e| Mismatch(format!("the division kernel failed: {e:?}")))?;
-    if got != divided {
-        return Err(Mismatch(format!("got {got:?}, the division kernel gives {divided:?}")));
-    }
     Ok(())
 }
 
@@ -248,7 +237,7 @@ macro_rules! for_each_mode {
 }
 
 /// Check `value` under every built-in rounding mode, in every tested base: binary and decimal
-/// (the common cases), an odd base, a power-of-two base wider than one bit, and an even base
+/// (the common cases), two odd bases, a power-of-two base wider than one bit, and an even base
 /// with several trailing zero bits that is not a power of two.
 macro_rules! check_all_modes {
     ($value:expr, $precision:expr $(,)?) => {{
@@ -256,6 +245,7 @@ macro_rules! check_all_modes {
         let precision = $precision;
         for_each_mode!(check_one, 2, &value, precision)?;
         for_each_mode!(check_one, 3, &value, precision)?;
+        for_each_mode!(check_one, 7, &value, precision)?;
         for_each_mode!(check_one, 10, &value, precision)?;
         for_each_mode!(check_one, 12, &value, precision)?;
         for_each_mode!(check_one, 16, &value, precision)?;
@@ -369,14 +359,14 @@ fn near_tie<const B: Word>() -> impl Strategy<Value = (IBig, UBig, usize)> {
         .prop_map(move |(random, (precision, s, offset, q, negative, span))| {
             let base = UBig::from_word(B);
             let k = base.pow(precision - 1) + (random % &span);
-            let numer = (&k + &k + UBig::ONE) * UBig::from(q) + UBig::from(offset.unsigned_abs());
+            let numer = (&k + &k + UBig::ONE) * q + offset.unsigned_abs();
             let numer = if offset < 0 {
                 numer - UBig::from(2u8)
             } else {
                 numer
             };
             let mut numer = signed(numer, negative);
-            let mut denom = UBig::from(2u8) * UBig::from(q);
+            let mut denom = UBig::from(2u8) * q;
             if s >= 0 {
                 numer *= base.pow(s as usize);
             } else {

@@ -1420,6 +1420,29 @@ mod tests {
     }
 
     #[test]
+    fn test_zero_base_negative_exponent_is_exact_infinity() {
+        // powi(±0, n) and powf(±0, y) with a negative exponent are divisions by zero. Like every
+        // result that is infinite by mathematics, their infinity is `Exact`: `Inexact` is for a
+        // finite result that overflows.
+        let ctx = Context::<mode::HalfEven>::new(9);
+        let flag = |r: FpResult<FBig<mode::HalfEven, 2>>| r.map(|r| r.map(FBig::into_repr));
+        let (pos, neg) = (Repr::<2>::zero(), Repr::<2>::neg_zero());
+        let (inf, ninf) = (Repr::<2>::infinity(), Repr::<2>::neg_infinity());
+        // (-0)^(-odd) = -inf; an even exponent makes the sign positive
+        assert_eq!(flag(ctx.powi(&pos, IBig::from(-1))), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powi(&pos, IBig::from(-3))), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-1))), Ok(Exact(ninf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-3))), Ok(Exact(ninf.clone())));
+        assert_eq!(flag(ctx.powi(&neg, IBig::from(-2))), Ok(Exact(inf.clone())));
+        // powf returns the positive result on a zero base
+        let (third, half) = (Repr::new(IBig::from(-3), -1), Repr::new(IBig::from(-1), 1));
+        assert_eq!(flag(ctx.powf(&pos, &third, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&pos, &half, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&neg, &third, None)), Ok(Exact(inf.clone())));
+        assert_eq!(flag(ctx.powf(&neg, &half, None)), Ok(Exact(inf)));
+    }
+
+    #[test]
     fn test_powf_zero_base() {
         use crate::DBig;
         // powf with a float exponent returns the *positive* result on a zero base

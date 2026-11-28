@@ -19,6 +19,10 @@
   precision (up to about 100 times in base 2 in measurements): only the digits that can be kept
   are divided, instead of the whole quotient.
 
+### Change
+- `RBig::to_float` / `Relaxed::to_float` now delegate to the float crate's division kernel (the
+  new `Context::div_int`) instead of carrying a copy of it; the results are unchanged.
+
 ## 0.6.0
 
 ### Change

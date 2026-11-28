@@ -13,6 +13,7 @@ fn independent_operator_checks() {
     assert_eq!((&n * &n), n.sqr());
     assert_eq!((&n % &d).is_zero(), n.is_multiple_of(&d));
     assert_eq!((&n & UBig::ONE).is_zero(), true);
+    let _ = &n * UBig::from(2u8);
 }
 
 #[cfg(test)]
@@ -20,6 +21,7 @@ mod helpers {
     use super::*;
     #[allow(dead_code)]
     fn reference(n: &UBig, d: &UBig) -> UBig {
+        let _ = n * UBig::from(2u8);
         let q = n / d;
         let r = n % d;
         let _ = (n % d).is_zero();

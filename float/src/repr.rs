@@ -33,8 +33,11 @@ use dashu_int::{DoubleWord, IBig, UBig};
 /// The infinities are only supposed to be consumed as sentinels: only equality test and
 /// comparison are implemented for them, and any arithmetic operation that takes an infinity
 /// as input will lead to panic (at the `FBig` layer) or return an error (at the `Context`
-/// layer). If an operation result is too large or too small, the operation will return an
-/// infinity (as a value) at the `Context` layer, or panic at the `FBig` layer.
+/// layer). If an operation result is too large or too small to be represented, the operation
+/// returns an error ([`FpError::Overflow`] or [`FpError::Underflow`]) at the `Context` layer.
+/// At the `FBig` layer the error is replaced by the value the rounding mode saturates to
+/// (`±∞` or `±0` under the nearest modes), which is returned [`Inexact`]; at unlimited
+/// precision an overflow has no such value and panics instead.
 ///
 #[cfg_attr(
     feature = "rkyv_v07",

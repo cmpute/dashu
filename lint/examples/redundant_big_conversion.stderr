@@ -1,0 +1,91 @@
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:9:21
+   |
+LL |     let _ = value * IBig::from(n);
+   |                     ^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+   = note: `#[warn(redundant_big_conversion)]` on by default
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:10:21
+   |
+LL |     let _ = value + IBig::from(neg);
+   |                     ^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:11:21
+   |
+LL |     let _ = value / IBig::from(neg);
+   |                     ^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:12:21
+   |
+LL |     let _ = other * UBig::from_word(n);
+   |                     ^^^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:13:21
+   |
+LL |     let _ = other - UBig::from_dword(k);
+   |                     ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:15:21
+   |
+LL |     let _ = value * IBig::from(n as usize + 1);
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:16:21
+   |
+LL |     let _ = value * IBig::from(-neg);
+   |                     ^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:18:21
+   |
+LL |     let _ = value * IBig::from(UBig::from_dword(k));
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:20:10
+   |
+LL |     a *= IBig::from(n);
+   |          ^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:22:10
+   |
+LL |     b /= UBig::from(n);
+   |          ^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: this primitive integer is converted to a Dashu integer only for the operator
+  --> $DIR/redundant_big_conversion.rs:23:10
+   |
+LL |     b += UBig::from_dword(k);
+   |          ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: the operator takes the primitive integer directly
+
+warning: 11 warnings emitted
+

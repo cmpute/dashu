@@ -70,15 +70,18 @@ fn test_div_exact_and_midpoint_results() {
 /// semantics through the public API.
 #[test]
 fn test_div_exponent_overflow() {
+    // Equal significands: the quotient is exactly 2^(MAX+5) (2^(MIN−5)), which has no
+    // representable form whatever the precision. (A quotient of merely *similar* magnitude
+    // can fit when its significant digits reach down into the range — see
+    // `div_prop.rs::div_matches_oracle_extreme_exponents`.)
     let aw = pattern_words(words_for_precision(2400, 2), 33);
-    // a huge exponent difference: (MAX − 5) − (−10) overflows on subtraction
     let a = Repr::<2>::new(significand(&aw), isize::MAX - 5);
-    let b = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 45)), -10);
+    let b = Repr::<2>::new(significand(&aw), -10);
     let ctx = Context::<mode::HalfEven>::new(2400);
     assert_eq!(ctx.div(&a, &b), Err(FpError::Overflow(Sign::Positive)));
 
     let c = Repr::<2>::new(significand(&aw), isize::MIN + 5);
-    let d = Repr::<2>::new(significand(&pattern_words(words_for_precision(2400, 2), 55)), 10);
+    let d = Repr::<2>::new(significand(&aw), 10);
     assert_eq!(ctx.div(&c, &d), Err(FpError::Underflow(Sign::Positive)));
 }
 

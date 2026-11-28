@@ -12,8 +12,8 @@ use crate::{
 use core::cmp::Ordering;
 use core::ops::{Div, DivAssign, Rem, RemAssign};
 use dashu_base::{
-    AbsOrd, Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, EstimatedLog2, Inverse,
-    RemEuclid, Sign, Signed, UnsignedAbs,
+    Approximation, BitTest, DivEuclid, DivRem, DivRemEuclid, EstimatedLog2, Inverse, RemEuclid,
+    Sign, Signed, UnsignedAbs,
 };
 use dashu_int::{fast_div::ConstDivisor, high, modular::IntoRing, IBig, UBig};
 
@@ -481,21 +481,200 @@ fn round_short_quotient<R: Round, const B: Word>(
 }
 
 impl<R: Round> Context<R> {
-    /// Division kernel for an already-bounded dividend: `lhs` must carry at most
-    /// `rhs.digits() + precision` digits (the `FBig` operators' operands always do — a
-    /// significand is at most `precision + 1` digits and the divisor at least one). For an
-    /// arbitrary [`Repr`] dividend use [`Context::div`], which bounds it exactly (see
-    /// [`Self::repr_div_split`]).
+    /// Division kernel for finite operands of any width (see [`Self::repr_div_int`] for how the
+    /// dividend is bounded), behind the certified short-quotient fast path (see `div_short`).
+    ///
+    /// A zero divisor is an error only for callers that can report it ([`Self::div`]); here a
+    /// nonzero dividend yields the infinity as a value and `0 / 0` panics like a division by zero.
     pub(crate) fn repr_div<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> FpResult<Repr<B>> {
-        debug_assert!(
-            digit_len::<B>(&lhs.significand) <= digit_len::<B>(&rhs.significand) + self.precision
-        );
+        assert_finite_operands(&lhs, &rhs);
+        assert_limited_precision(self.precision);
+
+        // the XOR sign of the operands labels the quotient, a zero quotient included (−0 / 5 = −0)
+        let sign_negative = lhs.sign() != rhs.sign();
+        let sign = Sign::from(sign_negative);
+
+        if rhs.significand.is_zero() {
+            if lhs.significand.is_zero() {
+                // 0/0 is indeterminate; callers that can signal it (Context::div) check first.
+                panic!("divisor must not be 0");
+            }
+            // finite / 0 = ±inf (sign = XOR), returned as a value
+            return Ok(Approximation::Exact(Repr::infinity_with_sign(sign)));
+        }
+        if lhs.significand.is_zero() {
+            // (a canonical zero has exponent 0 or −1, so the quotient's exponent stays in range)
+            return Ok(Approximation::Exact(make_div_repr(sign_negative, IBig::ZERO, 0)));
+        }
+
         // Fast path: decide the rounding from a certified high window of the
         // quotient (see `div_short`); the exact quotient is the fallback.
         if let Some(rounded) = self.div_short(&lhs, &rhs) {
             return self.finish_rounded_repr(rounded);
         }
-        self.repr_div_split(lhs, rhs, IBig::ZERO, 0)
+
+        self.repr_div_int::<B>(
+            sign,
+            &lhs.significand,
+            &rhs.significand.unsigned_abs(),
+            lhs.exponent as i128 - rhs.exponent as i128,
+        )
+    }
+
+    /// Correctly rounded `sign · numerator / denominator · B^exponent` for a nonzero `numerator`
+    /// (of which only the magnitude counts) and a positive `denominator`: the exact quotient of
+    /// the division, shared by the float division and [`Self::div_int`].
+    ///
+    /// The dividend is bounded *before* it is divided: it is scaled so that the truncated quotient
+    /// has exactly `precision` or `precision + 1` digits, which a single division produces and
+    /// which leaves at most one digit to drop. A narrow dividend is padded with zero digits; the
+    /// excess low digits of a wide one are split off and kept as *sticky* digits through the
+    /// rounding, so that no information is rounded away before the final (single) rounding step.
+    /// (Rounding the dividend instead perturbs ties, direction and the exactness flag: the
+    /// quotient of a *rounded* dividend can divide exactly where the true one doesn't, land on a
+    /// false midpoint, or round the wrong way under directed modes.)
+    fn repr_div_int<const B: Word>(
+        &self,
+        sign: Sign,
+        numerator: &IBig,
+        denominator: &UBig,
+        exponent: i128,
+    ) -> FpResult<Repr<B>> {
+        assert_limited_precision(self.precision);
+        let precision = self.precision;
+
+        // The value becomes (hi + lo / B^k) / denominator · B^exponent, where `hi` spans exactly
+        // `precision` digits more than the denominator. The truncated quotient q = hi / denominator
+        // then has `precision` or `precision + 1` digits, so at most one digit is left to drop
+        // when rounding.
+        let num_digits = digit_len::<B>(numerator);
+        let den_digits = digit_len::<B>(denominator.as_ibig());
+        let bound = precision.saturating_add(den_digits);
+        let k = num_digits.saturating_sub(bound); // sticky digits split off a wide numerator
+        let shift = bound.saturating_sub(num_digits); // zero digits padding a narrow one
+        let mut exponent = exponent + k as i128 - shift as i128;
+
+        // The exponent is tracked beyond the `isize` range: as the exponent of a *padded* quotient
+        // it can lie outside the range near the limits although the result fits (see the end of
+        // this function). Fail before any work is done when the result certainly cannot fit — its
+        // final exponent can only be larger, by one for the digit that may be dropped and by at
+        // most `precision` when the trailing zero digits of the significand are folded into it.
+        if exponent >= isize::MAX as i128 {
+            return Err(FpError::Overflow(sign));
+        }
+        if exponent + precision as i128 <= isize::MIN as i128 {
+            return Err(FpError::Underflow(sign));
+        }
+
+        let (q, rem, lo) = if k > 0 {
+            let (hi, lo) = split_digits_ref::<B>(numerator, k);
+            let (q, rem) = hi.unsigned_abs().div_rem(denominator);
+            (q, rem, lo.unsigned_abs())
+        } else {
+            let hi = shl_digits::<B>(numerator, shift);
+            let (q, rem) = hi.unsigned_abs().div_rem(denominator);
+            (q, rem, UBig::ZERO)
+        };
+
+        // A quotient one digit too wide drops that digit here, together with the fraction below
+        // it, in a single step: with q = truncated·B + digit,
+        //     q + N / D = truncated + (digit·D + N) / (B·D).
+        // (Rounding the digit on its own first would double-round the value.)
+        let dropped = digit_len::<B>(q.as_ibig()) > precision;
+        let (truncated, digit) = if dropped {
+            exponent += 1;
+            q.div_rem(B)
+        } else {
+            (q, 0)
+        };
+
+        // The part below the last kept digit is (digit·D + N) / (unit·D), where D = denominator·B^k,
+        // N = rem·B^k + lo and `unit` is B if a digit was dropped, else 1. Against half a unit:
+        //     2·N  vs  factor·D,   factor = unit − 2·digit
+        //     2·N − factor·D = B^k·(2·rem − factor·denominator) + 2·lo
+        // factor = 0: a tie iff N = 0. Any other factor but 1: below the half (rem < denominator,
+        // 2·lo < 2·B^k). Factor 1: the bracket decides; 2·lo settles a deficit of one unit.
+        // Evaluated lazily: the directed modes never need it.
+        let half_test = || {
+            let unit = if dropped { B } else { 1 };
+            if dropped && digit > B - digit {
+                // past the half by itself, regardless of the remainder
+                return Ordering::Greater;
+            }
+            // in 0..=B here, since 2·digit <= unit
+            let factor = unit - digit * 2;
+            match factor {
+                0 => {
+                    if rem.is_zero() && lo.is_zero() {
+                        Ordering::Equal
+                    } else {
+                        Ordering::Greater
+                    }
+                }
+                1 => {
+                    let twice_rem = &rem << 1;
+                    match twice_rem.cmp(denominator) {
+                        Ordering::Greater => Ordering::Greater,
+                        // an exact tie unless the sticky digits are nonzero
+                        Ordering::Equal => {
+                            if lo.is_zero() {
+                                Ordering::Equal
+                            } else {
+                                Ordering::Greater
+                            }
+                        }
+                        Ordering::Less => {
+                            if &twice_rem + UBig::ONE == *denominator {
+                                // one unit short: the sticky digits decide
+                                (&lo << 1).cmp(&UBig::from_word(B).pow(k))
+                            } else {
+                                Ordering::Less
+                            }
+                        }
+                    }
+                }
+                // at least two units short of the half
+                _ => Ordering::Less,
+            }
+        };
+
+        let mut significand = IBig::from_parts(sign, truncated);
+        let rounded = if rem.is_zero() && lo.is_zero() && digit == 0 {
+            // nothing is left below the significand: the value is represented exactly
+            None
+        } else {
+            Some(R::round_low_part(&significand, sign, half_test))
+        };
+        if let Some(adjust) = rounded {
+            significand += adjust;
+        }
+
+        // The result is representable iff the exponent of its normalized form lies strictly
+        // inside the range: `Repr::new` folds the trailing zero digits into the exponent and
+        // `check_finite_exponent` rejects the sentinels. Below the range the folding has to be
+        // done by hand, since the padded exponent does not fit an `isize` any more (an exact
+        // quotient narrower than the precision, e.g. an integer divided by a huge power of the
+        // base, is padded down past the bottom of the range and folds back into it).
+        let repr = if exponent < isize::MIN as i128 {
+            // (the temporary's exponent counts the folded digits)
+            let folded = Repr::<B>::new(significand, 0);
+            let canonical = exponent + folded.exponent as i128;
+            if canonical <= isize::MIN as i128 {
+                return Err(FpError::Underflow(sign));
+            }
+            let exponent = isize::try_from(canonical).map_err(|_| FpError::Overflow(sign))?;
+            Repr {
+                significand: folded.significand,
+                exponent,
+            }
+        } else {
+            Repr::<B>::new(significand, exponent as isize)
+        };
+        repr.check_finite_exponent()?;
+        Ok(match rounded {
+            None => Approximation::Exact(repr),
+            Some(adjust) => Approximation::Inexact(repr, adjust),
+        })
     }
 
     /// Certified short-quotient fast path for division (and `inv`). Returns
@@ -590,229 +769,6 @@ impl<R: Round> Context<R> {
         round_short_quotient::<R, B>(self, signif, ls * rs, exponent, &err_abs)
     }
 
-    /// [`Self::repr_div`] for an arbitrary-width dividend: the excess low digits below the
-    /// `divisor digits + precision` bound are split off as `lo` and carried through the
-    /// division as sticky rounding information, so no information is ever lost. (Rounding the
-    /// dividend instead — as an earlier version of `Context::div` did — perturbs ties,
-    /// direction and the exactness flag: the quotient of a *rounded* dividend can divide
-    /// exactly where the true one doesn't, land on a false midpoint, or round the wrong way
-    /// under directed modes.)
-    ///
-    /// The width check runs on the cheap `digits_ub`/`digits_lb` estimates, but the split
-    /// point itself must be the EXACT digit count: splitting at exactly
-    /// `divisor digits + precision` digits guarantees the high part is not below the divisor,
-    /// which keeps the kernel's padding branches (they rescale the remainder without
-    /// rescaling the sticky low part) off the `k > 0` path entirely. A lower split — e.g.
-    /// derived from the bounds — is unsound for that reason.
-    pub(crate) fn repr_div_any_width<const B: Word>(
-        &self,
-        lhs: Repr<B>,
-        rhs: Repr<B>,
-    ) -> FpResult<Repr<B>> {
-        // (digits_ub of a zero dividend is 0, so zero takes the fast path too)
-        if lhs.digits_ub() <= rhs.digits_lb() + self.precision {
-            return self.repr_div(lhs, rhs);
-        }
-
-        // exact split (the sign of the dividend is preserved on both parts)
-        let ddigits = digit_len::<B>(&rhs.significand);
-        let k = digit_len::<B>(&lhs.significand).saturating_sub(ddigits + self.precision);
-        if k == 0 {
-            return self.repr_div(lhs, rhs);
-        }
-        let (hi, lo) = split_digits::<B>(lhs.significand, k);
-        debug_assert_eq!(digit_len::<B>(&hi), ddigits + self.precision);
-        // the kernel normalizes the divisor to be positive by negating BOTH operands, so the
-        // sticky low part must follow the (negated) dividend's sign
-        let lo = rhs.significand.sign() * lo;
-        self.repr_div_split(
-            Repr {
-                significand: hi,
-                exponent: lhs.exponent,
-            },
-            rhs,
-            lo,
-            k,
-        )
-    }
-
-    /// The division kernel proper: computes `lhs / rhs` correctly rounded to this context's
-    /// precision. `(lo, k)` describes the part of the dividend below its least significant
-    /// kept digit: the true dividend is `(lhs.significand · B^k + lo) · B^lhs.exponent`, and
-    /// the pair participates in the final rounding as a sticky fraction.
-    fn repr_div_split<const B: Word>(
-        &self,
-        lhs: Repr<B>,
-        rhs: Repr<B>,
-        lo: IBig,
-        k: usize,
-    ) -> FpResult<Repr<B>> {
-        assert_finite_operands(&lhs, &rhs);
-        assert_limited_precision(self.precision);
-
-        let sign_negative = lhs.sign() != rhs.sign();
-        let sign = Sign::from(sign_negative);
-
-        if rhs.significand.is_zero() {
-            if lhs.significand.is_zero() {
-                // 0/0 is indeterminate; callers that can signal it (Context::div) check first,
-                // otherwise fall through to div_rem which panics on division by zero.
-            } else {
-                // finite / 0 = ±inf (sign = XOR), returned as a value
-                return Ok(Approximation::Exact(Repr::infinity_with_sign(sign)));
-            }
-        }
-
-        // Work with a positive divisor so that the quotient and remainder from `div_rem`
-        // (truncated division: the remainder carries the dividend's sign) keep the value's
-        // sign in `q`, and `round_ratio` below sees a plain (integer + fraction) split.
-        // Negation is O(1) (a sign flip on the shared buffer).
-        let (num, den) = if rhs.significand.is_positive() {
-            (lhs.significand, rhs.significand)
-        } else {
-            (-lhs.significand, -rhs.significand)
-        };
-
-        let (mut q, mut r) = num.div_rem(&den);
-        let mut e = lhs
-            .exponent
-            .checked_add(k as isize)
-            .and_then(|e| e.checked_sub(rhs.exponent))
-            .ok_or({
-                // lhs.exponent >= 0 whenever the addition overflows, and < 0 whenever the
-                // subtraction underflows (see the digit bound on `k` above)
-                if lhs.exponent >= 0 {
-                    FpError::Overflow(sign)
-                } else {
-                    FpError::Underflow(sign)
-                }
-            })?;
-
-        // From here on the digit counts must be EXACT (the `digits_ub`/`digits_lb` estimates
-        // only bound a value): each padding shift below has to land the scaled operand on an
-        // exact digit position, which the rounding invariants below lean on. `q`, `r` and
-        // `den` are plain IBigs here (the bounds API lives on Repr), so `digit_len` is also
-        // the cheapest exact source for them.
-        let mut qdigits = digit_len::<B>(&q);
-
-        // Exact division with the quotient already within the precision: nothing to scale and
-        // nothing to round (the `lo` sticky part is empty exactly when k == 0).
-        if r.is_zero() && k == 0 && qdigits <= self.precision {
-            let repr = make_div_repr(sign_negative, q, e);
-            repr.check_finite_exponent()?;
-            return Ok(Approximation::Exact(repr));
-        }
-
-        if q.is_zero() {
-            // num < den: scale the remainder up so the quotient has ~precision digits
-            let ddigits = digit_len::<B>(&den);
-            let rdigits = digit_len::<B>(&r); // rdigits <= ddigits
-            let shift = ddigits + self.precision - rdigits;
-            shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
-            let (q0, r0) = r.div_rem(&den);
-            q = q0;
-            r = r0;
-            // the scaled dividend has exactly ddigits+precision digits, so the quotient has
-            // `precision` or `precision + 1` digits; with rdigits == ddigits the remainder is
-            // still strictly below the divisor, which rules out the carry to B^precision
-            qdigits = if rdigits == ddigits {
-                self.precision
-            } else {
-                digit_len::<B>(&q)
-            };
-        } else if qdigits < self.precision {
-            // TODO: here the operations can be optimized: 1. prevent double power, 2. q += q0 can be |= if B is power of 2
-            let shift = self.precision - qdigits;
-            shl_digits_in_place::<B>(&mut q, shift);
-            shl_digits_in_place::<B>(&mut r, shift);
-            e = e
-                .checked_sub(shift as isize)
-                .ok_or(FpError::Underflow(sign))?;
-
-            let (q0, r0) = r.div_rem(&den);
-            q += q0;
-            r = r0;
-            // q·B^shift ≤ B^precision − B^shift and q0 < B^shift, so the sum stays below
-            // B^precision: the scaled quotient has exactly `precision` digits
-            qdigits = self.precision;
-        }
-
-        // At this point the quotient is `(q + num_f/den_f)·B^e` with `den_f = den·B^k` and
-        // `num_f = r·B^k + lo` (the remainder plus the dividend's sticky low part), where
-        // `|num_f| < den_f` and `q` has at most `precision + 1` digits.
-        let den_f = if k > 0 { shl_digits::<B>(&den, k) } else { den };
-        let num_f = if k > 0 {
-            shl_digits::<B>(&r, k) + lo
-        } else {
-            r
-        };
-
-        // An over-wide quotient (an exact division such as 15/3 at precision 2, or the p+1
-        // digit quotient the scaling above can produce) must be rounded to the precision —
-        // but in a *single* step: the dropped digit joins the fraction, so no information is
-        // double-rounded away. The dividend bound guarantees the quotient carries at most one
-        // extra digit, so exactly one digit is dropped here.
-        let repr = if qdigits > self.precision {
-            debug_assert_eq!(qdigits, self.precision + 1);
-            let (qh, ql) = split_digits::<B>(q, 1);
-            let e2 = e.saturating_add(1);
-
-            // The fraction is (ql + num_f/den_f)/B; ql (when nonzero) and num_f both carry
-            // the dividend's sign, and |num_f| < den_f, so the fraction's sign is ql's, or
-            // num_f's when ql = 0. Its magnitude against the half is
-            //   |ql·den_f + num_f|·2  vs  B·den_f,
-            // and since ql and num_f share their sign, |ql·den_f + num_f| rearranges to a
-            // comparison of |num_f| alone:
-            //   |num_f|·2  vs  (B − 2·|ql|)·den_f
-            // (halving both sides when B − 2·|ql| is even — always, for an even base).
-            // The comparison lives in the closure so the directed modes (which ignore it)
-            // never pay for it.
-            let ql_is_zero = ql.is_zero();
-            let low_sign = if ql_is_zero { num_f.sign() } else { ql.sign() };
-
-            if ql_is_zero && num_f.is_zero() {
-                Approximation::Exact(make_div_repr(sign_negative, qh, e2))
-            } else {
-                let adjust = R::round_low_part(&qh, low_sign, || {
-                    // ql is a single base-B digit (|ql| < B), so its arithmetic runs in Word;
-                    // on the comparison path below 2·|ql| ≤ B, so the subtraction cannot
-                    // underflow.
-                    let ql_mag: Word = ql.unsigned_abs().try_into().unwrap();
-                    if ql_mag > B - ql_mag {
-                        // 2·|ql| > B: the fraction's magnitude is past the half regardless of
-                        // the remainder
-                        Ordering::Greater
-                    } else {
-                        let diff = B - ql_mag * 2; // B − 2·|ql|
-                        if diff % 2 == 0 {
-                            // compare |num_f| against (B − 2·|ql|)/2 · den_f; the factors 0
-                            // and 1 (the base-2 hot path) skip the multiplication
-                            match diff / 2 {
-                                0 => num_f.abs_cmp(&IBig::ZERO),
-                                1 => num_f.abs_cmp(&den_f),
-                                f => num_f.abs_cmp(&(f * &den_f)),
-                            }
-                        } else {
-                            // odd base: double the remainder side instead of halving
-                            (&num_f + &num_f).abs_cmp(&(diff * &den_f))
-                        }
-                    }
-                });
-                Approximation::Inexact(make_div_repr(sign_negative, qh + adjust, e2), adjust)
-            }
-        } else if num_f.is_zero() {
-            Approximation::Exact(make_div_repr(sign_negative, q, e))
-        } else {
-            let adjust = R::round_ratio(&q, num_f, &den_f);
-            Approximation::Inexact(make_div_repr(sign_negative, q + adjust, e), adjust)
-        };
-        repr.value_ref().check_finite_exponent()?;
-        Ok(repr)
-    }
-
     pub(crate) fn repr_rem<const B: Word>(&self, lhs: Repr<B>, rhs: Repr<B>) -> Rounded<Repr<B>> {
         assert_finite_operands(&lhs, &rhs);
 
@@ -821,7 +777,6 @@ impl<R: Round> Context<R> {
         let (rhs_sign, rhs_signif) = rhs.significand.into_parts();
         let quotient_sign = lhs_sign * rhs_sign;
 
-        use core::cmp::Ordering;
         let significand = match lhs.exponent.cmp(&rhs.exponent) {
             Ordering::Equal => {
                 // one division yields both the truncated quotient and remainder;
@@ -926,8 +881,17 @@ impl<R: Round> Context<R> {
     /// let a = DBig::from_str("-1.234")?;
     /// let b = DBig::from_str("6.789")?;
     /// assert_eq!(context.div(&a.repr(), &b.repr()), Ok(Inexact(DBig::from_str("-0.18")?, NoOp)));
+    ///
+    /// // a finite value over a signed zero is the exact signed infinity
+    /// assert_eq!(context.div(&a.repr(), &DBig::ZERO.repr()), Ok(Exact(DBig::NEG_INFINITY)));
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// # Division by Zero
+    ///
+    /// A finite value over a signed zero yields the signed infinity (the XOR of their signs) as an
+    /// [`Exact`](dashu_base::Approximation::Exact) value, not an error: the result is genuinely
+    /// infinite, unlike the infinity an overflow saturates to. `0 / 0` is `Err(FpError::Indeterminate)`.
     ///
     /// # Euclidean Division
     ///
@@ -942,15 +906,79 @@ impl<R: Round> Context<R> {
             return Err(FpError::Indeterminate); // 0/0
         }
 
-        // No operand pre-shrinking here: `repr_div_any_width` bounds an over-wide dividend by
-        // an exact split, keeping the dropped digits as rounding information. Rounding the
+        // No operand pre-shrinking here: the kernel bounds an over-wide dividend by an
+        // exact split, keeping the dropped digits as rounding information. Rounding the
         // dividend *before* dividing — as this used to do — corrupts the result: the rounded
         // dividend can divide exactly where the true one doesn't (a false `Exact` flag),
         // land the quotient on a false midpoint, or invert the direction under directed
         // modes.
         Ok(self
-            .repr_div_any_width(lhs.clone(), rhs.clone())?
+            .repr_div(lhs.clone(), rhs.clone())?
             .map(|v| FBig::new(v, *self)))
+    }
+
+    /// Divide an integer by a positive integer, with correct rounding to this context's
+    /// precision.
+    ///
+    /// The operands are integers, so the result is exact iff the quotient terminates within
+    /// the precision; every other case is rounded once, by the context's rounding mode.
+    /// This is the integer-ratio counterpart of [`Self::div`]: it neither rounds the operands
+    /// nor converts them first.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use core::str::FromStr;
+    /// # use dashu_base::ParseError;
+    /// # use dashu_float::DBig;
+    /// use dashu_base::Approximation::*;
+    /// use dashu_float::{Context, round::{mode::HalfAway, Rounding::*}};
+    /// use dashu_int::{IBig, UBig};
+    ///
+    /// let context = Context::<HalfAway>::new(4);
+    /// // 1000/6 = 166.666… rounds half away from zero
+    /// assert_eq!(
+    ///     context.div_int::<10>(&1000.into(), &6u8.into()),
+    ///     Ok(Inexact(DBig::from_parts(1667.into(), -1), AddOne))
+    /// );
+    /// // 1/4 terminates in base 10
+    /// assert_eq!(
+    ///     context.div_int::<10>(&1.into(), &4u8.into()),
+    ///     Ok(Exact(DBig::from_str("0.25")?))
+    /// );
+    /// # Ok::<(), ParseError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Like [`Self::div`], a zero numerator over a zero denominator is `Indeterminate`, a
+    /// nonzero numerator over zero yields the signed infinity as a value, and a result whose
+    /// exponent leaves the representable range is an error. The latter needs an astronomically
+    /// wide operand or precision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the precision is unlimited, as the quotient of two integers need not terminate.
+    pub fn div_int<const B: Word>(
+        &self,
+        numerator: &IBig,
+        denominator: &UBig,
+    ) -> FpResult<FBig<R, B>> {
+        let sign = numerator.sign();
+        if denominator.is_zero() {
+            if numerator.is_zero() {
+                return Err(FpError::Indeterminate); // 0/0
+            }
+            // nonzero / 0 = ±inf, returned as a value
+            return Ok(Approximation::Exact(FBig::new(Repr::infinity_with_sign(sign), *self)));
+        }
+        if numerator.is_zero() {
+            return Ok(Approximation::Exact(FBig::new(Repr::zero(), *self)));
+        }
+
+        Ok(self
+            .repr_div_int::<B>(sign, numerator, denominator, 0)?
+            .map(|repr| FBig::new(repr, *self)))
     }
 
     /// Calculate the remainder of `lhs / rhs`, with the quotient rounded to an integer
@@ -1006,8 +1034,13 @@ impl<R: Round> Context<R> {
     /// let context = Context::<HalfAway>::new(2);
     /// let a = DBig::from_str("-1.234")?;
     /// assert_eq!(context.inv(&a.repr()), Ok(Inexact(DBig::from_str("-0.81")?, NoOp)));
+    ///
+    /// // the inverse of a signed zero is the exact signed infinity
+    /// assert_eq!(context.inv(&DBig::ZERO.repr()), Ok(Exact(DBig::INFINITY)));
     /// # Ok::<(), ParseError>(())
     /// ```
+    ///
+    /// Like [`Self::div`], an infinite operand is an error and `0 / 0` is `Indeterminate`.
     #[inline]
     pub fn inv<const B: Word>(&self, f: &Repr<B>) -> FpResult<FBig<R, B>> {
         if f.is_infinite() {
@@ -1023,7 +1056,7 @@ impl<R: Round> Context<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::mode;
+    use crate::round::{mode, Rounding::AddOne, Rounding::NoOp, Rounding::SubOne};
     use dashu_base::Approximation::*;
 
     fn r2(sig: i32, exp: isize) -> Repr<2> {
@@ -1204,40 +1237,48 @@ mod tests {
     #[test]
     fn test_div_by_zero_is_infinity() {
         let ctx = Context::<mode::HalfEven>::new(53);
-        // finite / 0 = ±inf (a value, not an error); sign = XOR
-        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap().value();
-        assert!(pos.repr().is_infinite());
-        assert_eq!(pos.repr().sign(), Sign::Positive);
+        // finite / 0 = ±inf (sign = XOR): a value, not an error, exactly the result
+        let pos = ctx.div::<2>(&r2(1, 0), &Repr::<2>::zero()).unwrap();
+        assert_eq!(pos.value_ref().precision(), 53);
+        assert_eq!(pos.map(FBig::into_repr), Exact(Repr::infinity()));
+        let neg = ctx.div::<2>(&r2(-1, 0), &Repr::<2>::zero()).unwrap();
+        assert_eq!(neg.map(FBig::into_repr), Exact(Repr::neg_infinity()));
 
-        let neg = ctx
-            .div::<2>(&r2(-1, 0), &Repr::<2>::zero())
-            .unwrap()
-            .value();
-        assert_eq!(neg.repr().sign(), Sign::Negative);
+        // 1 / -0 = -inf: the signed zero of the divisor decides
+        let neg2 = ctx.div::<2>(&r2(1, 0), &Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(neg2.map(FBig::into_repr), Exact(Repr::neg_infinity()));
+        let pos2 = ctx.div::<2>(&r2(-1, 0), &Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(pos2.map(FBig::into_repr), Exact(Repr::infinity()));
 
-        // 1 / -0 = -inf
-        let neg2 = ctx
-            .div::<2>(&r2(1, 0), &Repr::<2>::neg_zero())
-            .unwrap()
-            .value();
-        assert_eq!(neg2.repr().sign(), Sign::Negative);
-    }
-
-    #[test]
-    fn test_zero_over_zero_is_indeterminate() {
-        let ctx = Context::<mode::HalfEven>::new(53);
+        // every mode agrees: nothing is rounded, so the result is `Exact` under all of them
         assert_eq!(
-            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
-            Err(FpError::Indeterminate)
+            Context::<mode::Zero>::new(7)
+                .div::<2>(&r2(1, 0), &Repr::<2>::zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Exact(Repr::infinity()))
+        );
+        assert_eq!(
+            Context::<mode::Down>::new(7)
+                .div::<2>(&r2(1, 0), &Repr::<2>::zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Exact(Repr::infinity()))
+        );
+        assert_eq!(
+            Context::<mode::Away>::new(7)
+                .div::<2>(&r2(-1, 0), &Repr::<2>::neg_zero())
+                .map(|r| r.map(FBig::into_repr)),
+            Ok(Exact(Repr::infinity()))
         );
     }
 
     #[test]
     fn test_inv_zero_is_infinity() {
         let ctx = Context::<mode::HalfEven>::new(53);
-        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap().value();
-        assert!(r.repr().is_infinite());
-        assert_eq!(r.repr().sign(), Sign::Positive);
+        let r = ctx.inv::<2>(&Repr::<2>::zero()).unwrap();
+        assert_eq!(r.value_ref().precision(), 53);
+        assert_eq!(r.map(FBig::into_repr), Exact(Repr::infinity()));
+        let r = ctx.inv::<2>(&Repr::<2>::neg_zero()).unwrap();
+        assert_eq!(r.map(FBig::into_repr), Exact(Repr::neg_infinity()));
     }
 
     #[test]
@@ -1255,6 +1296,340 @@ mod tests {
         // 0 / 0 is indeterminate; the FBig layer panics.
         let zero = FBig::<mode::HalfEven>::try_from(0.0f64).unwrap();
         let _ = zero.clone() / zero;
+    }
+
+    #[test]
+    fn test_zero_over_zero_is_indeterminate() {
+        let ctx = Context::<mode::HalfEven>::new(53);
+        assert_eq!(
+            ctx.div::<2>(&Repr::<2>::zero(), &Repr::<2>::zero()),
+            Err(FpError::Indeterminate)
+        );
+    }
+
+    // ---- exact-path kernel, through `Context::div_int` ----
+    //
+    // The reported double-rounding regressions (6/11, 493801/4, 31/3, …) are checked against an
+    // exact oracle in `tests/div_prop.rs`; the tests below cover what only this module can steer.
+
+    /// An integer ratio with the given parts.
+    fn ratio(numerator: i64, denominator: u64) -> (IBig, UBig) {
+        (IBig::from(numerator), UBig::from(denominator))
+    }
+
+    /// A float with the given value, flagged exact (`None`) or inexact with the adjustment
+    /// that was applied to the truncated significand.
+    fn rounded<R: Round, const B: Word>(
+        value: i64,
+        adjust: Option<Rounding>,
+    ) -> Rounded<FBig<R, B>> {
+        match adjust {
+            None => Exact(FBig::from(value)),
+            Some(adjust) => Inexact(FBig::from(value), adjust),
+        }
+    }
+
+    #[test]
+    fn test_div_int_rounding_decision() {
+        // One input per outcome of comparing the dropped part with half a unit of the last kept
+        // digit, all at precision 1 in base 10. The numerator's top `precision + denominator`
+        // digits are divided by the denominator; a digit is dropped from the quotient when it
+        // is 10 or more, and the digits below the divided part are the sticky digits.
+        // (input, value under HalfEven, value under HalfAway)
+        let cases = [
+            // padded numerator, the quotient fits the precision
+            ((12, 8), (2, Some(AddOne)), (2, Some(AddOne))), // 1.5: an exact tie, odd digit
+            ((20, 8), (2, Some(NoOp)), (3, Some(AddOne))),   // 2.5: an exact tie, even digit
+            ((11, 8), (1, Some(NoOp)), (1, Some(NoOp))),     // 1.375
+            ((13, 8), (2, Some(AddOne)), (2, Some(AddOne))), // 1.625
+            ((16, 8), (2, None), (2, None)),                 // 2: exact
+            ((12, 5), (2, Some(NoOp)), (2, Some(NoOp))),     // 2.4: a fifth below the tie
+            ((13, 5), (3, Some(AddOne)), (3, Some(AddOne))), // 2.6: a fifth above
+            ((10, 5), (2, None), (2, None)),                 // 2: exact
+            // padded numerator, one digit of the quotient is dropped
+            ((19, 1), (20, Some(AddOne)), (20, Some(AddOne))), // 19: digit 9 is past the half on its own
+            ((11, 1), (10, Some(NoOp)), (10, Some(NoOp))),     // 11: digit 1 is far below the half
+            ((15, 1), (20, Some(AddOne)), (20, Some(AddOne))), // 15: an exact tie, odd
+            ((25, 1), (20, Some(NoOp)), (30, Some(AddOne))),   // 25: an exact tie, even
+            ((29, 2), (10, Some(NoOp)), (10, Some(NoOp))),     // 14.5: digit 4, remainder one half
+            ((31, 2), (20, Some(AddOne)), (20, Some(AddOne))), // 15.5: digit 5, a remainder is left
+            ((251, 10), (30, Some(AddOne)), (30, Some(AddOne))), // 25.1: digit 5, a remainder is left
+            ((30, 2), (20, Some(AddOne)), (20, Some(AddOne))),   // 15: digit 5, an exact tie
+            ((303, 10), (30, Some(NoOp)), (30, Some(NoOp))),     // 30.3: the dropped digit is 0
+            ((20, 2), (10, None), (10, None)),                   // 10: exact
+            ((99, 1), (100, Some(AddOne)), (100, Some(AddOne))), // 99: rounding up carries a digit
+            // wide numerator: the digits cut off are the sticky part
+            ((130, 2), (60, Some(NoOp)), (70, Some(AddOne))), // 65: an exact tie, even
+            ((131, 2), (70, Some(AddOne)), (70, Some(AddOne))), // 65.5: sticky digits tip the tie
+            ((125, 2), (60, Some(NoOp)), (60, Some(NoOp))),   // 62.5: no remainder, two below
+            ((250, 1), (200, Some(NoOp)), (300, Some(AddOne))), // 250: digit 5, an exact tie
+            ((257, 1), (300, Some(AddOne)), (300, Some(AddOne))), // 257: digit 5, sticky digits
+            ((247, 1), (200, Some(NoOp)), (200, Some(NoOp))), // 247: digit 4, out of reach
+            ((275, 1), (300, Some(AddOne)), (300, Some(AddOne))), // 275: digit 7, past the half
+            ((225, 1), (200, Some(NoOp)), (200, Some(NoOp))), // 225: digit 2
+            ((125, 5), (20, Some(NoOp)), (30, Some(AddOne))), // 25: a fifth below the tie, closed by the sticky digits
+            ((124, 5), (20, Some(NoOp)), (20, Some(NoOp))), // 24.8: a fifth below, not quite closed
+            ((126, 5), (30, Some(AddOne)), (30, Some(AddOne))), // 25.2: a fifth below, crossed
+            ((119, 5), (20, Some(NoOp)), (20, Some(NoOp))), // 23.8: far below, large sticky digits
+            ((2503, 10), (300, Some(AddOne)), (300, Some(AddOne))), // 250.3: digit 5, sticky digits
+            ((3005, 10), (300, Some(NoOp)), (300, Some(NoOp))), // 300.5: the dropped digit is 0
+        ];
+        for ((num, den), even, away) in cases {
+            let (num, den) = ratio(num, den);
+            assert_eq!(
+                Context::<mode::HalfEven>::new(1)
+                    .div_int::<10>(&num, &den)
+                    .unwrap(),
+                rounded::<mode::HalfEven, 10>(even.0, even.1),
+                "{num}/{den} under HalfEven"
+            );
+            assert_eq!(
+                Context::<mode::HalfAway>::new(1)
+                    .div_int::<10>(&num, &den)
+                    .unwrap(),
+                rounded::<mode::HalfAway, 10>(away.0, away.1),
+                "{num}/{den} under HalfAway"
+            );
+        }
+    }
+
+    #[test]
+    fn test_div_int_rounding_modes() {
+        // 65.5 at 1 digit: the sticky digit settles the tie, so the result rounds away from
+        // zero under every mode that looks at the size of the dropped part
+        let (num, den) = ratio(131, 2);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::HalfEven, 10>(70, Some(AddOne))
+        );
+        assert_eq!(
+            Context::<mode::HalfAway>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::HalfAway, 10>(70, Some(AddOne))
+        );
+        assert_eq!(
+            Context::<mode::Zero>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Zero, 10>(60, Some(NoOp))
+        );
+        assert_eq!(
+            Context::<mode::Away>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Away, 10>(70, Some(AddOne))
+        );
+        assert_eq!(
+            Context::<mode::Up>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Up, 10>(70, Some(AddOne))
+        );
+        assert_eq!(
+            Context::<mode::Down>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Down, 10>(60, Some(NoOp))
+        );
+
+        // the same value negated: the directed modes follow the sign
+        let (num, den) = ratio(-131, 2);
+        assert_eq!(
+            Context::<mode::Zero>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Zero, 10>(-60, Some(NoOp))
+        );
+        assert_eq!(
+            Context::<mode::Away>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Away, 10>(-70, Some(SubOne))
+        );
+        assert_eq!(
+            Context::<mode::Up>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Up, 10>(-60, Some(NoOp))
+        );
+        assert_eq!(
+            Context::<mode::Down>::new(1)
+                .div_int::<10>(&num, &den)
+                .unwrap(),
+            rounded::<mode::Down, 10>(-70, Some(SubOne))
+        );
+    }
+
+    #[test]
+    fn test_div_int_odd_base() {
+        // In base 3 at precision 1, the numerator 11k₃ is split into 11₃ = 4 and the sticky
+        // digit k. The quotient 4 drops the digit 1, which is one third below the half, and
+        // leaves no remainder: the sticky digit alone decides.
+        let nine = || FBig::<mode::HalfEven, 3>::from(9u8);
+        let (num, den) = ratio(12, 1);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1)
+                .div_int::<3>(&num, &den)
+                .unwrap(),
+            Inexact(nine(), NoOp)
+        ); // 110₃
+        let (num, den) = ratio(13, 1);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1)
+                .div_int::<3>(&num, &den)
+                .unwrap(),
+            Inexact(nine(), NoOp)
+        ); // 111₃
+        let (num, den) = ratio(14, 1);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1)
+                .div_int::<3>(&num, &den)
+                .unwrap(), // 112₃
+            Inexact(FBig::<mode::HalfEven, 3>::from(18u8), AddOne)
+        );
+    }
+
+    #[test]
+    fn test_div_int_special_values() {
+        // a zero numerator is an exact zero that keeps the precision
+        let (num, den) = ratio(0, 7);
+        let zero = Context::<mode::HalfEven>::new(24)
+            .div_int::<10>(&num, &den)
+            .unwrap();
+        assert_eq!(zero, Exact(FBig::<mode::HalfEven, 10>::ZERO));
+        assert_eq!(zero.value().precision(), 24);
+
+        // nonzero / 0 = ±inf: a value, not an error, exactly the result
+        let (num, den) = ratio(5, 0);
+        let pos = Context::<mode::HalfEven>::new(8)
+            .div_int::<10>(&num, &den)
+            .unwrap();
+        assert_eq!(pos.value_ref().precision(), 8);
+        assert_eq!(pos.map(FBig::into_repr), Exact(Repr::<10>::infinity()));
+        let (num, den) = ratio(-5, 0);
+        let neg = Context::<mode::HalfEven>::new(8)
+            .div_int::<10>(&num, &den)
+            .unwrap();
+        assert_eq!(neg.map(FBig::into_repr), Exact(Repr::<10>::neg_infinity()));
+
+        // 0/0 is indeterminate
+        let (num, den) = ratio(0, 0);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(8).div_int::<10>(&num, &den),
+            Err(FpError::Indeterminate)
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_div_int_unlimited_precision_panics() {
+        let (num, den) = ratio(1, 3);
+        drop(Context::<mode::HalfEven>::new(0).div_int::<10>(&num, &den));
+    }
+
+    // ---- exponent range ----
+    //
+    // A quotient is representable iff the exponent of its *normalized* form lies strictly
+    // inside the range. The kernel pads a narrow dividend with zero digits before dividing,
+    // so the exponent it works with can lie outside the range although the result does not:
+    // an early check on it must only reject what certainly cannot fit.
+
+    #[test]
+    fn test_div_quotient_folds_back_into_range() {
+        // 3·2^(MIN+64) / 2^10 at 100 digits: the dividend is padded with 99 zero digits, down
+        // to the exponent MIN − 45. The quotient is exact, and its 98 trailing zero digits fold
+        // back into an exponent inside the range. (Checked on the padded exponent, this would
+        // be reported as an underflow.)
+        let ctx = Context::<mode::HalfEven>::new(100);
+        let lhs = Repr::<2>::new(IBig::from(3u8), isize::MIN + 64);
+        let rhs = Repr::<2>::new(IBig::ONE, 10);
+        let got = ctx.div(&lhs, &rhs).unwrap();
+        assert_eq!(got.map(FBig::into_repr), Exact(Repr::new(IBig::from(3u8), isize::MIN + 54)));
+    }
+
+    #[test]
+    fn test_div_exponent_difference_overflows_range() {
+        // 1023·2^100 / ((2^60 − 1)·2^(MIN+60)) = 1.11111101…b·2^(MAX−10): the operands'
+        // exponents differ by more than the range holds, but the narrow dividend is padded
+        // with 53 zero digits and the 3-digit result fits. (The overflow of the bare exponent
+        // difference used to be reported as an overflow of the result.)
+        let ctx = Context::<mode::HalfEven>::new(3);
+        let dividend = IBig::from(1023u32);
+        let divisor = Repr::<2>::new((IBig::ONE << 60) - IBig::ONE, isize::MIN + 60);
+        let got = ctx
+            .div(&Repr::new(dividend.clone(), 100), &divisor)
+            .unwrap();
+        assert_eq!(
+            got.clone().map(FBig::into_repr),
+            Inexact(Repr::new(IBig::ONE, isize::MAX - 9), AddOne)
+        );
+
+        // the same division in the middle of the range rounds identically: only the exponent
+        // of the result moves
+        let moderate = ctx
+            .div(&Repr::<2>::new(dividend, 0), &Repr::<2>::new(divisor.into_parts().0, 0))
+            .unwrap();
+        let expected = moderate.map(|f| {
+            let (significand, exponent) = f.into_repr().into_parts();
+            Repr::new(significand, exponent + isize::MAX + 41)
+        });
+        assert_eq!(got.map(FBig::into_repr), expected);
+
+        // the mirror image at the bottom of the range: 78·2^(MIN+1) / (5·2^4) = 1111.1001…b·2^(MIN−3)
+        // rounds up to 2^(MIN+1), which fits, although the exponent of its 4-digit form lies
+        // below the range. (The underflow of that exponent used to be reported as the result's.)
+        let lhs = Repr::<2>::new(IBig::from(78u8), isize::MIN + 1);
+        let rhs = Repr::<2>::new(IBig::from(5u8), 4);
+        let got = Context::<mode::HalfEven>::new(4).div(&lhs, &rhs).unwrap();
+        assert_eq!(got.map(FBig::into_repr), Inexact(Repr::new(IBig::ONE, isize::MIN + 1), AddOne));
+    }
+
+    #[test]
+    fn test_div_operand_on_the_sentinel() {
+        // An operand sitting on the `+inf` sentinel exponent is not a canonical finite number,
+        // but it can be built, and a quotient that keeps that exponent overflows.
+        let on_sentinel = Repr::<2>::new(IBig::from(3u8), isize::MAX);
+        let one = Repr::<2>::one();
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1).div(&on_sentinel, &one),
+            Err(FpError::Overflow(Sign::Positive))
+        );
+        assert_eq!(
+            Context::<mode::HalfEven>::new(1).div(&one, &on_sentinel),
+            Err(FpError::Underflow(Sign::Positive))
+        );
+    }
+
+    #[test]
+    fn test_div_overflow_is_not_underflow() {
+        // −(2^200 + 1)·2^−174 / 2^(MIN+1) = −(2^200 + 1)·2^(MAX−174): a wide dividend with a
+        // negative exponent over a divisor at the bottom of the range. The quotient is far too
+        // large. (The error kind used to follow the sign of the dividend's exponent, which
+        // reported this as an *underflow*.)
+        let lhs = Repr::<2>::new(-(IBig::ONE << 200) - IBig::ONE, -174);
+        let rhs = Repr::<2>::new(IBig::ONE, isize::MIN + 1);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(8).div(&lhs, &rhs),
+            Err(FpError::Overflow(Sign::Negative))
+        );
+
+        // the positive mirror
+        let lhs = Repr::<2>::new((IBig::ONE << 200) + IBig::ONE, -174);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(8).div(&lhs, &rhs),
+            Err(FpError::Overflow(Sign::Positive))
+        );
+
+        // a wide dividend over a divisor at the top of the range is a genuine underflow
+        let lhs = Repr::<2>::new((IBig::ONE << 200) + IBig::ONE, isize::MIN + 3);
+        let rhs = Repr::<2>::new(IBig::ONE, isize::MAX - 1);
+        assert_eq!(
+            Context::<mode::HalfEven>::new(8).div(&lhs, &rhs),
+            Err(FpError::Underflow(Sign::Positive))
+        );
     }
 
     // ---- short-quotient path selection ----

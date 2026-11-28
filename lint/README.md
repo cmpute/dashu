@@ -22,6 +22,7 @@ The workflow also supports manual dispatch and does not run on push events.
 | `manual_bit_test` | warn | `(a & ONE).is_zero()` / `.is_one()` → `!a.bit(0)` / `a.bit(0)` |
 | `manual_div_rem` | warn | Adjacent quotient/remainder calculations, including a nonzero-remainder early-return guard → `DivRem` or checked `DivExact` |
 | `redundant_abs` | warn | Absolute-value temporaries before `abs_cmp`, integer `log2_bounds`, or comparisons of two absolute values |
+| `redundant_big_conversion` | warn | A computed primitive integer converted to a Dashu integer only as the right operand of `+`, `-`, `*` or `/` → pass the primitive directly |
 | `prefer_sqr_cubic` | warn | Repeated products or integer `pow(2)` / `pow(3)` → dedicated `sqr` / `cubic` methods |
 | `unfused_mul_add` | allow | Optional advice for floating `(a * b) + c` when a single rounding via `fma` is intended |
 
@@ -41,6 +42,12 @@ right-hand `Mul<Sign>`, avoiding unsupported internal interval types.
 - Integer performance rules, powers, and FMA advice skip `#[test]` functions and `#[cfg(test)]`
   modules so independent arithmetic references and owned/ref operator coverage are preserved.
   Use a local `#[allow(lint_name)]` for reference helpers outside those scopes.
+- `redundant_big_conversion` only fires where the operator keeps the Dashu integer as its
+  result: `+`, `-`, `*`, `/` and their assignments, with the same Dashu integer on the left
+  and a chain of `from`/`from_word`/`from_dword` conversions of a computed primitive on the
+  right. Literals are left alone, since the operators cannot infer the type of a bare one
+  (`IBig::from(2)` is clearer than `2u8`), and so are `%` and the bit operators, which return
+  the primitive.
 - `IBig::sqr()` returns `UBig`; its diagnostic explicitly asks the caller to preserve the
   required signed result type. Complex multiplication/squaring is not diagnosed.
 - Floating `x * x * x` rounds twice; `cubic()` rounds the exact cube once. Similarly, `fma`

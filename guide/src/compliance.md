@@ -38,7 +38,7 @@ The reference here is IEEE Std 754™-2008 (ISO/IEC/IEEE 60559:2011).
 | `±∞` compare equal to same sign, ordered vs finite | ✅ | `+∞ == +∞`, `+∞ > finite`, `-∞ < finite`. |
 | Overflow → `±∞` (with rounding-mode-dependent sign) | ✅ | Detected at the Repr level, returned as `Err(FpError::Overflow(sign))` at `Context`, converted to signed infinity at `FBig`. |
 | Underflow → `±0` | ✅ | Same mechanism as overflow. |
-| `finite / ±0` → `±∞` | ✅ | Produced as a value (not an error). Sign = XOR of operand signs. |
+| `finite / ±0` → `±∞` | ✅ | Produced as an `Exact` value (not an error): the result is genuinely infinite, unlike an overflow. Sign = XOR of operand signs. |
 | `0 / 0` → NaN / error | ⚠️ Partial | Returns `Err(FpError::Indeterminate)`. Panics at the `FBig` layer. |
 | `∞ ± finite`, `∞ × finite`, etc. → `±∞` | ❌ Deviates | Infinities are terminal: feeding them into arithmetic returns `Err(FpError::InfiniteInput)`. Operations on infinities require explicit handling at the `Context` layer or use special-case methods. |
 | `exp(+∞)` = `+∞` | ✅ | `Context::exp` accepts infinite input. |
