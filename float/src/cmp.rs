@@ -355,7 +355,7 @@ pub(crate) fn abs_cmp_scaled<const B1: Word, const B2: Word>(
 /// directed modes), so the sign of the difference is certain when the enclosure excludes
 /// zero. `None` means that it does not: the numbers are equal, or closer than the precision
 /// tells apart.
-pub(crate) fn abs_cmp_by_log<const B1: Word, const B2: Word>(
+fn abs_cmp_by_log<const B1: Word, const B2: Word>(
     lhs: &Repr<B1>,
     rhs: &Repr<B2>,
     precision: usize,

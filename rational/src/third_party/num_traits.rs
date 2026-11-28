@@ -6,14 +6,6 @@ use num_traits_v02 as num_traits;
 
 macro_rules! impl_num_traits {
     ($t:ty) => {
-        impl $t {
-            /// `self^n` for an unsigned exponent, which might not fit in an `isize`.
-            #[inline]
-            fn pow_unsigned(&self, n: usize) -> Self {
-                Self(self.0.pow_unsigned(n))
-            }
-        }
-
         impl num_traits::Zero for $t {
             #[inline]
             fn zero() -> Self {
@@ -87,23 +79,6 @@ macro_rules! impl_num_traits {
             }
         }
 
-        impl num_traits::Pow<usize> for $t {
-            type Output = $t;
-            #[inline]
-            fn pow(self, rhs: usize) -> $t {
-                // A `usize` exponent is never negative, including the values beyond
-                // `isize::MAX` (which would wrap to a negative `isize`).
-                <$t>::pow_unsigned(&self, rhs)
-            }
-        }
-        impl num_traits::Pow<usize> for &$t {
-            type Output = $t;
-            #[inline]
-            fn pow(self, rhs: usize) -> $t {
-                <$t>::pow_unsigned(self, rhs)
-            }
-        }
-
         // Signed-exponent power: the native pow now takes isize directly.
         impl num_traits::Pow<isize> for $t {
             type Output = $t;
@@ -123,6 +98,39 @@ macro_rules! impl_num_traits {
 }
 impl_num_traits!(RBig);
 impl_num_traits!(Relaxed);
+
+// `Pow<usize>` is written out per type: a `ty` metavariable cannot construct the tuple
+// struct in expression position inside a trait impl, and the inherent shims it would need
+// do not belong in this module. The unsigned-exponent kernel keeps exponents beyond
+// `isize::MAX` from wrapping into a negative one.
+impl num_traits::Pow<usize> for RBig {
+    type Output = RBig;
+    #[inline]
+    fn pow(self, rhs: usize) -> RBig {
+        RBig(self.0.pow_unsigned(rhs))
+    }
+}
+impl num_traits::Pow<usize> for &RBig {
+    type Output = RBig;
+    #[inline]
+    fn pow(self, rhs: usize) -> RBig {
+        RBig(self.0.pow_unsigned(rhs))
+    }
+}
+impl num_traits::Pow<usize> for Relaxed {
+    type Output = Relaxed;
+    #[inline]
+    fn pow(self, rhs: usize) -> Relaxed {
+        Relaxed(self.0.pow_unsigned(rhs))
+    }
+}
+impl num_traits::Pow<usize> for &Relaxed {
+    type Output = Relaxed;
+    #[inline]
+    fn pow(self, rhs: usize) -> Relaxed {
+        Relaxed(self.0.pow_unsigned(rhs))
+    }
+}
 
 macro_rules! impl_from_primitive_int {
     ($t:ty, $method:ident) => {
