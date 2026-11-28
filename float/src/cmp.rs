@@ -348,8 +348,10 @@ pub(crate) fn abs_cmp_scaled<const B1: Word, const B2: Word>(
 #[cfg(feature = "num-order")]
 /// Unwrap a directed float operation whose result cannot fail: the operands are finite,
 /// the arguments of the logarithms are positive, and the magnitudes are those of an `isize`
-/// times a logarithm.
-pub(crate) fn unwrap_directed<R: Round>(result: FpResult<FBig<R, 2>>) -> Repr<2> {
+/// times a logarithm. (Local to the cross-base comparison: no other call site shares the
+/// precondition, and `Context::unwrap_fp` serves the different contract of saturating a
+/// possible error.)
+fn unwrap_directed<R: Round>(result: FpResult<FBig<R, 2>>) -> Repr<2> {
     match result {
         Ok(rounded) => rounded.value().into_repr(),
         Err(_) => unreachable!(),
