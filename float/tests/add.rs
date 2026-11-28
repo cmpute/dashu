@@ -428,3 +428,195 @@ fn test_sub_zero_operand_directed_rounding() {
         &repr(-13, 2)
     );
 }
+
+/// Regression for [#127](https://github.com/cmpute/dashu/issues/127): an exponent gap wider than
+/// `isize::MAX`.
+///
+/// The alignment subtracted the two exponents in `isize`. Two individually valid exponents can be
+/// up to `usize::MAX` apart, so the subtraction overflowed: debug builds panicked on it, and in
+/// release builds the wrapped position arithmetic (`ediff + ldigits`) could send the alignment
+/// down a path that materializes the gap.
+///
+/// Whatever the gap, the small operand lies entirely below the rounding window, so the exact sum
+/// sits strictly between two values that differ from the large operand by one unit in its last
+/// working digit, and the rounding mode picks one of them. For `a·B^e1` with `d` digits, the unit
+/// is `B^(e1−256+d)` for a sum and, one guard digit wider, `B^(e1−257+d)` for a difference.
+///
+/// The large operand has one or two digits: the position `ediff + ldigits` overflows `usize`
+/// only from two digits on, at the widest gaps.
+#[test]
+fn test_add_sub_exponent_gap_beyond_isize() {
+    use dashu_base::Sign::{Negative, Positive};
+    use dashu_float::round::{mode, Round, Rounding, Rounding::*};
+    use dashu_float::{FBig, FpError, Repr, Word};
+    use dashu_int::{IBig, UBig};
+    use Neighbor::{Above, Below, Mid};
+
+    // The large operand, or the value one unit in its last working digit above or below it.
+    #[derive(Clone, Copy)]
+    enum Neighbor {
+        Mid,
+        Above,
+        Below,
+    }
+
+    // `precision` is the number of working digits: 256, or 257 with the subtraction guard digit.
+    fn neighbor<const B: Word>(
+        neighbor: Neighbor,
+        neg: bool,
+        a: &IBig,
+        e1: isize,
+        precision: usize,
+    ) -> Repr<B> {
+        let base = UBig::from_word(B);
+        let d = a.ilog(&base) + 1; // digits of `a`
+        let unit = IBig::from(base.pow(precision - d));
+        let offset = precision as isize - d as isize;
+        let (significand, exponent) = match neighbor {
+            Neighbor::Mid => (a.clone(), e1),
+            Neighbor::Above => (a * &unit + IBig::ONE, e1 - offset),
+            Neighbor::Below => (a * &unit - IBig::ONE, e1 - offset),
+        };
+        Repr::new(if neg { -significand } else { significand }, exponent)
+    }
+
+    // The adjustment that rounds to `neighbor`.
+    fn rounding(neighbor: Neighbor, neg: bool) -> Rounding {
+        match (neighbor, neg) {
+            (Neighbor::Mid, _) => NoOp,
+            (Neighbor::Above, false) | (Neighbor::Below, true) => AddOne,
+            (Neighbor::Below, false) | (Neighbor::Above, true) => SubOne,
+        }
+    }
+
+    // Expected values of `large + small`, `large − small` and `small − large`.
+    fn check<R: Round, const B: Word>(
+        name: &str,
+        exponents: (isize, isize),
+        a: &IBig,
+        b: &IBig,
+        expected: [(Neighbor, bool); 3],
+    ) {
+        let (e1, e2) = exponents;
+        let (large, small) = (Repr::<B>::new(a.clone(), e1), Repr::<B>::new(b.clone(), e2));
+        // a sum has no guard digit; the two differences work one digit wider
+        let expected = [(expected[0], 256), (expected[1], 257), (expected[2], 257)].map(
+            |((n, neg), precision)| (neighbor::<B>(n, neg, a, e1, precision), rounding(n, neg)),
+        );
+        let context = Context::<R>::new(256);
+
+        let cases = [
+            (context.add(&large, &small), &expected[0], "large + small"),
+            (context.add(&small, &large), &expected[0], "small + large"),
+            (context.sub(&large, &small), &expected[1], "large − small"),
+            (context.sub(&small, &large), &expected[2], "small − large"),
+        ];
+        for (result, (want, rnd), op) in cases {
+            assert_eq!(
+                result.map(|v| v.map(FBig::into_repr)),
+                Ok(Inexact(want.clone(), *rnd)),
+                "{name}: {op}"
+            );
+        }
+
+        // the operators take the precision from the operands
+        let x = FBig::<R, B>::from_parts(a.clone(), e1)
+            .with_precision(256)
+            .value();
+        let y = FBig::<R, B>::from_parts(b.clone(), e2);
+        let z = |i: usize| {
+            let (significand, exponent) = expected[i].0.clone().into_parts();
+            FBig::<R, B>::from_parts(significand, exponent)
+        };
+        test_add(&x, &y, &z(0));
+        test_sub(&x, &y, &z(1));
+        test_sub(&y, &x, &z(2));
+    }
+
+    // Expected values of (large + small, large − small, small − large) under each rounding mode.
+    // The exact results are `mid + δ`, `mid − δ` and `−mid + δ` for a `δ` far below the unit in
+    // the last working digit, so each of them lies between two adjacent values on that grid and
+    // the mode picks one by its own direction: `Up`/`Down` take the upper/lower value, `Zero` and
+    // `Away` the one of smaller/larger magnitude, and the nearest modes round back to `±mid`.
+    macro_rules! check_modes {
+        ($base:literal, $name:expr, $exponents:expr, $a:expr, $b:expr) => {{
+            check::<mode::Zero, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Mid, false), (Below, false), (Below, true)],
+            );
+            check::<mode::Away, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Above, false), (Mid, false), (Mid, true)],
+            );
+            check::<mode::Up, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Above, false), (Mid, false), (Below, true)],
+            );
+            check::<mode::Down, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Mid, false), (Below, false), (Mid, true)],
+            );
+            check::<mode::HalfEven, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Mid, false), (Mid, false), (Mid, true)],
+            );
+            check::<mode::HalfAway, $base>(
+                $name,
+                $exponents,
+                $a,
+                $b,
+                [(Mid, false), (Mid, false), (Mid, true)],
+            );
+        }};
+    }
+
+    let one = IBig::from(1);
+    // a small operand far wider than one digit is still below the window
+    let wide = (IBig::ONE << 100) - IBig::ONE;
+    for (name, exponents) in [
+        ("issue reproducer", (isize::MAX / 2 + 1, isize::MIN / 2)),
+        ("widest gap with a finite result", (isize::MAX - 1, isize::MIN)),
+    ] {
+        for a in [IBig::from(1), IBig::from(3)] {
+            for b in [&one, &wide] {
+                check_modes!(2, name, exponents, &a, b);
+            }
+        }
+    }
+    // Decimal floats materialize powers of the base on the alignment paths that the gap must
+    // never reach.
+    for (name, exponents) in [
+        ("issue reproducer", (isize::MAX / 2 + 1, isize::MIN / 2)),
+        ("widest gap with a finite result", (isize::MAX - 1, isize::MIN)),
+    ] {
+        check_modes!(10, name, exponents, &IBig::from(3), &one);
+    }
+
+    // At the widest gap possible (`isize::MAX` over `isize::MIN`) the large operand itself sits
+    // on the `+inf` sentinel exponent, so a result that rounds back to it is reported as an
+    // overflow by the result layer, like any other value landing on the sentinel.
+    let (large, small) = (
+        Repr::<2>::new(IBig::from(3), isize::MAX),
+        Repr::<2>::new(IBig::from(1), isize::MIN),
+    );
+    let context = Context::<mode::HalfEven>::new(256);
+    assert_eq!(context.add(&large, &small), Err(FpError::Overflow(Positive)));
+    assert_eq!(context.add(&small, &large), Err(FpError::Overflow(Positive)));
+    assert_eq!(context.sub(&large, &small), Err(FpError::Overflow(Positive)));
+    assert_eq!(context.sub(&small, &large), Err(FpError::Overflow(Negative)));
+}

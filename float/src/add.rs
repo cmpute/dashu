@@ -15,6 +15,21 @@ use dashu_base::EstimatedLog2;
 use dashu_base::Sign::{self, *};
 use dashu_int::{IBig, UBig};
 
+/// Order of `ediff + digits` against `bound`, without forming the sum.
+///
+/// In a sum of floats the two exponents can be up to `usize::MAX` apart, and the digit position
+/// of the larger operand's top — the gap plus the operand's digit count — overflows `usize`.
+/// The sum is compared through its parts: `digits` alone are past a bound they exceed, and
+/// otherwise the bound is lowered by `digits` and the gap alone is compared.
+#[inline]
+fn cmp_sum(ediff: usize, digits: usize, bound: usize) -> Ordering {
+    if digits > bound {
+        Ordering::Greater
+    } else {
+        ediff.cmp(&(bound - digits))
+    }
+}
+
 /// Build a `Repr` from a cancellation result, producing `-0` (instead of `+0`) when the
 /// significand is zero and the rounding mode is roundTowardNegative (IEEE 754 §6.3).
 pub(crate) fn cancel_zero<R: Round, const B: Word>(sig: IBig, exp: isize) -> Repr<B> {
@@ -268,14 +283,23 @@ impl<R: Round> Context<R> {
         let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
         let rnd_precision = self.precision + is_sub as usize;
 
-        let ediff = (lhs.exponent - rhs.exponent) as usize;
+        // Both exponents are valid on their own, but they can be up to `usize::MAX` apart (the
+        // two ends of the range), which does not fit in `isize`: the gap is a `usize` difference.
+        let ediff = lhs.exponent.abs_diff(rhs.exponent);
         let ldigits = lhs.digits();
         let rdigits_est = rhs.digits_ub(); // overestimate
+
+        // The branches below place the top digit of the larger operand — the gap plus `ldigits`
+        // digits above the smaller operand's bottom — against the bounds of the rounding window.
+        // That position overflows `usize` for operands at the opposite ends of the exponent
+        // range, so it is never formed; see `cmp_sum`.
+        let exact_upto = rdigits_est.saturating_add(self.precision);
+        let sticky_above = rdigits_est.saturating_add(1).saturating_add(rnd_precision);
 
         // align the exponent
         let low: (IBig, usize); // (value of low part, precision of the low part)
         let (significand, exponent) =
-            if self.is_limited() && is_sub && rdigits_est + self.precision >= ldigits + ediff {
+            if self.is_limited() && is_sub && cmp_sum(ediff, ldigits, exact_upto).is_le() {
                 // The smaller operand (`rhs`, lower exponent) reaches the larger
                 // operand's `precision`-digit window — its top digit is at or above the
                 // window edge (`rdigits + precision >= ldigits + ediff`, i.e. `rhs`'s top
@@ -296,8 +320,8 @@ impl<R: Round> Context<R> {
                     Negative => (lhs.significand - &rhs.significand, rhs.exponent),
                 }
             } else if self.is_limited()
-                && rdigits_est + 1 < ediff
-                && rdigits_est + 1 + rnd_precision < ldigits + ediff
+                && rdigits_est.saturating_add(1) < ediff
+                && cmp_sum(ediff, ldigits, sticky_above).is_gt()
             {
                 // rhs is entirely below lhs's rounding window, so only its sign
                 // contributes to the rounding; replace it with a unit sticky tail
@@ -328,7 +352,7 @@ impl<R: Round> Context<R> {
                 let (rhs_signif, r) = split_digits_ref::<B>(&rhs.significand, ediff);
                 low = (rhs_sign * r, ediff);
                 (lhs.significand + rhs_sign * rhs_signif, lhs.exponent)
-            } else if self.is_limited() && ediff + ldigits > self.precision {
+            } else if self.is_limited() && cmp_sum(ediff, ldigits, self.precision).is_gt() {
                 // if the shifted lhs exceeds the desired precision, align lhs and rhs to precision
                 /* Before:
                  * lhs: |=========|
@@ -386,14 +410,18 @@ impl<R: Round> Context<R> {
         let is_sub = lhs.significand.sign() != rhs_sign * rhs.significand.sign();
         let rnd_precision = self.precision + is_sub as usize;
 
-        let ediff = (rhs.exponent - lhs.exponent) as usize;
+        let ediff = rhs.exponent.abs_diff(lhs.exponent);
         let rdigits = rhs.digits();
         let ldigits_est = lhs.digits_ub();
+
+        // see `repr_add_large_small` for the position bounds
+        let exact_upto = ldigits_est.saturating_add(self.precision);
+        let sticky_above = ldigits_est.saturating_add(1).saturating_add(rnd_precision);
 
         // align the exponent
         let low: (IBig, usize);
         let (significand, exponent) =
-            if self.is_limited() && is_sub && ldigits_est + self.precision >= rdigits + ediff {
+            if self.is_limited() && is_sub && cmp_sum(ediff, rdigits, exact_upto).is_le() {
                 // Symmetric counterpart of the guard in `repr_add_large_small` (see there
                 // for the rationale); here the lower-exponent operand is `lhs`. Form the
                 // exact difference at full operand width and let the shared
@@ -402,8 +430,8 @@ impl<R: Round> Context<R> {
                 low = (IBig::ZERO, 0);
                 (rhs_sign * rhs_signif + lhs.significand, lhs.exponent)
             } else if self.is_limited()
-                && ldigits_est + 1 < ediff
-                && ldigits_est + 1 + rnd_precision < rdigits + ediff
+                && ldigits_est.saturating_add(1) < ediff
+                && cmp_sum(ediff, rdigits, sticky_above).is_gt()
             {
                 // lhs is entirely below rhs's rounding window, so only its sign
                 // contributes; replace it with a unit sticky tail positioned at lhs's
@@ -420,7 +448,7 @@ impl<R: Round> Context<R> {
                     Positive => (lhs_signif + &rhs.significand, rhs.exponent),
                     Negative => (lhs_signif - &rhs.significand, rhs.exponent),
                 }
-            } else if self.is_limited() && ediff + rdigits > self.precision {
+            } else if self.is_limited() && cmp_sum(ediff, rdigits, self.precision).is_gt() {
                 // if the shifted rhs exceeds the desired precision, align lhs and rhs to precision
                 let lshift = self.precision - rdigits;
                 let rshift = ediff - lshift;
@@ -1037,5 +1065,36 @@ mod tests {
         let tinier = r::<2>(3, isize::MIN);
         assert_eq!(ctx.add(&tiny, &tinier), Err(FpError::Underflow(Positive)));
         assert_eq!(ctx.sub(&tiny, &tinier), Err(FpError::Underflow(Positive)));
+    }
+
+    // `cmp_sum` orders the position of the larger operand's top digit (`ediff + digits`) against
+    // a bound without forming the sum. For operands at the opposite ends of the exponent range
+    // the position overflows `usize`, and a wrapped sum lands on the wrong side of every bound.
+    #[test]
+    fn cmp_sum_orders_without_wrapping() {
+        // (gap, digits, bound, order of `gap + digits` against `bound`)
+        let cases = [
+            (0, 0, 0, Ordering::Equal),
+            // a bound met by `digits` alone
+            (0, 5, 5, Ordering::Equal),
+            (1, 5, 5, Ordering::Greater),
+            // a bound `digits` already exceed
+            (0, 5, 2, Ordering::Greater),
+            (3, 4, 6, Ordering::Greater),
+            (3, 4, 7, Ordering::Equal),
+            (3, 4, 8, Ordering::Less),
+            // the position overflows `usize` (a wrapped sum is 0) or sits right below its top
+            (usize::MAX - 1, 2, usize::MAX, Ordering::Greater),
+            (usize::MAX, 1, usize::MAX, Ordering::Greater),
+            (usize::MAX - 1, 1, usize::MAX, Ordering::Equal),
+            (usize::MAX - 2, 1, usize::MAX, Ordering::Less),
+        ];
+        for (ediff, digits, bound, expected) in cases {
+            assert_eq!(
+                cmp_sum(ediff, digits, bound),
+                expected,
+                "{ediff} + {digits} against {bound}"
+            );
+        }
     }
 }

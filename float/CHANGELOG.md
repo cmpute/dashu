@@ -8,6 +8,17 @@
   counterpart of `Context::div`, without converting the operands to floats first.
 
 ### Fix
+- Fix an exponent overflow in addition and subtraction (`Context::add`/`sub` and the
+  `+`/`-` operators): the exponents of the two operands were subtracted in `isize` to
+  align the significands, so two individually valid exponents more than `isize::MAX`
+  apart overflowed. Debug builds panicked on the subtraction; in release builds the
+  wrapped digit position could then send the alignment down a path that materializes
+  the gap and panics with an out-of-memory error. With a limited precision the
+  smaller operand is now always found to lie below the rounding window, however wide
+  the gap, and the result is the larger operand rounded with the smaller one as a
+  sticky tail. With unlimited precision the operands are still aligned exactly, so
+  the whole gap is still materialized and an extreme gap still fails with the
+  out-of-memory panic, now in debug builds as well.
 - Fix `atan2_unit` on the lower diagonals: for `|y| == |x|` with `y < 0`, the exact
   shortcut returned the two results swapped (`(-a, a)` gave -3/8 of a turn and
   `(-a, -a)` gave -1/8). The upper diagonals, the axes and all other inputs were
